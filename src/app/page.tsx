@@ -2817,7 +2817,7 @@ export default function Home() {
                              {mapping.applyToAllAccounts === 'N/A' ? (
                                <span className="text-slate-500 text-sm">N/A</span>
                              ) : (
-                               <input type="checkbox" defaultChecked={mapping.applyToAllAccounts} className="w-4 h-4" />
+                               <input type="checkbox" defaultChecked={Boolean(mapping.applyToAllAccounts)} className="w-4 h-4" />
                              )}
                            </div>
                            <div className="flex items-center justify-center">
@@ -2903,7 +2903,7 @@ export default function Home() {
                   )}
                 </div>
                 <div className="flex items-center">
-                  <input type="checkbox" defaultChecked={mapping.applyToAllAccounts} className="w-4 h-4" />
+                  <input type="checkbox" defaultChecked={Boolean(mapping.applyToAllAccounts)} className="w-4 h-4" />
                 </div>
                 <div className="flex items-center justify-center">
                   <Button variant="ghost" size="sm" onClick={() => openDeleteConfirmDialog('Order Item Mapping', mapping.shopifyCode || mapping.shopifyValue || '', mapping.id.toString())}>
@@ -2979,7 +2979,7 @@ export default function Home() {
                   <span className="text-slate-600 font-mono text-sm">{mapping.netsuiteId}</span>
                 </div>
                 <div className="flex items-center">
-                  <input type="checkbox" defaultChecked={mapping.applyToAllAccounts} className="w-4 h-4" />
+                  <input type="checkbox" defaultChecked={Boolean(mapping.applyToAllAccounts)} className="w-4 h-4" />
                 </div>
                 <div className="flex items-center justify-center">
                   <Button variant="ghost" size="sm" onClick={() => openDeleteConfirmDialog('Customer Mapping', mapping.shopifyCode || mapping.shopifyValue || '', mapping.id.toString())}>
