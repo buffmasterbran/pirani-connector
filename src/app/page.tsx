@@ -2161,7 +2161,7 @@ export default function Home() {
                     <div className="flex items-center space-x-6">
                       <div className="flex items-center space-x-3">
                         <h4 className="font-semibold text-sm">
-                          #{String(payout.id).slice(-8)}
+                          #{String(payout.id)}
                         </h4>
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                           payout.status === 'paid' 
