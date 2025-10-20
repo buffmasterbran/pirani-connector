@@ -1236,7 +1236,7 @@ export default function Home() {
                               {/* Mapping Error Indicators */}
                               {mappingErrors.filter(error => error.orderId === order.id).length > 0 && (
                                 <button
-                                  onClick={() => openMappingErrorDialog(order.id, order.name)}
+                                  onClick={() => openMappingErrorDialog(String(order.id), order.name)}
                                   className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800 hover:bg-red-200 cursor-pointer transition-colors"
                                 >
                                   ⚠ Mapping Error
