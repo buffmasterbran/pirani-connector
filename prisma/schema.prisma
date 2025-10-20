@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -11,38 +8,104 @@ datasource db {
 }
 
 model Payout {
-  id                   BigInt   @id
-  status               String
-  date                 DateTime
-  amount               Float
-  currency             String
+  id                    BigInt        @id
+  status                String
+  date                  DateTime
+  amount                Float
+  currency              String
+  createdAt             DateTime      @default(now())
   netsuiteDepositNumber String?
-  transactions         Transaction[]
-  createdAt            DateTime @default(now())
+  transactions          Transaction[]
 }
 
 model Transaction {
-  id                BigInt   @id
-  payoutId          BigInt
-  sourceOrderId     BigInt
-  amount            Float
-  fee               Float
-  net               Float
-  type              String
-  currency          String
-  processedAt       DateTime
-  payout            Payout   @relation(fields: [payoutId], references: [id])
-  createdAt         DateTime @default(now())
+  id            BigInt   @id
+  payoutId      BigInt
+  sourceOrderId BigInt
+  amount        Float
+  fee           Float
+  net           Float
+  type          String
+  currency      String
+  processedAt   DateTime
+  createdAt     DateTime @default(now())
+  payout        Payout   @relation(fields: [payoutId], references: [id])
 }
 
 model Order {
-  id                   BigInt   @id
-  name                 String
-  financial_status     String
-  fulfillment_status   String?
-  total_price          Float
-  currency             String
-  created_at           DateTime
+  id                    BigInt   @id
+  name                  String
+  financial_status      String
+  fulfillment_status    String?
+  total_price           Float
+  currency              String
+  created_at            DateTime
   netsuiteDepositNumber String?
+  createdAt             DateTime @default(now())
+}
+
+model PaymentMethodMapping {
+  id          Int      @id @default(autoincrement())
+  shopifyCode String
+  netsuiteId  String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model ShipmentMethodMapping {
+  id          Int      @id @default(autoincrement())
+  shopifyCode String
+  netsuiteId  String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model OrderFieldMapping {
+  id                 Int      @id @default(autoincrement())
+  mappingType        String   @default("Fixed")
+  shopifyCode        String?
+  shopifyValue       String?
+  netsuiteId         String
+  applyToAllAccounts Boolean  @default(false)
+  isActive           Boolean  @default(true)
+  customFieldId      String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model OrderItemFieldMapping {
+  id                 Int      @id @default(autoincrement())
+  mappingType        String   @default("Fixed")
+  shopifyCode        String?
+  shopifyValue       String?
+  netsuiteId         String
+  applyToAllAccounts Boolean  @default(false)
+  isActive           Boolean  @default(true)
+  customFieldId      String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model CustomerFieldMapping {
+  id                 Int      @id @default(autoincrement())
+  mappingType        String   @default("Fixed")
+  shopifyCode        String?
+  shopifyValue       String?
+  netsuiteId         String
+  applyToAllAccounts Boolean  @default(false)
+  isActive           Boolean  @default(true)
+  customFieldId      String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model MappingDefaults {
+  id                   Int      @id @default(autoincrement())
+  mappingType          String   @unique
+  defaultShopifyValue  String?
+  defaultNetsuiteValue String?
   createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 }

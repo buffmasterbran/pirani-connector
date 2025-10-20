@@ -7,12 +7,21 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { PayoutCard } from '@/components/PayoutCard'
 import { TransactionsDialog } from '@/components/TransactionsDialog'
 import { OrderInfoDialog } from '@/components/OrderInfoDialog'
 import { Sidebar } from '@/components/Sidebar'
 import { Loader, LoaderWithText } from '@/components/Loader'
-import { Download, Database, ArrowUpRight, Settings, Eye, EyeOff, Filter } from 'lucide-react'
+import { Download, Database, ArrowUpRight, Settings, Eye, EyeOff, Filter, Trash2, ChevronDown } from 'lucide-react'
+import { 
+  validateOrderMappings, 
+  getUnmappedPaymentMethods, 
+  getUnmappedShipmentMethods,
+  type MappingError,
+  type PaymentMethodMapping,
+  type ShipmentMethodMapping
+} from '@/lib/mappingUtils'
 import { safeToLocaleDateString } from '@/lib/dateUtils'
 
 interface Payout {
@@ -102,6 +111,93 @@ export default function Home() {
   const [hideSensitiveData, setHideSensitiveData] = useState(false)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [activeSection, setActiveSection] = useState('orders')
+  const [activeMappingTab, setActiveMappingTab] = useState('Payment')
+  const [activeSettingsTab, setActiveSettingsTab] = useState('General')
+  const [deleteConfirmDialog, setDeleteConfirmDialog] = useState<{isOpen: boolean, itemType: string, itemName: string, itemId: string}>({
+    isOpen: false,
+    itemType: '',
+    itemName: '',
+    itemId: ''
+  })
+
+  // Mapping error popup dialog state
+  const [mappingErrorDialog, setMappingErrorDialog] = useState<{
+    isOpen: boolean
+    orderId: string
+    orderName: string
+    errors: MappingError[]
+  }>({
+    isOpen: false,
+    orderId: '',
+    orderName: '',
+    errors: []
+  })
+
+  // Custom field state for each mapping row
+  const [customFields, setCustomFields] = useState<{[key: string]: string}>({})
+
+  // Error tracking for mapping validation
+  const [mappingErrors, setMappingErrors] = useState<any[]>([])
+  const [unmappedPaymentMethods, setUnmappedPaymentMethods] = useState<string[]>([])
+  const [unmappedShipmentMethods, setUnmappedShipmentMethods] = useState<string[]>([])
+
+  // Mapping data state - Updated to use Shopify codes and NetSuite IDs
+  const [paymentMappings, setPaymentMappings] = useState<PaymentMethodMapping[]>([
+    { id: '1', shopifyCode: 'shopify_payments', netsuiteId: '177', isActive: true },
+    { id: '2', shopifyCode: 'visa', netsuiteId: '228', isActive: true },
+    { id: '3', shopifyCode: 'mastercard', netsuiteId: '228', isActive: true },
+    { id: '4', shopifyCode: 'american_express', netsuiteId: '228', isActive: true },
+    { id: '5', shopifyCode: 'discover', netsuiteId: '228', isActive: true },
+    { id: '6', shopifyCode: 'unknown', netsuiteId: '0', isActive: true },
+    { id: '7', shopifyCode: 'blank', netsuiteId: '0', isActive: true }
+  ])
+
+  const [shipmentMappings, setShipmentMappings] = useState<ShipmentMethodMapping[]>([
+    { id: '1', shopifyCode: 'free_shipping', netsuiteId: '293', isActive: true },
+    { id: '2', shopifyCode: 'standard_shipping', netsuiteId: '288', isActive: true },
+    { id: '3', shopifyCode: 'local_pickup', netsuiteId: '1035', isActive: true },
+    { id: '4', shopifyCode: 'asheville', netsuiteId: '1035', isActive: true },
+    { id: '5', shopifyCode: 'flat_rate', netsuiteId: '288', isActive: true },
+    { id: '6', shopifyCode: 'ups_ground', netsuiteId: '4', isActive: true },
+    { id: '7', shopifyCode: 'dhl', netsuiteId: '1222', isActive: true },
+    { id: '8', shopifyCode: 'dhl_express_worldwide', netsuiteId: '1222', isActive: true },
+    { id: '9', shopifyCode: 'economy_international', netsuiteId: '1036', isActive: true }
+  ])
+
+  const [orderMappings, setOrderMappings] = useState<OrderFieldMapping[]>([
+    { id: '1', mappingType: 'Fixed', shopifyValue: 'Online Sales', netsuiteId: '11', applyToAllAccounts: true, isActive: true },
+    { id: '2', mappingType: 'Fixed', shopifyValue: 'Unchecked', netsuiteId: 'false', applyToAllAccounts: true, isActive: true },
+    { id: '3', mappingType: 'Fixed', shopifyValue: 'Default Location', netsuiteId: '1', applyToAllAccounts: true, isActive: true },
+    { id: '4', mappingType: 'Order Header', shopifyCode: 'order_id', netsuiteId: 'otherRefNum', applyToAllAccounts: false, isActive: true },
+    { id: '5', mappingType: 'Fixed', shopifyValue: 'Checked', netsuiteId: 'true', applyToAllAccounts: true, isActive: true },
+    { id: '6', mappingType: 'Fixed', shopifyValue: 'Pending Fulfillment', netsuiteId: '_pendingFulfillment', applyToAllAccounts: true, isActive: true },
+    { id: '7', mappingType: 'Fixed', shopifyValue: 'Direct to Consumer', netsuiteId: '1833', applyToAllAccounts: true, isActive: true },
+    { id: '8', mappingType: 'Fixed', shopifyValue: 'Pirani Website', netsuiteId: '12', applyToAllAccounts: true, isActive: true },
+    { id: '9', mappingType: 'Fixed', shopifyValue: 'Urgent', netsuiteId: '1', applyToAllAccounts: true, isActive: true },
+    { id: '10', mappingType: 'Order Header', shopifyCode: 'created_at', netsuiteId: 'custbody_pir_shop_order_date', applyToAllAccounts: true, isActive: true },
+    { id: '11', mappingType: 'Fixed', shopifyValue: 'Sales Channel', netsuiteId: '1', applyToAllAccounts: true, isActive: true },
+    { id: '12', mappingType: 'Fixed', shopifyValue: 'SO Category', netsuiteId: '28', applyToAllAccounts: true, isActive: true },
+    { id: '13', mappingType: 'Order Header', shopifyCode: 'id', netsuiteId: 'custbody_shopify_source_order_id', applyToAllAccounts: true, isActive: true },
+    { id: '14', mappingType: 'Order Header', shopifyCode: 'name', netsuiteId: 'custbody_fa_channel_order', applyToAllAccounts: true, isActive: true }
+  ])
+
+  const [orderItemMappings, setOrderItemMappings] = useState<OrderItemFieldMapping[]>([
+    { id: '1', mappingType: 'Fixed', shopifyValue: 'Base Rate (MSRP)', netsuiteId: '1', applyToAllAccounts: false, isActive: true },
+    { id: '2', mappingType: 'Order Line', shopifyCode: 'properties._pca_preview_url', netsuiteId: 'custcol_custom_image_url', applyToAllAccounts: false, isActive: true },
+    { id: '3', mappingType: 'Order Line', shopifyCode: 'properties._pca_barcode', netsuiteId: 'custcol_customization_barcode', applyToAllAccounts: false, isActive: true },
+    { id: '4', mappingType: 'Order Line', shopifyCode: 'properties.CustomizationType', netsuiteId: 'custcol_item_notes', applyToAllAccounts: false, isActive: true },
+    { id: '5', mappingType: 'Order Line', shopifyCode: 'properties.CustomizationValue', netsuiteId: 'custcol_item_notes_2', applyToAllAccounts: false, isActive: true },
+    { id: '6', mappingType: 'Order Line', shopifyCode: 'properties.CustomizationFont', netsuiteId: 'custcol_item_notes_font', applyToAllAccounts: false, isActive: true }
+  ])
+
+  const [customerMappings, setCustomerMappings] = useState<CustomerFieldMapping[]>([
+    { id: '1', mappingType: 'Fixed', shopifyValue: '6 Pirani Life : Websales', netsuiteId: '1833', applyToAllAccounts: true, isActive: true },
+    { id: '2', mappingType: 'Fixed', shopifyValue: 'Base Rate (MSRP)', netsuiteId: '1', applyToAllAccounts: true, isActive: true },
+    { id: '3', mappingType: 'Fixed', shopifyValue: 'Pirani Life, Inc', netsuiteId: '2', applyToAllAccounts: true, isActive: true },
+    { id: '4', mappingType: 'Fixed', shopifyValue: 'Direct to Consumer', netsuiteId: '28', applyToAllAccounts: true, isActive: true },
+    { id: '5', mappingType: 'Fixed', shopifyValue: 'Direct to Consumer', netsuiteId: '1', applyToAllAccounts: true, isActive: true },
+    { id: '6', mappingType: 'Fixed', shopifyValue: 'Pirani Website', netsuiteId: '12', applyToAllAccounts: true, isActive: true }
+  ])
   const [filters, setFilters] = useState({
     netsuiteStatus: {
       all: true,
@@ -135,6 +231,7 @@ export default function Home() {
   // Order-related state
   const [orders, setOrders] = useState<Order[]>([])
   const [isLoadingOrders, setIsLoadingOrders] = useState(false)
+  const [importLimit, setImportLimit] = useState<number | null>(null)
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
   const [isOrderDialogOpen, setIsOrderDialogOpen] = useState(false)
@@ -240,12 +337,20 @@ export default function Home() {
     }
   }
 
-  const importAllPayouts = async () => {
-    console.log('🚀 Starting import all payouts...')
+  const importAllPayouts = async (fetchAll: boolean = false, maxPayouts?: number) => {
+    console.log(`🚀 Starting ${fetchAll ? 'import ALL payouts' : 'import recent payouts'}...`)
     setIsLoading(true)
     try {
-      console.log('📡 Fetching payouts from Shopify API...')
-      const response = await fetch('/api/shopify/payouts')
+      let url = '/api/shopify/payouts'
+      if (fetchAll) {
+        url += '?all=true'
+        if (maxPayouts) {
+          url += `&limit=${maxPayouts}`
+        }
+      }
+      
+      console.log(`📡 Fetching payouts from Shopify API... (${fetchAll ? 'paginated' : 'single page'})`)
+      const response = await fetch(url)
       const data = await response.json()
       
       console.log('📦 Shopify API Response:', { 
@@ -450,11 +555,21 @@ export default function Home() {
   }
 
   // Order functions
-  const fetchOrders = async () => {
+  const fetchOrders = async (fetchAll: boolean = false, maxOrders?: number) => {
     setIsLoadingOrders(true)
     try {
-      const response = await fetch('/api/shopify/orders')
+      let url = '/api/shopify/orders'
+      if (fetchAll) {
+        url += '?all=true'
+        if (maxOrders) {
+          url += `&limit=${maxOrders}`
+        }
+      }
+      
+      console.log(`🔄 ${fetchAll ? 'Fetching ALL orders' : 'Fetching recent orders'}...`)
+      const response = await fetch(url)
       const data = await response.json()
+      
       if (response.ok) {
         const fetchedOrders = data.orders || []
         console.log(`✅ Fetched ${fetchedOrders.length} orders from Shopify`)
@@ -779,11 +894,92 @@ export default function Home() {
     return true
   })
 
+  // Fetch mappings from database
+  const fetchPaymentMappings = async () => {
+    try {
+      const response = await fetch('/api/mappings/payment-methods')
+      const result = await response.json()
+      if (result.success) {
+        setPaymentMappings(result.data)
+      }
+    } catch (error) {
+      console.error('Error fetching payment mappings:', error)
+    }
+  }
+
+  const fetchShipmentMappings = async () => {
+    try {
+      const response = await fetch('/api/mappings/shipment-methods')
+      const result = await response.json()
+      if (result.success) {
+        setShipmentMappings(result.data)
+      }
+    } catch (error) {
+      console.error('Error fetching shipment mappings:', error)
+    }
+  }
+
+  const fetchOrderMappings = async () => {
+    try {
+      const response = await fetch('/api/mappings/order-fields')
+      const result = await response.json()
+      if (result.success) {
+        setOrderMappings(result.data)
+      }
+    } catch (error) {
+      console.error('Error fetching order mappings:', error)
+    }
+  }
+
+  const fetchOrderItemMappings = async () => {
+    try {
+      const response = await fetch('/api/mappings/order-item-fields')
+      const result = await response.json()
+      if (result.success) {
+        setOrderItemMappings(result.data)
+      }
+    } catch (error) {
+      console.error('Error fetching order item mappings:', error)
+    }
+  }
+
+  const fetchCustomerMappings = async () => {
+    try {
+      const response = await fetch('/api/mappings/customer-fields')
+      const result = await response.json()
+      if (result.success) {
+        setCustomerMappings(result.data)
+      }
+    } catch (error) {
+      console.error('Error fetching customer mappings:', error)
+    }
+  }
+
   // Load saved payouts and orders on component mount
   useEffect(() => {
     fetchSavedPayouts()
     fetchSavedOrders()
+    // Load all mappings from database
+    fetchPaymentMappings()
+    fetchShipmentMappings()
+    fetchOrderMappings()
+    fetchOrderItemMappings()
+    fetchCustomerMappings()
   }, [])
+
+  // Detect missing mappings when orders are loaded
+  useEffect(() => {
+    if (orders.length > 0 && paymentMappings.length > 0 && shipmentMappings.length > 0) {
+      detectMissingMappings()
+    }
+  }, [orders, paymentMappings, shipmentMappings])
+
+  // Re-detect missing mappings when mappings are updated
+  useEffect(() => {
+    if (orders.length > 0) {
+      detectMissingMappings()
+    }
+  }, [paymentMappings, shipmentMappings])
 
   // Combine saved payouts with fetched payouts for display
   const allPayouts = [...savedPayouts.map(p => ({
@@ -919,19 +1115,41 @@ export default function Home() {
                       Filters
                     </Button>
 
-                    <Button 
-                      onClick={fetchOrders} 
-                      disabled={isLoadingOrders}
-                      className="flex items-center gap-2 h-9"
-                      size="sm"
-                    >
-                      {isLoadingOrders ? <LoaderWithText text="Loading..." /> : (
-                        <>
-                          <Download className="h-4 w-4" />
-                          Import All
-                        </>
-                      )}
-                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button 
+                          disabled={isLoadingOrders}
+                          className="flex items-center gap-2 h-9"
+                          size="sm"
+                        >
+                          {isLoadingOrders ? <LoaderWithText text="Loading..." /> : (
+                            <>
+                              <Download className="h-4 w-4" />
+                              Import Orders
+                              <ChevronDown className="h-4 w-4" />
+                            </>
+                          )}
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => fetchOrders(false)}>
+                          <span className="font-medium">Recent Orders</span>
+                          <span className="text-xs text-muted-foreground ml-2">(250 orders)</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => fetchOrders(true, 1000)}>
+                          <span className="font-medium">1,000 Orders</span>
+                          <span className="text-xs text-muted-foreground ml-2">(paginated)</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => fetchOrders(true, 5000)}>
+                          <span className="font-medium">5,000 Orders</span>
+                          <span className="text-xs text-muted-foreground ml-2">(paginated)</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => fetchOrders(true)}>
+                          <span className="font-medium">All Orders</span>
+                          <span className="text-xs text-muted-foreground ml-2">(paginated)</span>
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
 
                     <div className="flex items-center gap-2">
                       <Input
@@ -1032,6 +1250,15 @@ export default function Home() {
                                   title="Click to edit NetSuite ID"
                                 >
                                   ✓ NS: {order.netsuiteDepositNumber}
+                                </button>
+                              )}
+                              {/* Mapping Error Indicators */}
+                              {mappingErrors.filter(error => error.orderId === order.id).length > 0 && (
+                                <button
+                                  onClick={() => openMappingErrorDialog(order.id, order.name)}
+                                  className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800 hover:bg-red-200 cursor-pointer transition-colors"
+                                >
+                                  ⚠ Mapping Error
                                 </button>
                               )}
                               {order.inDatabase && !order.netsuiteDepositNumber && (
@@ -1483,6 +1710,26 @@ export default function Home() {
               <p className="text-slate-600">Configure your Shopify and NetSuite integration settings.</p>
             </div>
             
+            {/* Settings Navigation Tabs */}
+            <div className="flex space-x-1 border-b">
+              {['General', 'Field Discovery'].map((tab) => (
+                <Button
+                  key={tab}
+                  variant="ghost"
+                  onClick={() => setActiveSettingsTab(tab)}
+                  className={`px-4 py-2 text-sm font-medium ${
+                    tab === activeSettingsTab
+                      ? 'border-b-2 border-blue-600 text-blue-600 bg-blue-50' 
+                      : 'text-slate-600 hover:text-slate-800'
+                  }`}
+                >
+                  {tab}
+                </Button>
+              ))}
+            </div>
+
+            {/* General Settings Tab */}
+            {activeSettingsTab === 'General' && (
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -1532,6 +1779,171 @@ export default function Home() {
                 </div>
               </CardContent>
             </Card>
+            )}
+
+            {/* Field Discovery Tab */}
+            {activeSettingsTab === 'Field Discovery' && (
+              <div className="space-y-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Database className="h-5 w-5" />
+                      NetSuite Field Discovery
+                    </CardTitle>
+                    <p className="text-sm text-slate-600">
+                      Discover and map NetSuite field IDs to human-readable names. This helps complete your mapping configuration.
+                    </p>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-6">
+                      
+                      {/* Payment Methods Discovery */}
+                      <div>
+                        <h4 className="font-medium text-slate-800 mb-3">Payment Methods</h4>
+                        <div className="bg-slate-50 p-4 rounded-lg">
+                          <div className="grid grid-cols-2 gap-4 mb-4">
+                            <div>
+                              <label className="text-sm font-medium text-slate-700">Unknown Payment Method IDs</label>
+                              <div className="mt-2 space-y-2">
+                                <div className="flex items-center justify-between p-3 bg-white rounded border">
+                                  <span className="font-mono text-sm">ID: 177</span>
+                                  <span className="text-green-600 text-sm">✅ Shopify Payments (mapped)</span>
+                                </div>
+                                <div className="flex items-center justify-between p-3 bg-white rounded border">
+                                  <span className="font-mono text-sm">ID: 228</span>
+                                  <span className="text-green-600 text-sm">✅ Visa/Mastercard/Amex (mapped)</span>
+                                </div>
+                              </div>
+                            </div>
+                            <div>
+                              <label className="text-sm font-medium text-slate-700">NetSuite API Endpoint</label>
+                              <div className="mt-2 p-3 bg-white rounded border font-mono text-sm">
+                                GET /record/v1/paymentmethod
+                              </div>
+                              <Button className="mt-2 w-full" size="sm">
+                                <Database className="h-4 w-4 mr-2" />
+                                Fetch Payment Methods
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Shipping Methods Discovery */}
+                      <div>
+                        <h4 className="font-medium text-slate-800 mb-3">Shipping Methods</h4>
+                        <div className="bg-slate-50 p-4 rounded-lg">
+                          <div className="grid grid-cols-2 gap-4 mb-4">
+                            <div>
+                              <label className="text-sm font-medium text-slate-700">Unknown Shipping Method IDs</label>
+                              <div className="mt-2 space-y-2">
+                                <div className="flex items-center justify-between p-3 bg-white rounded border">
+                                  <span className="font-mono text-sm">ID: 293</span>
+                                  <span className="text-green-600 text-sm">✅ Free Shipping (mapped)</span>
+                                </div>
+                                <div className="flex items-center justify-between p-3 bg-white rounded border">
+                                  <span className="font-mono text-sm">ID: 288</span>
+                                  <span className="text-green-600 text-sm">✅ Standard Shipping (mapped)</span>
+                                </div>
+                                <div className="flex items-center justify-between p-3 bg-white rounded border">
+                                  <span className="font-mono text-sm">ID: 1035</span>
+                                  <span className="text-green-600 text-sm">✅ Local Pickup (mapped)</span>
+                                </div>
+                              </div>
+                            </div>
+                            <div>
+                              <label className="text-sm font-medium text-slate-700">NetSuite API Endpoint</label>
+                              <div className="mt-2 p-3 bg-white rounded border font-mono text-sm">
+                                GET /record/v1/shippingitem
+                              </div>
+                              <Button className="mt-2 w-full" size="sm">
+                                <Database className="h-4 w-4 mr-2" />
+                                Fetch Shipping Methods
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Other Fields Discovery */}
+                      <div>
+                        <h4 className="font-medium text-slate-800 mb-3">Other NetSuite Fields</h4>
+                        <div className="bg-slate-50 p-4 rounded-lg">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <label className="text-sm font-medium text-slate-700">Location Fields</label>
+                              <div className="mt-2 space-y-2">
+                                <div className="flex items-center justify-between p-3 bg-white rounded border">
+                                  <span className="font-mono text-sm">ID: 1</span>
+                                  <span className="text-green-600 text-sm">✅ Default Location (mapped)</span>
+                                </div>
+                                <div className="text-xs text-slate-500 mt-1">
+                                  Location ID 1 is correctly mapped to "Default Location"
+                                </div>
+                              </div>
+                            </div>
+                            <div>
+                              <label className="text-sm font-medium text-slate-700">NetSuite API Endpoints</label>
+                              <div className="mt-2 space-y-2">
+                                <div className="p-2 bg-white rounded border font-mono text-xs">
+                                  GET /record/v1/location
+                                </div>
+                                <div className="p-2 bg-white rounded border font-mono text-xs">
+                                  GET /record/v1/classification
+                                </div>
+                                <div className="p-2 bg-white rounded border font-mono text-xs">
+                                  GET /record/v1/partner
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Field Mapping Tool */}
+                      <div>
+                        <h4 className="font-medium text-slate-800 mb-3">Manual Field Mapping</h4>
+                        <div className="bg-blue-50 p-4 rounded-lg">
+                          <p className="text-sm text-blue-800 mb-3">
+                            Use this tool to manually map unknown field IDs to human-readable names:
+                          </p>
+                          <div className="grid grid-cols-3 gap-4">
+                            <div>
+                              <label className="text-sm font-medium">Field Type</label>
+                              <Select>
+                                <SelectTrigger className="mt-1">
+                                  <SelectValue placeholder="Select field type" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="payment">Payment Method</SelectItem>
+                                  <SelectItem value="shipping">Shipping Method</SelectItem>
+                                  <SelectItem value="location">Location</SelectItem>
+                                  <SelectItem value="class">Class</SelectItem>
+                                  <SelectItem value="partner">Partner</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div>
+                              <label className="text-sm font-medium">NetSuite ID</label>
+                              <Input placeholder="e.g., 177" className="mt-1" />
+                            </div>
+                            <div>
+                              <label className="text-sm font-medium">Human Name</label>
+                              <Input placeholder="e.g., Visa" className="mt-1" />
+                            </div>
+                          </div>
+                          <Button className="mt-3 w-full" size="sm">
+                            <Database className="h-4 w-4 mr-2" />
+                            Add Mapping
+                          </Button>
+                        </div>
+                      </div>
+
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
           </div>
         )
         
@@ -1585,19 +1997,41 @@ export default function Home() {
                       Filters
                     </Button>
 
-                    <Button 
-                      onClick={importAllPayouts} 
-                      disabled={isLoading}
-                      className="flex items-center gap-2 h-9"
-                      size="sm"
-                    >
-                      {isLoading ? <LoaderWithText text="Importing..." /> : (
-                        <>
-                          <Download className="h-4 w-4" />
-                          Import All
-                        </>
-                      )}
-                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button 
+                          disabled={isLoading}
+                          className="flex items-center gap-2 h-9"
+                          size="sm"
+                        >
+                          {isLoading ? <LoaderWithText text="Importing..." /> : (
+                            <>
+                              <Download className="h-4 w-4" />
+                              Import Payouts
+                              <ChevronDown className="h-4 w-4" />
+                            </>
+                          )}
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => importAllPayouts(false)}>
+                          <span className="font-medium">Recent Payouts</span>
+                          <span className="text-xs text-muted-foreground ml-2">(250 payouts)</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => importAllPayouts(true, 1000)}>
+                          <span className="font-medium">1,000 Payouts</span>
+                          <span className="text-xs text-muted-foreground ml-2">(paginated)</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => importAllPayouts(true, 5000)}>
+                          <span className="font-medium">5,000 Payouts</span>
+                          <span className="text-xs text-muted-foreground ml-2">(paginated)</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => importAllPayouts(true)}>
+                          <span className="font-medium">All Payouts</span>
+                          <span className="text-xs text-muted-foreground ml-2">(paginated)</span>
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
 
                     <div className="flex items-center gap-2">
                       <Input
@@ -1947,10 +2381,240 @@ export default function Home() {
     </div>
   )
 
+  // Delete confirmation functions
+  const openDeleteConfirmDialog = (itemType: string, itemName: string, itemId: string) => {
+    setDeleteConfirmDialog({
+      isOpen: true,
+      itemType,
+      itemName,
+      itemId
+    })
+  }
+
+  const closeDeleteConfirmDialog = () => {
+    setDeleteConfirmDialog({
+      isOpen: false,
+      itemType: '',
+      itemName: '',
+      itemId: ''
+    })
+  }
+
+  // Mapping error dialog functions
+  const openMappingErrorDialog = (orderId: string, orderName: string) => {
+    const orderErrors = mappingErrors.filter(error => error.orderId === orderId)
+    setMappingErrorDialog({
+      isOpen: true,
+      orderId,
+      orderName,
+      errors: orderErrors
+    })
+  }
+
+  const closeMappingErrorDialog = () => {
+    setMappingErrorDialog({
+      isOpen: false,
+      orderId: '',
+      orderName: '',
+      errors: []
+    })
+  }
+
+  const confirmDelete = async () => {
+    const { itemType, itemName, itemId } = deleteConfirmDialog
+    console.log(`Deleting ${itemType}: ${itemName}`)
+    
+    try {
+      let apiEndpoint = ''
+      
+      // Determine the API endpoint based on item type
+      switch (itemType) {
+        case 'Payment Method':
+          apiEndpoint = `/api/mappings/payment-methods/${itemId}`
+          break
+        case 'Shipment Method':
+          apiEndpoint = `/api/mappings/shipment-methods/${itemId}`
+          break
+        case 'Order Mapping':
+          apiEndpoint = `/api/mappings/order-fields/${itemId}`
+          break
+        case 'Order Item Mapping':
+          apiEndpoint = `/api/mappings/order-item-fields/${itemId}`
+          break
+        case 'Customer Mapping':
+          apiEndpoint = `/api/mappings/customer-fields/${itemId}`
+          break
+        default:
+          console.log(`Unknown item type: ${itemType}`)
+          return
+      }
+
+      // Delete from database
+      const response = await fetch(apiEndpoint, {
+        method: 'DELETE'
+      })
+      
+      const result = await response.json()
+      
+      if (result.success) {
+        // Update local state after successful deletion
+        switch (itemType) {
+          case 'Payment Method':
+            setPaymentMappings(prev => prev.filter(item => item.id.toString() !== itemId))
+            break
+          case 'Shipment Method':
+            setShipmentMappings(prev => prev.filter(item => item.id.toString() !== itemId))
+            break
+          case 'Order Mapping':
+            setOrderMappings(prev => prev.filter(item => item.id.toString() !== itemId))
+            break
+          case 'Order Item Mapping':
+            setOrderItemMappings(prev => prev.filter(item => item.id.toString() !== itemId))
+            break
+          case 'Customer Mapping':
+            setCustomerMappings(prev => prev.filter(item => item.id.toString() !== itemId))
+            break
+        }
+        console.log(`✅ Successfully deleted ${itemType}: ${itemName}`)
+      } else {
+        console.error(`❌ Failed to delete ${itemType}: ${itemName}`, result.error)
+      }
+    } catch (error) {
+      console.error(`❌ Error deleting ${itemType}: ${itemName}`, error)
+    }
+    
+    closeDeleteConfirmDialog()
+  }
+
+  // Handle custom field input changes
+  const handleCustomFieldChange = (rowId: string, value: string) => {
+    setCustomFields(prev => ({
+      ...prev,
+      [rowId]: value
+    }))
+  }
+
+  // Validate orders for mapping errors
+  const validateOrdersForMappings = (ordersToValidate: any[]) => {
+    const newErrors: MappingError[] = []
+    
+    ordersToValidate.forEach(order => {
+      const errors = validateOrderMappings(order, paymentMappings, shipmentMappings)
+      newErrors.push(...errors)
+    })
+    
+    // Return the errors instead of updating state here
+    return newErrors
+  }
+
+  // Detect missing mappings from all loaded orders
+  const detectMissingMappings = () => {
+    if (orders.length === 0) return
+
+    console.log('🔍 Detecting missing mappings from orders...')
+    
+    // Validate all orders
+    const errors = validateOrdersForMappings(orders)
+    
+    // Update error state
+    setMappingErrors(errors)
+    
+    if (errors.length > 0) {
+      console.log(`⚠️ Found ${errors.length} mapping errors:`, errors)
+      
+      // Extract unique missing mappings
+      const missingPaymentMethods = getUnmappedPaymentMethods(errors)
+      const missingShipmentMethods = getUnmappedShipmentMethods(errors)
+      
+      console.log('Missing payment methods:', missingPaymentMethods)
+      console.log('Missing shipment methods:', missingShipmentMethods)
+      
+      // Update unmapped methods lists
+      setUnmappedPaymentMethods(missingPaymentMethods)
+      setUnmappedShipmentMethods(missingShipmentMethods)
+    } else {
+      console.log('✅ All orders have valid mappings')
+      setUnmappedPaymentMethods([])
+      setUnmappedShipmentMethods([])
+    }
+  }
+
+  // Add new payment method mapping
+  const addPaymentMethodMapping = async (shopifyCode: string, netsuiteId: string) => {
+    try {
+      const response = await fetch('/api/mappings/payment-methods', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          shopifyCode,
+          netsuiteId,
+          isActive: true
+        })
+      })
+
+      const result = await response.json()
+      
+      if (result.success) {
+        console.log(`✅ Added payment method mapping: ${shopifyCode} → ${netsuiteId}`)
+        
+        // Update local state
+        setPaymentMappings(prev => [...prev, result.data])
+        
+        // Re-detect missing mappings
+        detectMissingMappings()
+        
+        return true
+      } else {
+        console.error(`❌ Failed to add payment method mapping:`, result.error)
+        return false
+      }
+    } catch (error) {
+      console.error(`❌ Error adding payment method mapping:`, error)
+      return false
+    }
+  }
+
+  // Add new shipment method mapping
+  const addShipmentMethodMapping = async (shopifyCode: string, netsuiteId: string) => {
+    try {
+      const response = await fetch('/api/mappings/shipment-methods', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          shopifyCode,
+          netsuiteId,
+          isActive: true
+        })
+      })
+
+      const result = await response.json()
+      
+      if (result.success) {
+        console.log(`✅ Added shipment method mapping: ${shopifyCode} → ${netsuiteId}`)
+        
+        // Update local state
+        setShipmentMappings(prev => [...prev, result.data])
+        
+        // Re-detect missing mappings
+        detectMissingMappings()
+        
+        return true
+      } else {
+        console.error(`❌ Failed to add shipment method mapping:`, result.error)
+        return false
+      }
+    } catch (error) {
+      console.error(`❌ Error adding shipment method mapping:`, error)
+      return false
+    }
+  }
+
   // Mapping Content Functions
   const renderMappingsOrdersContent = () => {
-    const [activeMappingTab, setActiveMappingTab] = useState('Payment')
-    
     return (
       <div className="space-y-6">
         <div>
@@ -2018,37 +2682,63 @@ export default function Home() {
                     </div>
                   </div>
                   
-                  {[
-                    { shopify: 'Visa', netsuite: 'Shopify DTC Payout' },
-                    { shopify: 'Mastercard', netsuite: 'Shopify DTC Payout' },
-                    { shopify: 'unknown', netsuite: '$0 Sales' },
-                    { shopify: 'American Express', netsuite: 'Shopify DTC Payout' },
-                    { shopify: 'Discover', netsuite: 'Shopify DTC Payout' },
-                    { shopify: 'shopify_payments', netsuite: 'Shopify DTC Payout' },
-                    { shopify: '(blank)', netsuite: '$0 Sales' }
-                  ].map((mapping, index) => (
+                       {paymentMappings.map((mapping, index) => (
                     <div key={index} className="grid grid-cols-2 gap-4 p-4 border rounded-lg mb-2">
-                      <div className="text-slate-700">{mapping.shopify}</div>
+                      <div className="text-slate-700 font-mono text-sm">{mapping.shopifyCode}</div>
                       <div className="flex items-center gap-2">
                         <span className="text-slate-400">→</span>
-                        <Select defaultValue={mapping.netsuite}>
-                          <SelectTrigger className="w-full">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Shopify DTC Payout">Shopify DTC Payout</SelectItem>
-                            <SelectItem value="$0 Sales">$0 Sales</SelectItem>
-                            <SelectItem value="Cash">Cash</SelectItem>
-                            <SelectItem value="Credit Card">Credit Card</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <Button variant="ghost" size="sm">
-                          <Database className="h-4 w-4" />
+                        <span className="text-slate-600 font-mono text-sm">{mapping.netsuiteId}</span>
+                        <Button variant="ghost" size="sm" onClick={() => openDeleteConfirmDialog('Payment Method', mapping.shopifyCode, mapping.id.toString())}>
+                          <Trash2 className="h-4 w-4 text-red-500" />
                         </Button>
                       </div>
                     </div>
                   ))}
                 </div>
+
+                {/* Unmapped Payment Methods Section */}
+                {unmappedPaymentMethods.length > 0 && (
+                  <div className="border-t pt-4 mt-4">
+                    <div className="mb-3">
+                      <h4 className="font-medium text-red-700 flex items-center space-x-2">
+                        <span>⚠️ Unmapped Payment Methods</span>
+                      </h4>
+                      <p className="text-sm text-red-600">These payment methods need to be mapped to avoid errors:</p>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4 p-4 bg-red-50 rounded-lg mb-3">
+                      <div className="font-medium text-slate-700 flex items-center space-x-2">
+                        <span>Shopify Payment Method</span>
+                        <Database className="h-4 w-4 text-slate-400" />
+                      </div>
+                      <div className="font-medium text-slate-700 flex items-center space-x-2">
+                        <span>NetSuite Payment Option</span>
+                        <Database className="h-4 w-4 text-slate-400" />
+                      </div>
+                    </div>
+                    
+                    {unmappedPaymentMethods.map((paymentMethod, index) => (
+                      <div key={index} className="grid grid-cols-2 gap-4 p-4 border border-red-200 rounded-lg mb-2 bg-white">
+                        <div className="text-red-700 font-medium">{paymentMethod}</div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-400">→</span>
+                          <Select onValueChange={(netsuiteId) => addPaymentMethodMapping(paymentMethod, netsuiteId)}>
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="Select NetSuite ID..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="177">177 - Shopify DTC Payout</SelectItem>
+                              <SelectItem value="228">228 - Credit Card</SelectItem>
+                              <SelectItem value="0">0 - Unknown/Default</SelectItem>
+                              <SelectItem value="300">300 - PayPal</SelectItem>
+                              <SelectItem value="301">301 - Custom Payment</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -2093,58 +2783,14 @@ export default function Home() {
                     <div className="font-medium text-slate-700">NetSuite Shipment Methods</div>
                   </div>
                   
-                  {[
-                    { shopify: 'Asheville', netsuite: 'Local Pickup (IID: 1035)' },
-                    { shopify: 'Collective', netsuite: 'UPS® Ground (IID: 4)' },
-                    { shopify: 'DHL', netsuite: 'DHL (IID: 1222)' },
-                    { shopify: 'DHL Express Worldwide', netsuite: 'DHL (IID: 1222)' },
-                    { shopify: 'DHL eCommerce Parcel Direct', netsuite: 'Economy International (IID: 1036)' },
-                    { shopify: 'DHL eCommerce Parcel Standard', netsuite: 'Economy International (IID: 1036)' },
-                    { shopify: 'Economy International', netsuite: 'Economy International (IID: 1036)' },
-                    { shopify: 'First Class Package International', netsuite: 'Flate Rate (IID: 288)' },
-                    { shopify: 'Flat Rate', netsuite: 'Flate Rate (IID: 288)' },
-                    { shopify: 'Flat Rate (1lb. +)', netsuite: 'Flate Rate (IID: 288)' },
-                    { shopify: 'Flat Rate Shipping', netsuite: 'Flate Rate (IID: 288)' },
-                    { shopify: 'Flat Rate+', netsuite: 'Flate Rate (IID: 288)' },
-                    { shopify: 'Flat Rate+ (1lb. +)', netsuite: 'Flate Rate (IID: 288)' },
-                    { shopify: 'Free Shipping', netsuite: 'Free Shipping (IID: 293)' },
-                    { shopify: 'Free Shipping+', netsuite: 'Free Shipping (IID: 293)' },
-                    { shopify: 'Ground Advantage', netsuite: 'UPS® Ground (IID: 4)' },
-                    { shopify: 'Pirani Life - AVL', netsuite: 'Local Pickup (IID: 1035)' },
-                    { shopify: 'Shipped by Seller: Standard Shipping', netsuite: 'Flate Rate (IID: 288)' },
-                    { shopify: 'Shipping', netsuite: 'Free Shipping (IID: 293)' },
-                    { shopify: 'Shipping Fee (Canada)', netsuite: 'Free Shipping (IID: 293)' },
-                    { shopify: 'Shipping fee (8-pack SD)', netsuite: 'Flate Rate (IID: 288)' },
-                    { shopify: 'Standard Shipping', netsuite: 'Free Shipping (IID: 293)' },
-                    { shopify: 'Standard Shipping 1lb +', netsuite: 'Flate Rate (IID: 288)' },
-                    { shopify: 'Standard shipping', netsuite: 'Flate Rate (IID: 288)' },
-                    { shopify: 'UPS', netsuite: 'UPS® Ground (IID: 4)' },
-                    { shopify: 'UPS Ground', netsuite: 'UPS® Ground (IID: 4)' },
-                    { shopify: 'UPS Worldwide Expedited®', netsuite: 'UPS Worldwide Expedited® (IID: 1238)' },
-                    { shopify: 'UPS® Standard', netsuite: 'UPS® Ground (IID: 4)' },
-                    { shopify: 'Worldwide', netsuite: 'Flate Rate (IID: 288)' },
-                    { shopify: 'standard shipping', netsuite: 'Flate Rate (IID: 288)' }
-                  ].map((mapping, index) => (
+                  {shipmentMappings.map((mapping, index) => (
                     <div key={index} className="grid grid-cols-2 gap-4 p-4 border rounded-lg mb-2">
-                      <div className="text-slate-700">{mapping.shopify}</div>
+                      <div className="text-slate-700 font-mono text-sm">{mapping.shopifyCode}</div>
                       <div className="flex items-center gap-2">
                         <span className="text-slate-400">→</span>
-                        <Select defaultValue={mapping.netsuite}>
-                          <SelectTrigger className="w-full">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Economy International (IID: 1036)">Economy International (IID: 1036)</SelectItem>
-                            <SelectItem value="Local Pickup (IID: 1035)">Local Pickup (IID: 1035)</SelectItem>
-                            <SelectItem value="UPS® Ground (IID: 4)">UPS® Ground (IID: 4)</SelectItem>
-                            <SelectItem value="DHL (IID: 1222)">DHL (IID: 1222)</SelectItem>
-                            <SelectItem value="Flate Rate (IID: 288)">Flate Rate (IID: 288)</SelectItem>
-                            <SelectItem value="Free Shipping (IID: 293)">Free Shipping (IID: 293)</SelectItem>
-                            <SelectItem value="UPS Worldwide Expedited® (IID: 1238)">UPS Worldwide Expedited® (IID: 1238)</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <Button variant="ghost" size="sm">
-                          <Database className="h-4 w-4" />
+                        <span className="text-slate-600 font-mono text-sm">{mapping.netsuiteId}</span>
+                        <Button variant="ghost" size="sm" onClick={() => openDeleteConfirmDialog('Shipment Method', mapping.shopifyCode, mapping.id.toString())}>
+                          <Trash2 className="h-4 w-4 text-red-500" />
                         </Button>
                       </div>
                     </div>
@@ -2173,9 +2819,15 @@ export default function Home() {
 
         {/* Order Mappings Section */}
         {activeMappingTab === 'Order' && (
-          <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Order Mappings</CardTitle>
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-2xl font-bold text-slate-800 mb-2">Order mappings</h2>
+              <p className="text-slate-600">Configure how Shopify orders map to NetSuite transactions.</p>
+            </div>
+            
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div></div>
           <div className="flex space-x-2">
             <Button variant="outline" size="sm">
               <Database className="h-4 w-4 mr-2" /> Reload NetSuite lists
@@ -2189,7 +2841,7 @@ export default function Home() {
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-            <div className="grid grid-cols-4 gap-4 p-4 bg-slate-50 rounded-lg text-sm font-medium text-slate-700">
+                  <div className="grid grid-cols-5 gap-4 p-4 bg-slate-50 rounded-lg text-sm font-medium text-slate-700">
               <div className="flex items-center space-x-2">
                 <span>Mapping type</span>
               </div>
@@ -2201,66 +2853,61 @@ export default function Home() {
                 <Database className="h-4 w-4" />
                 <span>NetSuite field</span>
               </div>
-              <div>Apply to all accounts</div>
-            </div>
+                    <div>Apply to all accounts</div>
+                    <div>Delete</div>
+                  </div>
             
-            {[
-              { type: 'Fixed', shopify: 'Online Sales (IID: 11)', netsuite: 'Class', apply: false },
-              { type: 'Fixed', shopify: 'Unchecked', netsuite: 'Credit Card Approved', apply: false },
-              { type: 'Fixed', shopify: '6 Pirani Life : Websales (IID: 1833)', netsuite: 'Location', apply: false },
-              { type: 'Fixed', shopify: 'Order ID', netsuite: 'P/N Ref.', apply: false },
-              { type: 'Fixed', shopify: 'Checked', netsuite: 'Ship Complete', apply: false },
-              { type: 'Fixed', shopify: 'Pending Fulfillment', netsuite: 'Status', apply: false },
-              { type: 'Fixed', shopify: '1. Direct to Consumer (IID: 28)', netsuite: 'Partner', apply: false },
-              { type: 'Fixed', shopify: 'Pirani Website (IID: 12)', netsuite: 'PO #', apply: false },
-              { type: 'Fixed', shopify: '2. Urgent (IID: 1)', netsuite: 'custbody_pir_replacement_order', apply: false },
-              { type: 'Fixed', shopify: 'Custom: id', netsuite: 'custbody_pir_sample_order', apply: false },
-              { type: 'Fixed', shopify: 'Location ID - Click to view/edit.', netsuite: 'custbody_pir_shop_order_date', apply: false },
-              { type: 'Fixed', shopify: 'Discount Code - Click to view/edit.', netsuite: 'custbody_pir_so_category', apply: false },
-              { type: 'Fixed', shopify: '_omit', netsuite: 'custbody_sales_channel', apply: false }
-            ].map((mapping, index) => (
-              <div key={index} className="grid grid-cols-4 gap-4 p-4 border rounded-lg">
-                <div className="flex items-center space-x-2">
-                  <input type="checkbox" defaultChecked className="w-4 h-4" />
-                  <Select defaultValue={mapping.type}>
-                    <SelectTrigger className="w-32">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Fixed">Fixed</SelectItem>
-                      <SelectItem value="Order Header">Order Header</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="text-slate-700">{mapping.shopify}</div>
-                <div className="flex items-center space-x-2">
-                  <span className="text-slate-400">→</span>
-                  <Select defaultValue={mapping.netsuite}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Class">Class</SelectItem>
-                      <SelectItem value="Credit Card Approved">Credit Card Approved</SelectItem>
-                      <SelectItem value="Location">Location</SelectItem>
-                      <SelectItem value="P/N Ref.">P/N Ref.</SelectItem>
-                      <SelectItem value="Ship Complete">Ship Complete</SelectItem>
-                      <SelectItem value="Status">Status</SelectItem>
-                      <SelectItem value="Partner">Partner</SelectItem>
-                      <SelectItem value="PO #">PO #</SelectItem>
-                      <SelectItem value="custbody_pir_replacement_order">custbody_pir_replacement_order</SelectItem>
-                      <SelectItem value="custbody_pir_sample_order">custbody_pir_sample_order</SelectItem>
-                      <SelectItem value="custbody_pir_shop_order_date">custbody_pir_shop_order_date</SelectItem>
-                      <SelectItem value="custbody_pir_so_category">custbody_pir_so_category</SelectItem>
-                      <SelectItem value="custbody_sales_channel">custbody_sales_channel</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex items-center">
-                  <input type="checkbox" defaultChecked={mapping.apply} className="w-4 h-4" />
-                </div>
-              </div>
-            ))}
+                       {orderMappings.map((mapping, index) => (
+                         <div key={index} className="grid grid-cols-5 gap-4 p-4 border rounded-lg">
+                           <div className="flex items-center space-x-2">
+                             <input type="checkbox" defaultChecked className="w-4 h-4" />
+                             <Select defaultValue={mapping.mappingType}>
+                               <SelectTrigger className="w-32">
+                                 <SelectValue />
+                               </SelectTrigger>
+                               <SelectContent>
+                                 <SelectItem value="Fixed">Fixed</SelectItem>
+                                 <SelectItem value="Order Header">Order Header</SelectItem>
+                                 <SelectItem value="Order Header with Translation">Order Header with Translation</SelectItem>
+                                 <SelectItem value="Custom">Custom</SelectItem>
+                               </SelectContent>
+                             </Select>
+                           </div>
+                           <div className="text-slate-700 font-mono text-sm">
+                             {mapping.shopifyCode || mapping.shopifyValue}
+                           </div>
+                           <div className="flex flex-col space-y-2">
+                             <div className="flex items-center space-x-2">
+                               <span className="text-slate-400">→</span>
+                               <span className="text-slate-600 font-mono text-sm">{mapping.netsuiteId}</span>
+                             </div>
+                             {/* Show custom field input when "Custom" is selected */}
+                             {mapping.mappingType === 'Custom' && (
+                               <div className="flex items-center space-x-2 ml-6">
+                                 <span className="text-sm text-slate-600">Custom field ID:</span>
+                                 <Input 
+                                   placeholder="e.g., custbody_custom_field"
+                                   value={customFields[`order-${index}`] || ''}
+                                   onChange={(e) => handleCustomFieldChange(`order-${index}`, e.target.value)}
+                                   className="w-full"
+                                 />
+                               </div>
+                             )}
+                           </div>
+                           <div className="flex items-center">
+                             {mapping.applyToAllAccounts === 'N/A' ? (
+                               <span className="text-slate-500 text-sm">N/A</span>
+                             ) : (
+                               <input type="checkbox" defaultChecked={mapping.applyToAllAccounts} className="w-4 h-4" />
+                             )}
+                           </div>
+                           <div className="flex items-center justify-center">
+                             <Button variant="ghost" size="sm" onClick={() => openDeleteConfirmDialog('Order Mapping', mapping.shopifyCode || mapping.shopifyValue || '', mapping.id.toString())}>
+                               <Trash2 className="h-4 w-4 text-red-500" />
+                             </Button>
+                           </div>
+                         </div>
+                       ))}
           </div>
           <div className="flex justify-between items-center mt-4">
             <a href="#" className="text-sm text-blue-600 hover:underline">Need help?</a>
@@ -2269,7 +2916,8 @@ export default function Home() {
             </Button>
           </div>
         </CardContent>
-          </Card>
+            </Card>
+          </div>
         )}
 
         {/* Order Item Mappings Section */}
@@ -2290,7 +2938,7 @@ export default function Home() {
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-            <div className="grid grid-cols-4 gap-4 p-4 bg-slate-50 rounded-lg text-sm font-medium text-slate-700">
+                  <div className="grid grid-cols-5 gap-4 p-4 bg-slate-50 rounded-lg text-sm font-medium text-slate-700">
               <div className="flex items-center space-x-2">
                 <span>Mapping type</span>
               </div>
@@ -2302,49 +2950,53 @@ export default function Home() {
                 <Database className="h-4 w-4" />
                 <span>NetSuite field</span>
               </div>
-              <div>Apply to all accounts</div>
-            </div>
+                    <div>Apply to all accounts</div>
+                    <div>Delete</div>
+                  </div>
             
-            {[
-              { type: 'Fixed', shopify: 'Base Rate (MSRP) (IID: 1)', netsuite: 'Price Level', apply: false },
-              { type: 'Order Line', shopify: 'Custom: properties._pca_preview_url', netsuite: 'custcol_custom_image_url', apply: false },
-              { type: 'Order Line', shopify: 'Custom: properties._pca_barcode', netsuite: 'custcol_customization_barcode', apply: false },
-              { type: 'Order Line', shopify: 'Custom: properties.CustomizationType', netsuite: 'custcol_item_notes', apply: false },
-              { type: 'Order Line', shopify: 'Custom: properties.CustomizationValue', netsuite: 'custcol_item_notes_2', apply: false },
-              { type: 'Order Line', shopify: 'Custom: properties.CustomizationFont', netsuite: 'custcol_item_notes_font', apply: false }
-            ].map((mapping, index) => (
-              <div key={index} className="grid grid-cols-4 gap-4 p-4 border rounded-lg">
+                     {orderItemMappings.map((mapping, index) => (
+              <div key={index} className="grid grid-cols-5 gap-4 p-4 border rounded-lg">
                 <div className="flex items-center space-x-2">
                   <input type="checkbox" defaultChecked className="w-4 h-4" />
-                  <Select defaultValue={mapping.type}>
+                  <Select defaultValue={mapping.mappingType}>
                     <SelectTrigger className="w-32">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="Fixed">Fixed</SelectItem>
                       <SelectItem value="Order Line">Order Line</SelectItem>
+                      <SelectItem value="Custom">Custom</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="text-slate-700">{mapping.shopify}</div>
-                <div className="flex items-center space-x-2">
-                  <span className="text-slate-400">→</span>
-                  <Select defaultValue={mapping.netsuite}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Price Level">Price Level</SelectItem>
-                      <SelectItem value="custcol_custom_image_url">custcol_custom_image_url</SelectItem>
-                      <SelectItem value="custcol_customization_barcode">custcol_customization_barcode</SelectItem>
-                      <SelectItem value="custcol_item_notes">custcol_item_notes</SelectItem>
-                      <SelectItem value="custcol_item_notes_2">custcol_item_notes_2</SelectItem>
-                      <SelectItem value="custcol_item_notes_font">custcol_item_notes_font</SelectItem>
-                    </SelectContent>
-                  </Select>
+                <div className="text-slate-700 font-mono text-sm">
+                  {mapping.shopifyCode || mapping.shopifyValue}
+                </div>
+                <div className="flex flex-col space-y-2">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-slate-400">→</span>
+                    <span className="text-slate-600 font-mono text-sm">{mapping.netsuiteId}</span>
+                  </div>
+                  {/* Show custom field input when "Custom" is selected */}
+                  {mapping.mappingType === 'Custom' && (
+                    <div className="flex items-center space-x-2 ml-6">
+                      <span className="text-sm text-slate-600">Custom field ID:</span>
+                      <Input 
+                        placeholder="e.g., custcol_custom_field"
+                        value={customFields[`orderitem-${index}`] || ''}
+                        onChange={(e) => handleCustomFieldChange(`orderitem-${index}`, e.target.value)}
+                        className="w-full"
+                      />
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center">
-                  <input type="checkbox" defaultChecked={mapping.apply} className="w-4 h-4" />
+                  <input type="checkbox" defaultChecked={mapping.applyToAllAccounts} className="w-4 h-4" />
+                </div>
+                <div className="flex items-center justify-center">
+                  <Button variant="ghost" size="sm" onClick={() => openDeleteConfirmDialog('Order Item Mapping', mapping.shopifyCode || mapping.shopifyValue || '', mapping.id.toString())}>
+                    <Trash2 className="h-4 w-4 text-red-500" />
+                  </Button>
                 </div>
               </div>
             ))}
@@ -2361,9 +3013,15 @@ export default function Home() {
 
         {/* Customer Mappings Section */}
         {activeMappingTab === 'Customer' && (
-          <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Customer Mappings</CardTitle>
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-2xl font-bold text-slate-800 mb-2">Customer mappings</h2>
+              <p className="text-slate-600">Configure how Shopify customer data maps to NetSuite fields.</p>
+            </div>
+            
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div></div>
           <div className="flex space-x-2">
             <Button variant="outline" size="sm">
               <Database className="h-4 w-4 mr-2" /> Reload NetSuite lists
@@ -2377,7 +3035,7 @@ export default function Home() {
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-            <div className="grid grid-cols-4 gap-4 p-4 bg-slate-50 rounded-lg text-sm font-medium text-slate-700">
+                  <div className="grid grid-cols-5 gap-4 p-4 bg-slate-50 rounded-lg text-sm font-medium text-slate-700">
               <div className="flex items-center space-x-2">
                 <span>Mapping type</span>
               </div>
@@ -2389,49 +3047,39 @@ export default function Home() {
                 <Database className="h-4 w-4" />
                 <span>NetSuite field</span>
               </div>
-              <div>Apply to all accounts</div>
-            </div>
+                    <div>Apply to all accounts</div>
+                    <div>Delete</div>
+                  </div>
             
-            {[
-              { type: 'Fixed', shopify: '6 Pirani Life : Websales (IID: 1833)', netsuite: 'Partner', apply: false },
-              { type: 'Fixed', shopify: 'Base Rate (MSRP) (IID: 1)', netsuite: 'Price Level', apply: false },
-              { type: 'Fixed', shopify: 'Pirani Life, Inc (IID: 2)', netsuite: 'Subsidiary', apply: false },
-              { type: 'Fixed', shopify: '1. Direct to Consumer (IID: 28)', netsuite: 'custentity_customer_category', apply: false },
-              { type: 'Fixed', shopify: 'Direct to Consumer (IID: 1)', netsuite: 'custentity_customer_sales_channel', apply: false },
-              { type: 'Fixed', shopify: 'Pirani Website (IID: 12)', netsuite: 'custentity_pir_cust_source', apply: false }
-            ].map((mapping, index) => (
-              <div key={index} className="grid grid-cols-4 gap-4 p-4 border rounded-lg">
+                       {customerMappings.map((mapping, index) => (
+              <div key={index} className="grid grid-cols-5 gap-4 p-4 border rounded-lg">
                 <div className="flex items-center space-x-2">
-                  <input type="checkbox" defaultChecked className="w-4 h-4" />
-                  <Select defaultValue={mapping.type}>
+                  <input type="checkbox" defaultChecked={mapping.isActive} className="w-4 h-4" />
+                  <Select defaultValue={mapping.mappingType}>
                     <SelectTrigger className="w-32">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="Fixed">Fixed</SelectItem>
-                      <SelectItem value="Customer">Customer</SelectItem>
+                      <SelectItem value="Customer Field">Customer Field</SelectItem>
+                      <SelectItem value="Custom">Custom</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="text-slate-700">{mapping.shopify}</div>
+                <div className="text-slate-700 font-mono text-sm">
+                  {mapping.shopifyCode || mapping.shopifyValue}
+                </div>
                 <div className="flex items-center space-x-2">
                   <span className="text-slate-400">→</span>
-                  <Select defaultValue={mapping.netsuite}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Partner">Partner</SelectItem>
-                      <SelectItem value="Price Level">Price Level</SelectItem>
-                      <SelectItem value="Subsidiary">Subsidiary</SelectItem>
-                      <SelectItem value="custentity_customer_category">custentity_customer_category</SelectItem>
-                      <SelectItem value="custentity_customer_sales_channel">custentity_customer_sales_channel</SelectItem>
-                      <SelectItem value="custentity_pir_cust_source">custentity_pir_cust_source</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <span className="text-slate-600 font-mono text-sm">{mapping.netsuiteId}</span>
                 </div>
                 <div className="flex items-center">
-                  <input type="checkbox" defaultChecked={mapping.apply} className="w-4 h-4" />
+                  <input type="checkbox" defaultChecked={mapping.applyToAllAccounts} className="w-4 h-4" />
+                </div>
+                <div className="flex items-center justify-center">
+                  <Button variant="ghost" size="sm" onClick={() => openDeleteConfirmDialog('Customer Mapping', mapping.shopifyCode || mapping.shopifyValue || '', mapping.id.toString())}>
+                    <Trash2 className="h-4 w-4 text-red-500" />
+                  </Button>
                 </div>
               </div>
             ))}
@@ -2443,8 +3091,30 @@ export default function Home() {
             </Button>
           </div>
         </CardContent>
-          </Card>
+            </Card>
+          </div>
         )}
+
+        {/* Delete Confirmation Dialog */}
+        <Dialog open={deleteConfirmDialog.isOpen} onOpenChange={closeDeleteConfirmDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Confirm Delete</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <p>Are you sure you want to delete this {deleteConfirmDialog.itemType}?</p>
+              <p className="text-sm text-slate-600">{deleteConfirmDialog.itemName}</p>
+              <div className="flex justify-end space-x-2">
+                <Button variant="outline" onClick={closeDeleteConfirmDialog}>
+                  Cancel
+                </Button>
+                <Button variant="destructive" onClick={confirmDelete}>
+                  Yes, Delete
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     )
   }
@@ -2512,6 +3182,58 @@ export default function Home() {
       <div className="flex-1 p-8 overflow-auto">
         {renderContent()}
       </div>
+
+      {/* Mapping Error Dialog - Global overlay */}
+      <Dialog open={mappingErrorDialog.isOpen} onOpenChange={closeMappingErrorDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span className="text-red-600">⚠</span>
+              Mapping Error Details
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="bg-slate-50 p-4 rounded-lg">
+              <h3 className="font-semibold text-lg">{mappingErrorDialog.orderName}</h3>
+              <p className="text-sm text-slate-600">This order has mapping errors that need to be resolved before it can be processed.</p>
+            </div>
+            
+            <div className="space-y-3">
+              <h4 className="font-semibold text-slate-800">Issues Found:</h4>
+              {mappingErrorDialog.errors.map((error, index) => (
+                <div key={index} className="border border-red-200 rounded-lg p-3 bg-red-50">
+                  <div className="flex items-start gap-2">
+                    <span className="text-red-600 mt-0.5">⚠</span>
+                    <div className="flex-1">
+                      <p className="font-medium text-red-800">{error.errorMessage}</p>
+                      <div className="mt-2 text-xs text-red-600">
+                        <strong>Type:</strong> {error.missingMapping.type} | <strong>Shopify Value:</strong> {error.missingMapping.shopifyValue}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h4 className="font-semibold text-blue-800 mb-2">How to Fix:</h4>
+              <ol className="text-sm text-blue-700 space-y-1">
+                <li>1. Go to the <strong>Mappings</strong> section in the left sidebar</li>
+                <li>2. Look for the <strong>"Unmapped Payment Methods"</strong> or <strong>"Unmapped Shipment Methods"</strong> section</li>
+                <li>3. Select the appropriate NetSuite ID for each unmapped item</li>
+                <li>4. The mapping will be automatically saved to the database</li>
+                <li>5. Return to this order - the error should be resolved</li>
+              </ol>
+            </div>
+
+            <div className="flex justify-end">
+              <Button onClick={closeMappingErrorDialog}>
+                Got it
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 
