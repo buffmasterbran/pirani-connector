@@ -1948,89 +1948,56 @@ export default function Home() {
   )
 
   // Mapping Content Functions
-  const renderMappingsOrdersContent = () => (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-slate-800 mb-2">Order Mappings</h2>
-        <p className="text-slate-600">Configure how Shopify orders map to NetSuite transactions.</p>
-      </div>
-      
-      {/* Navigation Tabs */}
-      <div className="flex space-x-1 border-b">
-        {['Payment', 'Shipment', 'Order', 'Order Item', 'Customer'].map((tab) => (
-          <Button
-            key={tab}
-            variant="ghost"
-            className={`px-4 py-2 text-sm font-medium ${
-              tab === 'Order Item' 
-                ? 'border-b-2 border-blue-600 text-blue-600 bg-blue-50' 
-                : 'text-slate-600 hover:text-slate-800'
-            }`}
-          >
-            {tab}
-          </Button>
-        ))}
-      </div>
+  const renderMappingsOrdersContent = () => {
+    const [activeMappingTab, setActiveMappingTab] = useState('Payment')
+    
+    return (
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-800 mb-2">Order Mappings</h2>
+          <p className="text-slate-600">Configure how Shopify orders map to NetSuite transactions.</p>
+        </div>
+        
+        {/* Navigation Tabs */}
+        <div className="flex space-x-1 border-b">
+          {['Payment', 'Shipment', 'Order', 'Order Item', 'Customer'].map((tab) => (
+            <Button
+              key={tab}
+              variant="ghost"
+              onClick={() => setActiveMappingTab(tab)}
+              className={`px-4 py-2 text-sm font-medium ${
+                tab === activeMappingTab
+                  ? 'border-b-2 border-blue-600 text-blue-600 bg-blue-50' 
+                  : 'text-slate-600 hover:text-slate-800'
+              }`}
+            >
+              {tab}
+            </Button>
+          ))}
+        </div>
 
-      {/* Payment Methods Section */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Payment Methods</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <span className="text-sm text-slate-600">Default payment method to post when no match found</span>
-                <Database className="h-4 w-4 text-slate-400" />
-              </div>
-              <div className="flex items-center space-x-2">
-                <Select defaultValue="do-not-post">
-                  <SelectTrigger className="w-48">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="do-not-post">Do Not Post</SelectItem>
-                    <SelectItem value="cash">Cash</SelectItem>
-                    <SelectItem value="credit-card">Credit Card</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button variant="ghost" size="sm">
-                  <Database className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-            
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-lg">
-                <div className="font-medium text-slate-700 flex items-center space-x-2">
-                  <span>Shopify Payment Method</span>
-                  <Database className="h-4 w-4 text-slate-400" />
-                </div>
-                <div className="font-medium text-slate-700">NetSuite Payment Option</div>
-              </div>
-              
-              {[
-                { shopify: 'Visa', netsuite: 'Shopify DTC Payout' },
-                { shopify: 'Mastercard', netsuite: 'Shopify DTC Payout' },
-                { shopify: 'American Express', netsuite: 'Shopify DTC Payout' },
-                { shopify: 'Discover', netsuite: 'Shopify DTC Payout' },
-                { shopify: 'shopify_payments', netsuite: 'Shopify DTC Payout' },
-                { shopify: 'unknown', netsuite: '$0 Sales' },
-                { shopify: '(blank)', netsuite: '$0 Sales' }
-              ].map((mapping, index) => (
-                <div key={index} className="grid grid-cols-2 gap-4 p-4 border rounded-lg">
-                  <div className="text-slate-700">{mapping.shopify}</div>
-                  <div className="flex items-center gap-2">
-                    <Select defaultValue={mapping.netsuite}>
-                      <SelectTrigger className="w-full">
+        {/* Payment Methods Section */}
+        {activeMappingTab === 'Payment' && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Payment Methods</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-sm text-slate-600">Default payment method to post when no match found</span>
+                    <Database className="h-4 w-4 text-slate-400" />
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Select defaultValue="do-not-post">
+                      <SelectTrigger className="w-48">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Shopify DTC Payout">Shopify DTC Payout</SelectItem>
-                        <SelectItem value="$0 Sales">$0 Sales</SelectItem>
-                        <SelectItem value="Cash">Cash</SelectItem>
-                        <SelectItem value="Credit Card">Credit Card</SelectItem>
+                        <SelectItem value="do-not-post">Do Not Post</SelectItem>
+                        <SelectItem value="cash">Cash</SelectItem>
+                        <SelectItem value="credit-card">Credit Card</SelectItem>
                       </SelectContent>
                     </Select>
                     <Button variant="ghost" size="sm">
@@ -2038,14 +2005,58 @@ export default function Home() {
                     </Button>
                   </div>
                 </div>
-              ))}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+                
+                <div className="border-t pt-4">
+                  <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-lg mb-3">
+                    <div className="font-medium text-slate-700 flex items-center space-x-2">
+                      <span>Shopify Payment Method</span>
+                      <Database className="h-4 w-4 text-slate-400" />
+                    </div>
+                    <div className="font-medium text-slate-700 flex items-center space-x-2">
+                      <span>NetSuite Payment Option</span>
+                      <Database className="h-4 w-4 text-slate-400" />
+                    </div>
+                  </div>
+                  
+                  {[
+                    { shopify: 'Visa', netsuite: 'Shopify DTC Payout' },
+                    { shopify: 'Mastercard', netsuite: 'Shopify DTC Payout' },
+                    { shopify: 'unknown', netsuite: '$0 Sales' },
+                    { shopify: 'American Express', netsuite: 'Shopify DTC Payout' },
+                    { shopify: 'Discover', netsuite: 'Shopify DTC Payout' },
+                    { shopify: 'shopify_payments', netsuite: 'Shopify DTC Payout' },
+                    { shopify: '(blank)', netsuite: '$0 Sales' }
+                  ].map((mapping, index) => (
+                    <div key={index} className="grid grid-cols-2 gap-4 p-4 border rounded-lg mb-2">
+                      <div className="text-slate-700">{mapping.shopify}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-400">→</span>
+                        <Select defaultValue={mapping.netsuite}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Shopify DTC Payout">Shopify DTC Payout</SelectItem>
+                            <SelectItem value="$0 Sales">$0 Sales</SelectItem>
+                            <SelectItem value="Cash">Cash</SelectItem>
+                            <SelectItem value="Credit Card">Credit Card</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button variant="ghost" size="sm">
+                          <Database className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
-      {/* Shipment Methods Section */}
-      <Card>
+        {/* Shipment Methods Section */}
+        {activeMappingTab === 'Shipment' && (
+          <Card>
         <CardHeader>
           <CardTitle>Shipment Methods</CardTitle>
         </CardHeader>
@@ -2119,10 +2130,12 @@ export default function Home() {
             </div>
           </div>
         </CardContent>
-      </Card>
+          </Card>
+        )}
 
-      {/* Order Mappings Section */}
-      <Card>
+        {/* Order Mappings Section */}
+        {activeMappingTab === 'Order' && (
+          <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Order Mappings</CardTitle>
           <div className="flex space-x-2">
@@ -2218,10 +2231,12 @@ export default function Home() {
             </Button>
           </div>
         </CardContent>
-      </Card>
+          </Card>
+        )}
 
-      {/* Order Item Mappings Section */}
-      <Card>
+        {/* Order Item Mappings Section */}
+        {activeMappingTab === 'Order Item' && (
+          <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Order Item Mappings</CardTitle>
           <div className="flex space-x-2">
@@ -2303,10 +2318,12 @@ export default function Home() {
             </Button>
           </div>
         </CardContent>
-      </Card>
+          </Card>
+        )}
 
-      {/* Customer Mappings Section */}
-      <Card>
+        {/* Customer Mappings Section */}
+        {activeMappingTab === 'Customer' && (
+          <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Customer Mappings</CardTitle>
           <div className="flex space-x-2">
@@ -2388,9 +2405,11 @@ export default function Home() {
             </Button>
           </div>
         </CardContent>
-      </Card>
-    </div>
-  )
+          </Card>
+        )}
+      </div>
+    )
+  }
 
   const renderMappingsProductsContent = () => (
     <div className="space-y-6">
