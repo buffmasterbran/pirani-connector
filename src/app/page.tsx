@@ -16,7 +16,7 @@ import { Loader, LoaderWithText } from '@/components/Loader'
 import { Download, Database, ArrowUpRight, Settings, Eye, EyeOff, Filter, Trash2, ChevronDown } from 'lucide-react'
 import { 
   validateOrderMappings, 
-  getUnmappedPaymentMethods,
+  getUnmappedPaymentMethods, 
   getUnmappedShipmentMethods,
   type MappingError,
   type PaymentMethodMapping,
@@ -150,6 +150,8 @@ export default function Home() {
   const [paymentMappings, setPaymentMappings] = useState<PaymentMethodMapping[]>([])
   const [paymentInputValues, setPaymentInputValues] = useState<{[key: string]: string}>({})
   const [unmappedPaymentInputValues, setUnmappedPaymentInputValues] = useState<{[key: string]: string}>({})
+  const [shipmentInputValues, setShipmentInputValues] = useState<{[key: string]: string}>({})
+  const [unmappedShipmentInputValues, setUnmappedShipmentInputValues] = useState<{[key: string]: string}>({})
 
   const [shipmentMappings, setShipmentMappings] = useState<ShipmentMethodMapping[]>([
     { id: '1', shopifyCode: 'free_shipping', netsuiteId: '293', isActive: true },
@@ -689,6 +691,50 @@ export default function Home() {
               }
             } else {
               console.log(`✅ Payment method already mapped: ${paymentMethod}`)
+            }
+          }
+        }
+        
+        // Auto-create shipment method mappings for unmapped shipping methods
+        if (order.shipping_lines && Array.isArray(order.shipping_lines)) {
+          for (const shippingLine of order.shipping_lines) {
+            if (shippingLine.code) {
+              // Check if this shipping method already has a mapping
+              const existingMapping = shipmentMappings.find(m => m.shopifyCode === shippingLine.code)
+              if (!existingMapping) {
+                console.log(`🔄 Auto-creating mapping for shipping method: ${shippingLine.code}`)
+                // Create mapping in database with placeholder NetSuite ID
+                try {
+                  const response = await fetch('/api/mappings/shipment-methods', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                      shopifyCode: shippingLine.code,
+                      netsuiteId: 'TBD', // Placeholder - user needs to update
+                      isActive: false // Inactive until user provides real NetSuite ID
+                    })
+                  })
+                  
+                  const result = await response.json()
+                  if (result.success) {
+                    console.log(`✅ Created shipping mapping in database: ${shippingLine.code}`)
+                    // Reload shipment mappings to get the updated list
+                    const mappingsResponse = await fetch('/api/mappings/shipment-methods')
+                    const mappingsResult = await mappingsResponse.json()
+                    if (mappingsResult.success) {
+                      setShipmentMappings(mappingsResult.data)
+                    }
+                  } else {
+                    console.error(`❌ Failed to create shipping mapping:`, result.error)
+                  }
+                } catch (error) {
+                  console.error(`❌ Error creating shipping mapping:`, error)
+                }
+              } else {
+                console.log(`✅ Shipping method already mapped: ${shippingLine.code}`)
+              }
             }
           }
         }
@@ -2697,6 +2743,47 @@ export default function Home() {
     }
   }
 
+  // Update existing shipment method mapping
+  const updateShipmentMethodMapping = async (mappingId: string, shopifyCode: string, netsuiteId: string) => {
+    try {
+      const response = await fetch(`/api/mappings/shipment-methods/${mappingId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          shopifyCode,
+          netsuiteId,
+          isActive: true
+        })
+      })
+
+      const result = await response.json()
+      
+      if (result.success) {
+        console.log(`✅ Updated shipment method mapping: ${shopifyCode} → ${netsuiteId}`)
+        
+        // Update local state
+        setShipmentMappings(prev => prev.map(mapping => 
+          mapping.id.toString() === mappingId 
+            ? { ...mapping, netsuiteId, isActive: true }
+            : mapping
+        ))
+        
+        // Re-detect missing mappings
+        detectMissingMappings()
+        
+        return true
+      } else {
+        console.error(`❌ Failed to update shipment method mapping:`, result.error)
+        return false
+      }
+    } catch (error) {
+      console.error(`❌ Error updating shipment method mapping:`, error)
+      return false
+    }
+  }
+
   // Mapping Content Functions
   const renderMappingsOrdersContent = () => {
     return (
@@ -2734,47 +2821,85 @@ export default function Home() {
             <CardContent>
               <div className="space-y-4">
                 {/* Unmapped Shipment Methods Section - MOVED TO TOP */}
-                {unmappedShipmentMethods.length > 0 && (
+                {(unmappedShipmentMethods.length > 0 || shipmentMappings.filter(mapping => mapping.netsuiteId === 'TBD').length > 0) && (
                   <div className="border-b pb-4 mb-4">
                     <div className="mb-3">
                       <h4 className="font-medium text-red-700 flex items-center space-x-2">
                         <span>⚠️ Unmapped Shipment Methods</span>
                       </h4>
                       <p className="text-sm text-red-600">These shipment methods need to be mapped to avoid errors:</p>
-                    </div>
-                    
+                </div>
+                
                     <div className="grid grid-cols-2 gap-4 p-4 bg-red-50 rounded-lg mb-3">
                       <div className="font-medium text-slate-700">Shopify Shipment Method</div>
                       <div className="font-medium text-slate-700">NetSuite Shipment Option</div>
-                    </div>
-                    
+                  </div>
+                  
+                    {/* Show unmapped shipment methods from orders */}
                     {unmappedShipmentMethods.map((shipmentMethod, index) => (
-                      <div key={index} className="grid grid-cols-2 gap-4 p-4 border border-red-200 rounded-lg mb-2 bg-white">
+                      <div key={`unmapped-${index}`} className="grid grid-cols-2 gap-4 p-4 border border-red-200 rounded-lg mb-2 bg-white">
                         <div className="text-red-700 font-medium">{shipmentMethod}</div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-slate-400">→</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-400">→</span>
                           <Input 
                             placeholder="Enter NetSuite Internal ID"
                             className="flex-1"
+                            value={unmappedShipmentInputValues[`unmapped-${shipmentMethod}`] || ''}
+                            onChange={(e) => setUnmappedShipmentInputValues(prev => ({ ...prev, [`unmapped-${shipmentMethod}`]: e.target.value }))}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') {
-                                const input = e.target as HTMLInputElement;
-                                const netsuiteId = input.value.trim();
+                                const netsuiteId = unmappedShipmentInputValues[`unmapped-${shipmentMethod}`]?.trim();
                                 if (netsuiteId) {
                                   addShipmentMethodMapping(shipmentMethod, netsuiteId);
-                                  input.value = '';
+                                  setUnmappedShipmentInputValues(prev => ({ ...prev, [`unmapped-${shipmentMethod}`]: '' }));
                                 }
                               }
                             }}
                           />
                           <Button 
                             size="sm" 
-                            onClick={(e) => {
-                              const input = e.currentTarget.previousElementSibling?.previousElementSibling as HTMLInputElement;
-                              const netsuiteId = input.value.trim();
+                            onClick={() => {
+                              const netsuiteId = unmappedShipmentInputValues[`unmapped-${shipmentMethod}`]?.trim();
                               if (netsuiteId) {
                                 addShipmentMethodMapping(shipmentMethod, netsuiteId);
-                                input.value = '';
+                                setUnmappedShipmentInputValues(prev => ({ ...prev, [`unmapped-${shipmentMethod}`]: '' }));
+                              }
+                            }}
+                          >
+                            Map
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                    
+                    {/* Show shipment mappings with TBD NetSuite IDs */}
+                    {shipmentMappings.filter(mapping => mapping.netsuiteId === 'TBD').map((mapping, index) => (
+                      <div key={`tbd-${index}`} className="grid grid-cols-2 gap-4 p-4 border border-red-200 rounded-lg mb-2 bg-white">
+                        <div className="text-red-700 font-medium">{mapping.shopifyCode}</div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-400">→</span>
+                          <Input 
+                            placeholder="Enter NetSuite Internal ID"
+                            className="flex-1"
+                            value={shipmentInputValues[`tbd-${mapping.id}`] || ''}
+                            onChange={(e) => setShipmentInputValues(prev => ({ ...prev, [`tbd-${mapping.id}`]: e.target.value }))}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                const netsuiteId = shipmentInputValues[`tbd-${mapping.id}`]?.trim();
+                                if (netsuiteId) {
+                                  updateShipmentMethodMapping(mapping.id.toString(), mapping.shopifyCode, netsuiteId);
+                                  setShipmentInputValues(prev => ({ ...prev, [`tbd-${mapping.id}`]: '' }));
+                                }
+                              }
+                            }}
+                          />
+                          <Button 
+                            size="sm" 
+                            onClick={() => {
+                              const netsuiteId = shipmentInputValues[`tbd-${mapping.id}`]?.trim();
+                              if (netsuiteId) {
+                                updateShipmentMethodMapping(mapping.id.toString(), mapping.shopifyCode, netsuiteId);
+                                setShipmentInputValues(prev => ({ ...prev, [`tbd-${mapping.id}`]: '' }));
                               }
                             }}
                           >
@@ -2786,28 +2911,28 @@ export default function Home() {
                   </div>
                 )}
 
-                {/* Existing Shipment Mappings */}
-                {shipmentMappings.length > 0 && (
+                {/* Existing Shipment Mappings - Only show completed mappings */}
+                {shipmentMappings.filter(mapping => mapping.netsuiteId && mapping.netsuiteId !== 'TBD').length > 0 && (
                   <div className="space-y-3">
                     <h4 className="font-medium text-slate-700">Current Shipment Mappings</h4>
-                    <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-lg mb-3">
+                  <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-lg mb-3">
                       <div className="font-medium text-slate-700">Shopify Shipment Method</div>
                       <div className="font-medium text-slate-700">NetSuite Shipment Option</div>
-                    </div>
-                    
-                    {shipmentMappings.map((mapping, index) => (
-                      <div key={index} className="grid grid-cols-2 gap-4 p-4 border rounded-lg mb-2">
-                        <div className="text-slate-700 font-mono text-sm">{mapping.shopifyCode}</div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-slate-400">→</span>
-                          <span className="text-slate-600 font-mono text-sm">{mapping.netsuiteId}</span>
-                          <Button variant="ghost" size="sm" onClick={() => openDeleteConfirmDialog('Shipment Method', mapping.shopifyCode, mapping.id.toString())}>
-                            <Trash2 className="h-4 w-4 text-red-500" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
                   </div>
+                  
+                    {shipmentMappings.filter(mapping => mapping.netsuiteId && mapping.netsuiteId !== 'TBD').map((mapping, index) => (
+                    <div key={index} className="grid grid-cols-2 gap-4 p-4 border rounded-lg mb-2">
+                      <div className="text-slate-700 font-mono text-sm">{mapping.shopifyCode}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-400">→</span>
+                        <span className="text-slate-600 font-mono text-sm">{mapping.netsuiteId}</span>
+                        <Button variant="ghost" size="sm" onClick={() => openDeleteConfirmDialog('Shipment Method', mapping.shopifyCode, mapping.id.toString())}>
+                          <Trash2 className="h-4 w-4 text-red-500" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
                 )}
 
                 {/* Need Help Link */}
@@ -2821,51 +2946,51 @@ export default function Home() {
 
         {/* Order Mappings Section */}
         {activeMappingTab === 'Order' && (
-          <Card>
+            <Card>
             <CardHeader>
               <CardTitle>Order Mappings</CardTitle>
-            </CardHeader>
-            <CardContent>
+        </CardHeader>
+        <CardContent>
               <div className="space-y-4">
                 {/* Existing Order Mappings */}
                 {orderMappings.length > 0 && (
-                  <div className="space-y-3">
+          <div className="space-y-3">
                     <h4 className="font-medium text-slate-700">Current Order Mappings</h4>
                     <div className="grid grid-cols-3 gap-4 p-4 bg-slate-50 rounded-lg mb-3">
                       <div className="font-medium text-slate-700">Shopify Field</div>
                       <div className="font-medium text-slate-700">NetSuite Field</div>
                       <div className="font-medium text-slate-700">Apply to All</div>
-                    </div>
-                    
-                    {orderMappings.map((mapping, index) => (
+                  </div>
+            
+                       {orderMappings.map((mapping, index) => (
                       <div key={index} className="grid grid-cols-3 gap-4 p-4 border rounded-lg mb-2">
                         <div className="text-slate-700 font-mono text-sm">{mapping.shopifyCode || mapping.shopifyValue}</div>
                         <div className="flex items-center gap-2">
-                          <span className="text-slate-400">→</span>
-                          <span className="text-slate-600 font-mono text-sm">{mapping.netsuiteId}</span>
+                               <span className="text-slate-400">→</span>
+                               <span className="text-slate-600 font-mono text-sm">{mapping.netsuiteId}</span>
                           <Button variant="ghost" size="sm" onClick={() => openDeleteConfirmDialog('Order Mapping', mapping.shopifyCode || mapping.shopifyValue || '', mapping.id.toString())}>
                             <Trash2 className="h-4 w-4 text-red-500" />
                           </Button>
-                        </div>
-                        <div className="flex items-center">
-                          {mapping.applyToAllAccounts === 'N/A' ? (
-                            <span className="text-slate-500 text-sm">N/A</span>
-                          ) : (
-                            <input type="checkbox" defaultChecked={Boolean(mapping.applyToAllAccounts)} className="w-4 h-4" />
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                           </div>
+                           <div className="flex items-center">
+                             {mapping.applyToAllAccounts === 'N/A' ? (
+                               <span className="text-slate-500 text-sm">N/A</span>
+                             ) : (
+                               <input type="checkbox" defaultChecked={Boolean(mapping.applyToAllAccounts)} className="w-4 h-4" />
+                             )}
+                           </div>
+                         </div>
+                       ))}
+          </div>
                 )}
 
                 {/* Need Help Link */}
                 <div className="pt-4">
-                  <a href="#" className="text-sm text-blue-600 hover:underline">Need help?</a>
+            <a href="#" className="text-sm text-blue-600 hover:underline">Need help?</a>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+          </div>
+        </CardContent>
+            </Card>
         )}
 
         {/* Payment Methods Section */}
@@ -2873,8 +2998,8 @@ export default function Home() {
           <Card>
             <CardHeader>
               <CardTitle>Payment Methods</CardTitle>
-            </CardHeader>
-            <CardContent>
+        </CardHeader>
+        <CardContent>
               <div className="space-y-4">
                 {/* Unmapped Payment Methods Section - MOVED TO TOP */}
                 {(unmappedPaymentMethods.length > 0 || paymentMappings.filter(mapping => mapping.netsuiteId === 'TBD').length > 0) && (
@@ -2884,13 +3009,13 @@ export default function Home() {
                         <span>⚠️ Unmapped Payment Methods</span>
                       </h4>
                       <p className="text-sm text-red-600">These payment methods need to be mapped to avoid errors:</p>
-                    </div>
+              </div>
                     
                     <div className="grid grid-cols-2 gap-4 p-4 bg-red-50 rounded-lg mb-3">
                       <div className="font-medium text-slate-700">Shopify Payment Method</div>
                       <div className="font-medium text-slate-700">NetSuite Payment Option</div>
-                    </div>
-                    
+                  </div>
+            
                     {/* Show unmapped payment methods from orders */}
                     {unmappedPaymentMethods.map((paymentMethod, index) => (
                       <div key={`unmapped-${index}`} className="grid grid-cols-2 gap-4 p-4 border border-red-200 rounded-lg mb-2 bg-white">
@@ -2924,8 +3049,8 @@ export default function Home() {
                           >
                             Map
                           </Button>
-                        </div>
-                      </div>
+                    </div>
+                </div>
                     ))}
                     
                     {/* Show payment mappings with TBD NetSuite IDs */}
@@ -2933,8 +3058,8 @@ export default function Home() {
                       <div key={`tbd-${index}`} className="grid grid-cols-2 gap-4 p-4 border border-red-200 rounded-lg mb-2 bg-white">
                         <div className="text-red-700 font-medium">{mapping.shopifyCode}</div>
                         <div className="flex items-center gap-2">
-                          <span className="text-slate-400">→</span>
-                          <Input 
+                    <span className="text-slate-400">→</span>
+                      <Input 
                             placeholder="Enter NetSuite Internal ID"
                             className="flex-1"
                             value={paymentInputValues[`tbd-${mapping.id}`] || ''}
@@ -2961,10 +3086,10 @@ export default function Home() {
                           >
                             Map
                           </Button>
-                        </div>
-                      </div>
+                    </div>
+                </div>
                     ))}
-                  </div>
+                </div>
                 )}
 
                 {/* Existing Payment Mappings - Only show completed mappings */}
@@ -2983,66 +3108,66 @@ export default function Home() {
                           <span className="text-slate-400">→</span>
                           <span className="text-slate-600 font-mono text-sm">{mapping.netsuiteId}</span>
                           <Button variant="ghost" size="sm" onClick={() => openDeleteConfirmDialog('Payment Method', mapping.shopifyCode, mapping.id.toString())}>
-                            <Trash2 className="h-4 w-4 text-red-500" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                    <Trash2 className="h-4 w-4 text-red-500" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
                 )}
 
                 {/* Need Help Link */}
                 <div className="pt-4">
-                  <a href="#" className="text-sm text-blue-600 hover:underline">Need help?</a>
+            <a href="#" className="text-sm text-blue-600 hover:underline">Need help?</a>
                 </div>
-              </div>
-            </CardContent>
+          </div>
+        </CardContent>
           </Card>
         )}
 
         {/* Customer Mappings Section */}
         {activeMappingTab === 'Customer' && (
-          <Card>
+            <Card>
             <CardHeader>
               <CardTitle>Customer Mappings</CardTitle>
-            </CardHeader>
-            <CardContent>
+        </CardHeader>
+        <CardContent>
               <div className="space-y-4">
                 {/* Existing Customer Mappings */}
                 {customerMappings.length > 0 && (
-                  <div className="space-y-3">
+          <div className="space-y-3">
                     <h4 className="font-medium text-slate-700">Current Customer Mappings</h4>
                     <div className="grid grid-cols-3 gap-4 p-4 bg-slate-50 rounded-lg mb-3">
                       <div className="font-medium text-slate-700">Shopify Field</div>
                       <div className="font-medium text-slate-700">NetSuite Field</div>
                       <div className="font-medium text-slate-700">Apply to All</div>
-                    </div>
-                    
-                    {customerMappings.map((mapping, index) => (
+                  </div>
+            
+                       {customerMappings.map((mapping, index) => (
                       <div key={index} className="grid grid-cols-3 gap-4 p-4 border rounded-lg mb-2">
                         <div className="text-slate-700 font-mono text-sm">{mapping.shopifyCode || mapping.shopifyValue}</div>
                         <div className="flex items-center gap-2">
-                          <span className="text-slate-400">→</span>
-                          <span className="text-slate-600 font-mono text-sm">{mapping.netsuiteId}</span>
-                          <Button variant="ghost" size="sm" onClick={() => openDeleteConfirmDialog('Customer Mapping', mapping.shopifyCode || mapping.shopifyValue || '', mapping.id.toString())}>
-                            <Trash2 className="h-4 w-4 text-red-500" />
-                          </Button>
-                        </div>
+                  <span className="text-slate-400">→</span>
+                  <span className="text-slate-600 font-mono text-sm">{mapping.netsuiteId}</span>
+                  <Button variant="ghost" size="sm" onClick={() => openDeleteConfirmDialog('Customer Mapping', mapping.shopifyCode || mapping.shopifyValue || '', mapping.id.toString())}>
+                    <Trash2 className="h-4 w-4 text-red-500" />
+                  </Button>
+                </div>
                         <div className="flex items-center">
                           <input type="checkbox" defaultChecked={Boolean(mapping.applyToAllAccounts)} className="w-4 h-4" />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
                 )}
 
                 {/* Need Help Link */}
                 <div className="pt-4">
-                  <a href="#" className="text-sm text-blue-600 hover:underline">Need help?</a>
+            <a href="#" className="text-sm text-blue-600 hover:underline">Need help?</a>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+          </div>
+        </CardContent>
+            </Card>
         )}
 
         {/* Delete Confirmation Dialog */}
