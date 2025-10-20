@@ -1955,6 +1955,24 @@ export default function Home() {
         <p className="text-slate-600">Configure how Shopify orders map to NetSuite transactions.</p>
       </div>
       
+      {/* Navigation Tabs */}
+      <div className="flex space-x-1 border-b">
+        {['Payment', 'Shipment', 'Order', 'Order Item', 'Customer'].map((tab) => (
+          <Button
+            key={tab}
+            variant="ghost"
+            className={`px-4 py-2 text-sm font-medium ${
+              tab === 'Order Item' 
+                ? 'border-b-2 border-blue-600 text-blue-600 bg-blue-50' 
+                : 'text-slate-600 hover:text-slate-800'
+            }`}
+          >
+            {tab}
+          </Button>
+        ))}
+      </div>
+
+      {/* Payment Methods Section */}
       <Card>
         <CardHeader>
           <CardTitle>Payment Methods</CardTitle>
@@ -1962,22 +1980,33 @@ export default function Home() {
         <CardContent>
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-slate-600">Default payment method to post when no match found</span>
-              <Select defaultValue="do-not-post">
-                <SelectTrigger className="w-48">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="do-not-post">Do Not Post</SelectItem>
-                  <SelectItem value="cash">Cash</SelectItem>
-                  <SelectItem value="credit-card">Credit Card</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="flex items-center space-x-2">
+                <span className="text-sm text-slate-600">Default payment method to post when no match found</span>
+                <Database className="h-4 w-4 text-slate-400" />
+              </div>
+              <div className="flex items-center space-x-2">
+                <Select defaultValue="do-not-post">
+                  <SelectTrigger className="w-48">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="do-not-post">Do Not Post</SelectItem>
+                    <SelectItem value="cash">Cash</SelectItem>
+                    <SelectItem value="credit-card">Credit Card</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button variant="ghost" size="sm">
+                  <Database className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
             
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-lg">
-                <div className="font-medium text-slate-700">Shopify Payment Method</div>
+                <div className="font-medium text-slate-700 flex items-center space-x-2">
+                  <span>Shopify Payment Method</span>
+                  <Database className="h-4 w-4 text-slate-400" />
+                </div>
                 <div className="font-medium text-slate-700">NetSuite Payment Option</div>
               </div>
               
@@ -2011,6 +2040,352 @@ export default function Home() {
                 </div>
               ))}
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Shipment Methods Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Shipment Methods</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <span className="text-sm text-slate-600">Default shipment method to post to when no match found</span>
+                <Database className="h-4 w-4 text-slate-400" />
+              </div>
+              <div className="flex items-center space-x-2">
+                <Select defaultValue="do-not-post">
+                  <SelectTrigger className="w-48">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="do-not-post">Do Not Post</SelectItem>
+                    <SelectItem value="standard">Standard Shipping</SelectItem>
+                    <SelectItem value="express">Express Shipping</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button variant="ghost" size="sm">
+                  <Database className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+            
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-lg">
+                <div className="font-medium text-slate-700 flex items-center space-x-2">
+                  <span>Shopify-default Shipment Methods</span>
+                  <Database className="h-4 w-4 text-slate-400" />
+                </div>
+                <div className="font-medium text-slate-700 flex items-center space-x-2">
+                  <span>NetSuite Shipment Methods</span>
+                  <Database className="h-4 w-4 text-slate-400" />
+                </div>
+              </div>
+              
+              {[
+                { shopify: '(blank)', netsuite: 'Economy International (IID: 1036)' },
+                { shopify: 'Asheville', netsuite: 'Local Pickup (IID: 1035)' },
+                { shopify: 'Collective', netsuite: 'UPS® Ground (IID: 4)' },
+                { shopify: 'DHL', netsuite: 'DHL (IID: 1222)' },
+                { shopify: 'DHL Express Worldwide', netsuite: 'DHL (IID: 1222)' },
+                { shopify: 'DHL eCommerce Parcel Direct', netsuite: 'Economy International (IID: 1036)' },
+                { shopify: 'DHL eCommerce Parcel Standard', netsuite: 'Economy International (IID: 1036)' },
+                { shopify: 'Economy International', netsuite: 'Economy International (IID: 1036)' }
+              ].map((mapping, index) => (
+                <div key={index} className="grid grid-cols-2 gap-4 p-4 border rounded-lg">
+                  <div className="text-slate-700">{mapping.shopify}</div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-slate-400">→</span>
+                    <Select defaultValue={mapping.netsuite}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Economy International (IID: 1036)">Economy International (IID: 1036)</SelectItem>
+                        <SelectItem value="Local Pickup (IID: 1035)">Local Pickup (IID: 1035)</SelectItem>
+                        <SelectItem value="UPS® Ground (IID: 4)">UPS® Ground (IID: 4)</SelectItem>
+                        <SelectItem value="DHL (IID: 1222)">DHL (IID: 1222)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button variant="ghost" size="sm">
+                      <Database className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Order Mappings Section */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>Order Mappings</CardTitle>
+          <div className="flex space-x-2">
+            <Button variant="outline" size="sm">
+              <Database className="h-4 w-4 mr-2" /> Reload NetSuite lists
+            </Button>
+            <Button variant="outline" size="sm">
+              <Database className="h-4 w-4 mr-2" /> Test mappings
+            </Button>
+            <Button variant="outline" size="sm">Cancel</Button>
+            <Button className="bg-blue-600 hover:bg-blue-700 text-white" size="sm">Save</Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            <div className="grid grid-cols-4 gap-4 p-4 bg-slate-50 rounded-lg text-sm font-medium text-slate-700">
+              <div className="flex items-center space-x-2">
+                <span>Mapping type</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Database className="h-4 w-4" />
+                <span>Shopify field / fixed value</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Database className="h-4 w-4" />
+                <span>NetSuite field</span>
+              </div>
+              <div>Apply to all accounts</div>
+            </div>
+            
+            {[
+              { type: 'Fixed', shopify: 'Online Sales (IID: 11)', netsuite: 'Class', apply: false },
+              { type: 'Fixed', shopify: 'Unchecked', netsuite: 'Credit Card Approved', apply: false },
+              { type: 'Fixed', shopify: '6 Pirani Life : Websales (IID: 1833)', netsuite: 'Location', apply: false },
+              { type: 'Fixed', shopify: 'Order ID', netsuite: 'P/N Ref.', apply: false },
+              { type: 'Fixed', shopify: 'Checked', netsuite: 'Ship Complete', apply: false },
+              { type: 'Fixed', shopify: 'Pending Fulfillment', netsuite: 'Status', apply: false },
+              { type: 'Fixed', shopify: '1. Direct to Consumer (IID: 28)', netsuite: 'Partner', apply: false },
+              { type: 'Fixed', shopify: 'Pirani Website (IID: 12)', netsuite: 'PO #', apply: false },
+              { type: 'Fixed', shopify: '2. Urgent (IID: 1)', netsuite: 'custbody_pir_replacement_order', apply: false },
+              { type: 'Fixed', shopify: 'Custom: id', netsuite: 'custbody_pir_sample_order', apply: false },
+              { type: 'Fixed', shopify: 'Location ID - Click to view/edit.', netsuite: 'custbody_pir_shop_order_date', apply: false },
+              { type: 'Fixed', shopify: 'Discount Code - Click to view/edit.', netsuite: 'custbody_pir_so_category', apply: false },
+              { type: 'Fixed', shopify: '_omit', netsuite: 'custbody_sales_channel', apply: false }
+            ].map((mapping, index) => (
+              <div key={index} className="grid grid-cols-4 gap-4 p-4 border rounded-lg">
+                <div className="flex items-center space-x-2">
+                  <input type="checkbox" defaultChecked className="w-4 h-4" />
+                  <Select defaultValue={mapping.type}>
+                    <SelectTrigger className="w-32">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Fixed">Fixed</SelectItem>
+                      <SelectItem value="Order Header">Order Header</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="text-slate-700">{mapping.shopify}</div>
+                <div className="flex items-center space-x-2">
+                  <span className="text-slate-400">→</span>
+                  <Select defaultValue={mapping.netsuite}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Class">Class</SelectItem>
+                      <SelectItem value="Credit Card Approved">Credit Card Approved</SelectItem>
+                      <SelectItem value="Location">Location</SelectItem>
+                      <SelectItem value="P/N Ref.">P/N Ref.</SelectItem>
+                      <SelectItem value="Ship Complete">Ship Complete</SelectItem>
+                      <SelectItem value="Status">Status</SelectItem>
+                      <SelectItem value="Partner">Partner</SelectItem>
+                      <SelectItem value="PO #">PO #</SelectItem>
+                      <SelectItem value="custbody_pir_replacement_order">custbody_pir_replacement_order</SelectItem>
+                      <SelectItem value="custbody_pir_sample_order">custbody_pir_sample_order</SelectItem>
+                      <SelectItem value="custbody_pir_shop_order_date">custbody_pir_shop_order_date</SelectItem>
+                      <SelectItem value="custbody_pir_so_category">custbody_pir_so_category</SelectItem>
+                      <SelectItem value="custbody_sales_channel">custbody_sales_channel</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center">
+                  <input type="checkbox" defaultChecked={mapping.apply} className="w-4 h-4" />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="flex justify-between items-center mt-4">
+            <a href="#" className="text-sm text-blue-600 hover:underline">Need help?</a>
+            <Button variant="outline">
+              <Database className="h-4 w-4 mr-2" /> Add row
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Order Item Mappings Section */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>Order Item Mappings</CardTitle>
+          <div className="flex space-x-2">
+            <Button variant="outline" size="sm">
+              <Database className="h-4 w-4 mr-2" /> Reload NetSuite lists
+            </Button>
+            <Button variant="outline" size="sm">
+              <Database className="h-4 w-4 mr-2" /> Test mappings
+            </Button>
+            <Button variant="outline" size="sm">Cancel</Button>
+            <Button className="bg-blue-600 hover:bg-blue-700 text-white" size="sm">Save</Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            <div className="grid grid-cols-4 gap-4 p-4 bg-slate-50 rounded-lg text-sm font-medium text-slate-700">
+              <div className="flex items-center space-x-2">
+                <span>Mapping type</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Database className="h-4 w-4" />
+                <span>Shopify field / fixed value</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Database className="h-4 w-4" />
+                <span>NetSuite field</span>
+              </div>
+              <div>Apply to all accounts</div>
+            </div>
+            
+            {[
+              { type: 'Fixed', shopify: 'Base Rate (MSRP) (IID: 1)', netsuite: 'Price Level', apply: false },
+              { type: 'Order Line', shopify: 'Custom: properties._pca_preview_url', netsuite: 'custcol_custom_image_url', apply: false },
+              { type: 'Order Line', shopify: 'Custom: properties._pca_barcode', netsuite: 'custcol_customization_barcode', apply: false },
+              { type: 'Order Line', shopify: 'Custom: properties.CustomizationType', netsuite: 'custcol_item_notes', apply: false },
+              { type: 'Order Line', shopify: 'Custom: properties.CustomizationValue', netsuite: 'custcol_item_notes_2', apply: false },
+              { type: 'Order Line', shopify: 'Custom: properties.CustomizationFont', netsuite: 'custcol_item_notes_font', apply: false }
+            ].map((mapping, index) => (
+              <div key={index} className="grid grid-cols-4 gap-4 p-4 border rounded-lg">
+                <div className="flex items-center space-x-2">
+                  <input type="checkbox" defaultChecked className="w-4 h-4" />
+                  <Select defaultValue={mapping.type}>
+                    <SelectTrigger className="w-32">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Fixed">Fixed</SelectItem>
+                      <SelectItem value="Order Line">Order Line</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="text-slate-700">{mapping.shopify}</div>
+                <div className="flex items-center space-x-2">
+                  <span className="text-slate-400">→</span>
+                  <Select defaultValue={mapping.netsuite}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Price Level">Price Level</SelectItem>
+                      <SelectItem value="custcol_custom_image_url">custcol_custom_image_url</SelectItem>
+                      <SelectItem value="custcol_customization_barcode">custcol_customization_barcode</SelectItem>
+                      <SelectItem value="custcol_item_notes">custcol_item_notes</SelectItem>
+                      <SelectItem value="custcol_item_notes_2">custcol_item_notes_2</SelectItem>
+                      <SelectItem value="custcol_item_notes_font">custcol_item_notes_font</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center">
+                  <input type="checkbox" defaultChecked={mapping.apply} className="w-4 h-4" />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="flex justify-between items-center mt-4">
+            <a href="#" className="text-sm text-blue-600 hover:underline">Need help?</a>
+            <Button variant="outline">
+              <Database className="h-4 w-4 mr-2" /> Add row
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Customer Mappings Section */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>Customer Mappings</CardTitle>
+          <div className="flex space-x-2">
+            <Button variant="outline" size="sm">
+              <Database className="h-4 w-4 mr-2" /> Reload NetSuite lists
+            </Button>
+            <Button variant="outline" size="sm">
+              <Database className="h-4 w-4 mr-2" /> Test mappings
+            </Button>
+            <Button variant="outline" size="sm">Cancel</Button>
+            <Button className="bg-blue-600 hover:bg-blue-700 text-white" size="sm">Save</Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            <div className="grid grid-cols-4 gap-4 p-4 bg-slate-50 rounded-lg text-sm font-medium text-slate-700">
+              <div className="flex items-center space-x-2">
+                <span>Mapping type</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Database className="h-4 w-4" />
+                <span>Shopify field / fixed value</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Database className="h-4 w-4" />
+                <span>NetSuite field</span>
+              </div>
+              <div>Apply to all accounts</div>
+            </div>
+            
+            {[
+              { type: 'Fixed', shopify: '6 Pirani Life : Websales (IID: 1833)', netsuite: 'Partner', apply: false },
+              { type: 'Fixed', shopify: 'Base Rate (MSRP) (IID: 1)', netsuite: 'Price Level', apply: false },
+              { type: 'Fixed', shopify: 'Pirani Life, Inc (IID: 2)', netsuite: 'Subsidiary', apply: false },
+              { type: 'Fixed', shopify: '1. Direct to Consumer (IID: 28)', netsuite: 'custentity_customer_category', apply: false },
+              { type: 'Fixed', shopify: 'Direct to Consumer (IID: 1)', netsuite: 'custentity_customer_sales_channel', apply: false },
+              { type: 'Fixed', shopify: 'Pirani Website (IID: 12)', netsuite: 'custentity_pir_cust_source', apply: false }
+            ].map((mapping, index) => (
+              <div key={index} className="grid grid-cols-4 gap-4 p-4 border rounded-lg">
+                <div className="flex items-center space-x-2">
+                  <input type="checkbox" defaultChecked className="w-4 h-4" />
+                  <Select defaultValue={mapping.type}>
+                    <SelectTrigger className="w-32">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Fixed">Fixed</SelectItem>
+                      <SelectItem value="Customer">Customer</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="text-slate-700">{mapping.shopify}</div>
+                <div className="flex items-center space-x-2">
+                  <span className="text-slate-400">→</span>
+                  <Select defaultValue={mapping.netsuite}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Partner">Partner</SelectItem>
+                      <SelectItem value="Price Level">Price Level</SelectItem>
+                      <SelectItem value="Subsidiary">Subsidiary</SelectItem>
+                      <SelectItem value="custentity_customer_category">custentity_customer_category</SelectItem>
+                      <SelectItem value="custentity_customer_sales_channel">custentity_customer_sales_channel</SelectItem>
+                      <SelectItem value="custentity_pir_cust_source">custentity_pir_cust_source</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center">
+                  <input type="checkbox" defaultChecked={mapping.apply} className="w-4 h-4" />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="flex justify-between items-center mt-4">
+            <a href="#" className="text-sm text-blue-600 hover:underline">Need help?</a>
+            <Button variant="outline">
+              <Database className="h-4 w-4 mr-2" /> Add row
+            </Button>
           </div>
         </CardContent>
       </Card>
