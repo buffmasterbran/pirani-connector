@@ -796,7 +796,7 @@ export default function Home() {
     try {
       // Determine if it's an order or payout based on the data structure
       const isOrder = 'financial_status' in selectedOrderForEdit
-      const endpoint = isOrder ? `/api/orders/${selectedOrderForEdit.id}/netsuite` : `/api/payouts/${selectedOrderForEdit.id}/netsuite`
+      const endpoint = isOrder ? `/api/orders/${(selectedOrderForEdit as any).id}/netsuite` : `/api/payouts/${(selectedOrderForEdit as any).id}/netsuite`
       
       // Update NetSuite ID in database
       const response = await fetch(endpoint, {
