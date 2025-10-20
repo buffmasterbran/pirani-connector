@@ -1118,41 +1118,19 @@ export default function Home() {
                       Filters
                     </Button>
 
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button 
-                          disabled={isLoadingOrders}
-                          className="flex items-center gap-2 h-9"
-                          size="sm"
-                        >
-                          {isLoadingOrders ? <LoaderWithText text="Loading..." /> : (
-                            <>
-                              <Download className="h-4 w-4" />
-                              Import Orders
-                              <ChevronDown className="h-4 w-4" />
-                            </>
-                          )}
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent>
-                        <DropdownMenuItem onClick={() => fetchOrders(false)}>
-                          <span className="font-medium">Recent Orders</span>
-                          <span className="text-xs text-muted-foreground ml-2">(250 orders)</span>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => fetchOrders(true, 1000)}>
-                          <span className="font-medium">1,000 Orders</span>
-                          <span className="text-xs text-muted-foreground ml-2">(paginated)</span>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => fetchOrders(true, 5000)}>
-                          <span className="font-medium">5,000 Orders</span>
-                          <span className="text-xs text-muted-foreground ml-2">(paginated)</span>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => fetchOrders(true)}>
-                          <span className="font-medium">All Orders</span>
-                          <span className="text-xs text-muted-foreground ml-2">(paginated)</span>
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    <Button 
+                      onClick={() => fetchOrders(false)} 
+                      disabled={isLoadingOrders}
+                      className="flex items-center gap-2 h-9"
+                      size="sm"
+                    >
+                      {isLoadingOrders ? <LoaderWithText text="Loading..." /> : (
+                        <>
+                          <Download className="h-4 w-4" />
+                          Import Orders
+                        </>
+                      )}
+                    </Button>
 
                     <div className="flex items-center gap-2">
                       <Input
@@ -2000,41 +1978,19 @@ export default function Home() {
                       Filters
                     </Button>
 
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button 
-                          disabled={isLoading}
-                          className="flex items-center gap-2 h-9"
-                          size="sm"
-                        >
-                          {isLoading ? <LoaderWithText text="Importing..." /> : (
-                            <>
-                              <Download className="h-4 w-4" />
-                              Import Payouts
-                              <ChevronDown className="h-4 w-4" />
-                            </>
-                          )}
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent>
-                        <DropdownMenuItem onClick={() => importAllPayouts(false)}>
-                          <span className="font-medium">Recent Payouts</span>
-                          <span className="text-xs text-muted-foreground ml-2">(250 payouts)</span>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => importAllPayouts(true, 1000)}>
-                          <span className="font-medium">1,000 Payouts</span>
-                          <span className="text-xs text-muted-foreground ml-2">(paginated)</span>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => importAllPayouts(true, 5000)}>
-                          <span className="font-medium">5,000 Payouts</span>
-                          <span className="text-xs text-muted-foreground ml-2">(paginated)</span>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => importAllPayouts(true)}>
-                          <span className="font-medium">All Payouts</span>
-                          <span className="text-xs text-muted-foreground ml-2">(paginated)</span>
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    <Button 
+                      onClick={() => importAllPayouts(false)} 
+                      disabled={isLoading}
+                      className="flex items-center gap-2 h-9"
+                      size="sm"
+                    >
+                      {isLoading ? <LoaderWithText text="Importing..." /> : (
+                        <>
+                          <Download className="h-4 w-4" />
+                          Import Payouts
+                        </>
+                      )}
+                    </Button>
 
                     <div className="flex items-center gap-2">
                       <Input
