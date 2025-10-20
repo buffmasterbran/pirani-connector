@@ -492,13 +492,13 @@ export default function Home() {
       if (response.ok) {
         console.log(`✅ Successfully saved orders to database:`, data.message)
         
-        // Update orders with database status
-        const updatedOrders = fetchedOrders.map(order => {
-          const savedOrder = data.orders.find((saved: any) => saved.id === order.id)
-          return savedOrder || order
+        // Update orders with database status - only update existing orders, don't replace the entire list
+        setOrders(prevOrders => {
+          return prevOrders.map(existingOrder => {
+            const savedOrder = data.orders.find((saved: any) => saved.id === existingOrder.id)
+            return savedOrder || existingOrder
+          })
         })
-        
-        setOrders(updatedOrders)
       } else {
         console.error('❌ Failed to save orders to database:', data.error)
         alert(`Failed to save orders to database: ${data.error}`)
@@ -542,9 +542,11 @@ export default function Home() {
           const existingOrder = prevOrders.find(o => o.id === order.id)
           if (existingOrder) {
             // Update existing order
+            console.log(`📝 Updating existing order ${order.name} in list`)
             return prevOrders.map(o => o.id === order.id ? order : o)
           } else {
             // Add new order
+            console.log(`➕ Adding new order ${order.name} to list (total: ${prevOrders.length + 1})`)
             return [...prevOrders, order]
           }
         })
