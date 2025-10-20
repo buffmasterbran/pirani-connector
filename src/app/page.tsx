@@ -1891,18 +1891,9 @@ export default function Home() {
                           <div className="grid grid-cols-3 gap-4">
                             <div>
                               <label className="text-sm font-medium">Field Type</label>
-                              <Select>
-                                <SelectTrigger className="mt-1">
-                                  <SelectValue placeholder="Select field type" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="payment">Payment Method</SelectItem>
-                                  <SelectItem value="shipping">Shipping Method</SelectItem>
-                                  <SelectItem value="location">Location</SelectItem>
-                                  <SelectItem value="class">Class</SelectItem>
-                                  <SelectItem value="partner">Partner</SelectItem>
-                                </SelectContent>
-                              </Select>
+                              <div className="mt-1 p-2 border rounded bg-gray-50 text-sm text-gray-500">
+                                Select component temporarily disabled
+                              </div>
                             </div>
                             <div>
                               <label className="text-sm font-medium">NetSuite ID</label>
