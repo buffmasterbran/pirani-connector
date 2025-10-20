@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
       // If the table doesn't exist yet, return orders as not saved
       if (dbError.message && dbError.message.includes('no such table: Order')) {
         console.log('⚠️ Order table does not exist yet, marking orders as not saved')
-        const notSavedOrders = orders.map(order => ({ ...order, inDatabase: false }))
+        const notSavedOrders = orders.map((order: any) => ({ ...order, inDatabase: false }))
         return NextResponse.json({ 
           success: false, 
           orders: notSavedOrders,
