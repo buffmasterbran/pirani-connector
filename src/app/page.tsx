@@ -2617,6 +2617,47 @@ export default function Home() {
     }
   }
 
+  // Update existing payment method mapping
+  const updatePaymentMethodMapping = async (mappingId: string, shopifyCode: string, netsuiteId: string) => {
+    try {
+      const response = await fetch(`/api/mappings/payment-methods/${mappingId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          shopifyCode,
+          netsuiteId,
+          isActive: true
+        })
+      })
+
+      const result = await response.json()
+      
+      if (result.success) {
+        console.log(`✅ Updated payment method mapping: ${shopifyCode} → ${netsuiteId}`)
+        
+        // Update local state
+        setPaymentMappings(prev => prev.map(mapping => 
+          mapping.id.toString() === mappingId 
+            ? { ...mapping, netsuiteId, isActive: true }
+            : mapping
+        ))
+        
+        // Re-detect missing mappings
+        detectMissingMappings()
+        
+        return true
+      } else {
+        console.error(`❌ Failed to update payment method mapping:`, result.error)
+        return false
+      }
+    } catch (error) {
+      console.error(`❌ Error updating payment method mapping:`, error)
+      return false
+    }
+  }
+
   // Add new shipment method mapping
   const addShipmentMethodMapping = async (shopifyCode: string, netsuiteId: string) => {
     try {
@@ -2834,7 +2875,7 @@ export default function Home() {
             <CardContent>
               <div className="space-y-4">
                 {/* Unmapped Payment Methods Section - MOVED TO TOP */}
-                {unmappedPaymentMethods.length > 0 && (
+                {(unmappedPaymentMethods.length > 0 || paymentMappings.filter(mapping => mapping.netsuiteId === 'TBD').length > 0) && (
                   <div className="border-b pb-4 mb-4">
                     <div className="mb-3">
                       <h4 className="font-medium text-red-700 flex items-center space-x-2">
@@ -2848,8 +2889,9 @@ export default function Home() {
                       <div className="font-medium text-slate-700">NetSuite Payment Option</div>
                     </div>
                     
+                    {/* Show unmapped payment methods from orders */}
                     {unmappedPaymentMethods.map((paymentMethod, index) => (
-                      <div key={index} className="grid grid-cols-2 gap-4 p-4 border border-red-200 rounded-lg mb-2 bg-white">
+                      <div key={`unmapped-${index}`} className="grid grid-cols-2 gap-4 p-4 border border-red-200 rounded-lg mb-2 bg-white">
                         <div className="text-red-700 font-medium">{paymentMethod}</div>
                         <div className="flex items-center gap-2">
                           <span className="text-slate-400">→</span>
@@ -2883,11 +2925,48 @@ export default function Home() {
                         </div>
                       </div>
                     ))}
+                    
+                    {/* Show payment mappings with TBD NetSuite IDs */}
+                    {paymentMappings.filter(mapping => mapping.netsuiteId === 'TBD').map((mapping, index) => (
+                      <div key={`tbd-${index}`} className="grid grid-cols-2 gap-4 p-4 border border-red-200 rounded-lg mb-2 bg-white">
+                        <div className="text-red-700 font-medium">{mapping.shopifyCode}</div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-400">→</span>
+                          <Input 
+                            placeholder="Enter NetSuite Internal ID"
+                            className="flex-1"
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                const input = e.target as HTMLInputElement;
+                                const netsuiteId = input.value.trim();
+                                if (netsuiteId) {
+                                  updatePaymentMethodMapping(mapping.id.toString(), mapping.shopifyCode, netsuiteId);
+                                  input.value = '';
+                                }
+                              }
+                            }}
+                          />
+                          <Button 
+                            size="sm" 
+                            onClick={(e) => {
+                              const input = e.currentTarget.previousElementSibling?.previousElementSibling as HTMLInputElement;
+                              const netsuiteId = input.value.trim();
+                              if (netsuiteId) {
+                                updatePaymentMethodMapping(mapping.id.toString(), mapping.shopifyCode, netsuiteId);
+                                input.value = '';
+                              }
+                            }}
+                          >
+                            Map
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
 
-                {/* Existing Payment Mappings */}
-                {paymentMappings.length > 0 && (
+                {/* Existing Payment Mappings - Only show completed mappings */}
+                {paymentMappings.filter(mapping => mapping.netsuiteId && mapping.netsuiteId !== 'TBD').length > 0 && (
                   <div className="space-y-3">
                     <h4 className="font-medium text-slate-700">Current Payment Mappings</h4>
                     <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-lg mb-3">
@@ -2895,7 +2974,7 @@ export default function Home() {
                       <div className="font-medium text-slate-700">NetSuite Payment Option</div>
                     </div>
                     
-                    {paymentMappings.map((mapping, index) => (
+                    {paymentMappings.filter(mapping => mapping.netsuiteId && mapping.netsuiteId !== 'TBD').map((mapping, index) => (
                       <div key={index} className="grid grid-cols-2 gap-4 p-4 border rounded-lg mb-2">
                         <div className="text-slate-700 font-mono text-sm">{mapping.shopifyCode}</div>
                         <div className="flex items-center gap-2">
