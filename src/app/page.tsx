@@ -1134,7 +1134,7 @@ export default function Home() {
                           )}
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
+                      <DropdownMenuContent>
                         <DropdownMenuItem onClick={() => fetchOrders(false)}>
                           <span className="font-medium">Recent Orders</span>
                           <span className="text-xs text-muted-foreground ml-2">(250 orders)</span>
@@ -2016,7 +2016,7 @@ export default function Home() {
                           )}
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
+                      <DropdownMenuContent>
                         <DropdownMenuItem onClick={() => importAllPayouts(false)}>
                           <span className="font-medium">Recent Payouts</span>
                           <span className="text-xs text-muted-foreground ml-2">(250 payouts)</span>
