@@ -2215,6 +2215,15 @@ export default function Home() {
                          <Button 
                            variant="outline" 
                            size="sm" 
+                           onClick={() => window.open(`https://admin.shopify.com/store/pirani-life/payments/payouts/${payout.id}`, '_blank')}
+                           className="text-xs flex items-center gap-1"
+                         >
+                           <ArrowUpRight className="h-3 w-3" />
+                           View in Shopify
+                         </Button>
+                         <Button 
+                           variant="outline" 
+                           size="sm" 
                            onClick={() => fetchTransactions(String(payout.id))}
                            disabled={isLoadingTransactions}
                            className="text-xs"
