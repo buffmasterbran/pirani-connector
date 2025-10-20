@@ -2604,16 +2604,9 @@ export default function Home() {
                     <Database className="h-4 w-4 text-slate-400" />
                   </div>
                   <div className="flex items-center space-x-2">
-                    <Select defaultValue="do-not-post">
-                      <SelectTrigger className="w-48">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="do-not-post">Do Not Post</SelectItem>
-                        <SelectItem value="cash">Cash</SelectItem>
-                        <SelectItem value="credit-card">Credit Card</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <div className="w-48 p-2 border rounded bg-gray-50 text-sm text-gray-500">
+                      Select component temporarily disabled
+                    </div>
                     <Button variant="ghost" size="sm">
                       <Database className="h-4 w-4" />
                     </Button>
