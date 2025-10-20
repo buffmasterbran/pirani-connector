@@ -1415,6 +1415,17 @@ export default function Home() {
                                 <ArrowUpRight className="h-3 w-3" />
                                 View in Shopify
                               </Button>
+                              {order.netsuiteDepositNumber && (
+                                <Button 
+                                  variant="outline" 
+                                  size="sm" 
+                                  onClick={() => window.open(`https://7913744.app.netsuite.com/app/accounting/transactions/salesord.nl?id=${order.netsuiteDepositNumber}`, '_blank')}
+                                  className="text-xs flex items-center gap-1 bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100"
+                                >
+                                  <ArrowUpRight className="h-3 w-3" />
+                                  View in NetSuite
+                                </Button>
+                              )}
                               <Button 
                                 variant="outline" 
                                 size="sm" 
