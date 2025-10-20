@@ -1,0 +1,48 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Payout {
+  id                   BigInt   @id
+  status               String
+  date                 DateTime
+  amount               Float
+  currency             String
+  netsuiteDepositNumber String?
+  transactions         Transaction[]
+  createdAt            DateTime @default(now())
+}
+
+model Transaction {
+  id                BigInt   @id
+  payoutId          BigInt
+  sourceOrderId     BigInt
+  amount            Float
+  fee               Float
+  net               Float
+  type              String
+  currency          String
+  processedAt       DateTime
+  payout            Payout   @relation(fields: [payoutId], references: [id])
+  createdAt         DateTime @default(now())
+}
+
+model Order {
+  id                   BigInt   @id
+  name                 String
+  financial_status     String
+  fulfillment_status   String?
+  total_price          Float
+  currency             String
+  created_at           DateTime
+  netsuiteDepositNumber String?
+  createdAt            DateTime @default(now())
+}
