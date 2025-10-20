@@ -271,3 +271,84 @@ export async function getOrderByNameFromShopify(orderName: string) {
     throw error
   }
 }
+
+// Webhook management functions
+export async function createWebhook(webhookUrl: string, topic: string = 'orders/create') {
+  try {
+    console.log(`🔗 Creating webhook for topic: ${topic}`)
+    
+    const webhookData = {
+      webhook: {
+        topic: topic,
+        address: webhookUrl,
+        format: 'json'
+      }
+    }
+    
+    const response = await fetch(`${SHOPIFY_BASE_URL}/webhooks.json`, {
+      method: 'POST',
+      headers: {
+        ...headers,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(webhookData)
+    })
+    
+    if (!response.ok) {
+      const errorData = await response.text()
+      throw new Error(`Shopify API error: ${response.status} ${response.statusText} - ${errorData}`)
+    }
+    
+    const data = await response.json()
+    console.log(`✅ Successfully created webhook: ${data.webhook.id}`)
+    return data.webhook
+    
+  } catch (error) {
+    console.error('Error creating webhook:', error)
+    throw error
+  }
+}
+
+export async function getWebhooks() {
+  try {
+    console.log('📋 Fetching existing webhooks...')
+    
+    const response = await fetch(`${SHOPIFY_BASE_URL}/webhooks.json`, {
+      headers
+    })
+    
+    if (!response.ok) {
+      throw new Error(`Shopify API error: ${response.status} ${response.statusText}`)
+    }
+    
+    const data = await response.json()
+    console.log(`✅ Found ${data.webhooks.length} existing webhooks`)
+    return data.webhooks
+    
+  } catch (error) {
+    console.error('Error fetching webhooks:', error)
+    throw error
+  }
+}
+
+export async function deleteWebhook(webhookId: string) {
+  try {
+    console.log(`🗑️ Deleting webhook: ${webhookId}`)
+    
+    const response = await fetch(`${SHOPIFY_BASE_URL}/webhooks/${webhookId}.json`, {
+      method: 'DELETE',
+      headers
+    })
+    
+    if (!response.ok) {
+      throw new Error(`Shopify API error: ${response.status} ${response.statusText}`)
+    }
+    
+    console.log(`✅ Successfully deleted webhook: ${webhookId}`)
+    return true
+    
+  } catch (error) {
+    console.error('Error deleting webhook:', error)
+    throw error
+  }
+}

@@ -105,6 +105,12 @@ interface SavedPayout {
 }
 
 export default function Home() {
+  // ===== TEMPORARY WEBHOOK TESTING FEATURE =====
+  // TODO: DELETE THIS SECTION ONCE WEBHOOK IS WORKING
+  const [testWebhookJson, setTestWebhookJson] = useState('')
+  const [isTestingWebhook, setIsTestingWebhook] = useState(false)
+  // ===============================================
+
   const [payouts, setPayouts] = useState<Payout[]>([])
   const [selectedPayoutTransactions, setSelectedPayoutTransactions] = useState<Transaction[]>([])
   const [savedPayouts, setSavedPayouts] = useState<SavedPayout[]>([])
@@ -554,6 +560,43 @@ export default function Home() {
       alert('Error deleting payout from database')
     }
   }
+
+  // ===== TEMPORARY WEBHOOK TESTING FUNCTION =====
+  // TODO: DELETE THIS FUNCTION ONCE WEBHOOK IS WORKING
+  const testWebhookWithJson = async () => {
+    if (!testWebhookJson.trim()) {
+      alert('Please paste some JSON first!')
+      return
+    }
+
+    setIsTestingWebhook(true)
+    try {
+      const response = await fetch('/api/webhooks/shopify/orders', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-shopify-hmac-sha256': 'test-signature' // Bypass signature check for testing
+        },
+        body: JSON.stringify(JSON.parse(testWebhookJson))
+      })
+
+      const result = await response.json()
+      
+      if (response.ok) {
+        alert(`✅ Webhook test successful! Order saved: ${result.orderId || 'Unknown'}`)
+        // Refresh orders to see the new one
+        fetchOrders()
+      } else {
+        alert(`❌ Webhook test failed: ${result.error}`)
+      }
+    } catch (error) {
+      console.error('Webhook test error:', error)
+      alert(`❌ Webhook test error: ${error}`)
+    } finally {
+      setIsTestingWebhook(false)
+    }
+  }
+  // ===============================================
 
   // Order functions
   const fetchOrders = async (fetchAll: boolean = false, maxOrders?: number) => {
@@ -3343,6 +3386,37 @@ export default function Home() {
     <div className="min-h-screen bg-slate-50 flex">
       <Sidebar activeSection={activeSection} onSectionChange={setActiveSection} />
       <div className="flex-1 p-8 overflow-auto">
+        {/* ===== TEMPORARY WEBHOOK TESTING COMPONENT ===== */}
+        {/* TODO: DELETE THIS COMPONENT ONCE WEBHOOK IS WORKING */}
+        <Card className="mb-6 border-orange-200 bg-orange-50">
+          <CardHeader>
+            <CardTitle className="text-orange-800 flex items-center gap-2">
+              🧪 Webhook Testing (Temporary)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <p className="text-sm text-orange-700">
+                Paste Shopify order JSON here to test the webhook endpoint locally:
+              </p>
+              <textarea
+                className="w-full h-32 p-3 border border-orange-200 rounded-md font-mono text-sm"
+                placeholder="Paste Shopify order JSON here..."
+                value={testWebhookJson}
+                onChange={(e) => setTestWebhookJson(e.target.value)}
+              />
+              <Button 
+                onClick={testWebhookWithJson}
+                disabled={isTestingWebhook || !testWebhookJson.trim()}
+                className="bg-orange-600 hover:bg-orange-700"
+              >
+                {isTestingWebhook ? 'Testing...' : 'Test Webhook'}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+        {/* =============================================== */}
+        
         {renderContent()}
       </div>
 
