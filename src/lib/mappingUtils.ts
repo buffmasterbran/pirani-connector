@@ -147,14 +147,8 @@ export function validateOrderMappings(
   
   if (shippingLines && Array.isArray(shippingLines) && shippingLines.length > 0 && shippingLines[0]?.code) {
     const shippingMethod = shippingLines[0].code
-    console.log(`🚚 Checking shipping method: "${shippingMethod}"`)
-    console.log(`📊 Available shipment mappings:`, shipmentMappings.map(m => `${m.shopifyCode}→${m.netsuiteId} (active: ${m.isActive})`))
-    
     const shipmentMapping = checkShipmentMethodMapping(shippingMethod, shipmentMappings)
-    console.log(`🔍 Shipment mapping result:`, shipmentMapping)
-    
     if (!shipmentMapping) {
-      console.log(`⚠️ No mapping found for shipping method: "${shippingMethod}"`)
       errors.push({
         orderId: order.id,
         orderName: order.name || order.orderName,
@@ -165,11 +159,7 @@ export function validateOrderMappings(
         errorMessage: `Shipment method "${shippingMethod}" is not mapped to a NetSuite shipment option`,
         timestamp: new Date()
       })
-    } else {
-      console.log(`✅ Found mapping for shipping method: "${shippingMethod}" → ${shipmentMapping.netsuiteId}`)
     }
-  } else {
-    console.log(`ℹ️ No shipping lines found or empty array`)
   }
 
   return errors

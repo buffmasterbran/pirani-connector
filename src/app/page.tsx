@@ -699,7 +699,7 @@ export default function Home() {
         if (order.shipping_lines && Array.isArray(order.shipping_lines)) {
           for (const shippingLine of order.shipping_lines) {
             if (shippingLine.code) {
-              // Check if this shipping method already has a mapping
+              // Check if this shipping method already has a mapping (either active or TBD)
               const existingMapping = shipmentMappings.find(m => m.shopifyCode === shippingLine.code)
               if (!existingMapping) {
                 console.log(`🔄 Auto-creating mapping for shipping method: ${shippingLine.code}`)
@@ -721,6 +721,14 @@ export default function Home() {
                   if (result.success) {
                     console.log(`✅ Created shipping mapping in database: ${shippingLine.code}`)
                     // Reload shipment mappings to get the updated list
+                    const mappingsResponse = await fetch('/api/mappings/shipment-methods')
+                    const mappingsResult = await mappingsResponse.json()
+                    if (mappingsResult.success) {
+                      setShipmentMappings(mappingsResult.data)
+                    }
+                  } else if (result.error && result.error.includes('Unique constraint')) {
+                    console.log(`ℹ️ Shipping method "${shippingLine.code}" already exists in database`)
+                    // Reload mappings to get the existing one
                     const mappingsResponse = await fetch('/api/mappings/shipment-methods')
                     const mappingsResult = await mappingsResponse.json()
                     if (mappingsResult.success) {
