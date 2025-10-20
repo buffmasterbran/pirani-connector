@@ -328,8 +328,8 @@ export default function Home() {
           return {
             ...payout,
             inDatabase: isInDatabase,
-            addedToDatabaseAt: savedPayout?.createdAt || undefined,
-            netsuiteDepositNumber: savedPayout?.netsuiteDepositNumber || null
+            addedToDatabaseAt: (savedPayout as any)?.createdAt || undefined,
+            netsuiteDepositNumber: (savedPayout as any)?.netsuiteDepositNumber || null
           }
         })
         
