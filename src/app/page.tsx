@@ -1409,6 +1409,15 @@ export default function Home() {
                               <Button 
                                 variant="outline" 
                                 size="sm" 
+                                onClick={() => window.open(`https://admin.shopify.com/store/pirani-life/orders/${order.id}`, '_blank')}
+                                className="text-xs flex items-center gap-1"
+                              >
+                                <ArrowUpRight className="h-3 w-3" />
+                                View in Shopify
+                              </Button>
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
                                 onClick={() => fetchOrderInfo(String(order.id))}
                                 className="text-xs"
                               >
