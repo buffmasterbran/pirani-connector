@@ -818,7 +818,7 @@ export default function Home() {
               : order
           ))
         } else {
-          setAllPayouts(prev => prev.map(payout => 
+          setPayouts(prev => prev.map(payout => 
             payout.id === selectedOrderForEdit.id 
               ? { ...payout, netsuiteDepositNumber: editingNetSuiteId.trim() }
               : payout
