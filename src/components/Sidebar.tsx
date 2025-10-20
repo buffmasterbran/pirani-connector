@@ -11,7 +11,11 @@ import {
   Home,
   MapPin,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  DollarSign,
+  RotateCcw,
+  Undo,
+  Calculator
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -60,22 +64,44 @@ export function Sidebar({ activeSection, onSectionChange }: SidebarProps) {
     {
       id: 'mappings-orders',
       name: 'Orders',
-      parent: 'mappings'
+      parent: 'mappings',
+      icon: Receipt
     },
     {
       id: 'mappings-products',
       name: 'Products',
-      parent: 'mappings'
+      parent: 'mappings',
+      icon: Settings
     },
     {
       id: 'mappings-fulfillments',
       name: 'Fulfillments',
-      parent: 'mappings'
+      parent: 'mappings',
+      icon: MapPin
     },
     {
-      id: 'mappings-other',
-      name: 'Other transactions',
-      parent: 'mappings'
+      id: 'mappings-payouts',
+      name: 'Payouts',
+      parent: 'mappings',
+      icon: DollarSign
+    },
+    {
+      id: 'mappings-returns',
+      name: 'Returns',
+      parent: 'mappings',
+      icon: RotateCcw
+    },
+    {
+      id: 'mappings-refunds',
+      name: 'Refunds',
+      parent: 'mappings',
+      icon: Undo
+    },
+    {
+      id: 'mappings-taxes',
+      name: 'Taxes',
+      parent: 'mappings',
+      icon: Calculator
     }
   ]
 
@@ -136,6 +162,7 @@ export function Sidebar({ activeSection, onSectionChange }: SidebarProps) {
                   <div className="ml-6 mt-2 space-y-1">
                     {mappingSubsections.map((subsection) => {
                       const isSubsectionActive = activeSection === subsection.id
+                      const Icon = subsection.icon
                       return (
                         <Button
                           key={subsection.id}
@@ -147,6 +174,7 @@ export function Sidebar({ activeSection, onSectionChange }: SidebarProps) {
                               : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
                           }`}
                         >
+                          <Icon className="h-4 w-4" />
                           <span className="font-medium">{subsection.name}</span>
                           {isSubsectionActive && <ChevronRight className="h-4 w-4 ml-auto" />}
                         </Button>

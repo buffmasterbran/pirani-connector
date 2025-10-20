@@ -19,6 +19,7 @@ export interface PaymentMethodMapping {
   isActive: boolean
 }
 
+
 export interface ShipmentMethodMapping {
   id: string
   shopifyCode: string // Shopify shipping method code (e.g., 'free_shipping', 'standard_shipping')
@@ -59,6 +60,7 @@ export interface CustomerFieldMapping {
   customFieldId?: string // For custom fields
 }
 
+
 // Check if a payment method has a mapping
 export function checkPaymentMethodMapping(
   paymentMethod: string, 
@@ -89,11 +91,33 @@ export function validateOrderMappings(
 ): MappingError[] {
   const errors: MappingError[] = []
 
-  // Check payment method mapping - Updated to use correct Shopify field
-  const paymentMethod = order.payment_gateway_names?.[0] || 'unknown'
-  if (paymentMethod) {
+  // Check payment method mapping - Handle both array and JSON string formats
+  console.log(`🔍 Validating order ${order.id} (${order.name})`)
+  console.log(`📊 Raw payment_gateway_names:`, order.payment_gateway_names)
+  
+  let paymentGatewayNames = order.payment_gateway_names
+  if (typeof paymentGatewayNames === 'string') {
+    try {
+      paymentGatewayNames = JSON.parse(paymentGatewayNames)
+      console.log(`📊 Parsed payment_gateway_names:`, paymentGatewayNames)
+    } catch (e) {
+      console.log(`❌ Failed to parse payment_gateway_names:`, e)
+      paymentGatewayNames = null
+    }
+  }
+  
+  console.log(`📊 Final payment_gateway_names:`, paymentGatewayNames)
+  console.log(`📊 Available payment mappings:`, paymentMappings.map(m => `${m.shopifyCode}→${m.netsuiteId}`))
+  
+  if (paymentGatewayNames && Array.isArray(paymentGatewayNames) && paymentGatewayNames.length > 0) {
+    const paymentMethod = paymentGatewayNames[0]
+    console.log(`💳 Checking payment method: "${paymentMethod}"`)
+    
     const paymentMapping = checkPaymentMethodMapping(paymentMethod, paymentMappings)
+    console.log(`🔍 Payment mapping result:`, paymentMapping)
+    
     if (!paymentMapping) {
+      console.log(`⚠️ No mapping found for payment method: "${paymentMethod}"`)
       errors.push({
         orderId: order.id,
         orderName: order.name || order.orderName,
@@ -104,12 +128,25 @@ export function validateOrderMappings(
         errorMessage: `Payment method "${paymentMethod}" is not mapped to a NetSuite payment option`,
         timestamp: new Date()
       })
+    } else {
+      console.log(`✅ Found mapping for payment method: "${paymentMethod}" → ${paymentMapping.netsuiteId}`)
     }
+  } else {
+    console.log(`ℹ️ No payment gateway names found or empty array`)
   }
 
-  // Check shipment method mapping - Using Shopify shipping code (e.g., "Flat Rate")
-  const shippingMethod = order.shipping_lines?.[0]?.code || 'unknown'
-  if (shippingMethod) {
+  // Check shipment method mapping - Handle both array and JSON string formats
+  let shippingLines = order.shipping_lines
+  if (typeof shippingLines === 'string') {
+    try {
+      shippingLines = JSON.parse(shippingLines)
+    } catch (e) {
+      shippingLines = null
+    }
+  }
+  
+  if (shippingLines && Array.isArray(shippingLines) && shippingLines.length > 0 && shippingLines[0]?.code) {
+    const shippingMethod = shippingLines[0].code
     const shipmentMapping = checkShipmentMethodMapping(shippingMethod, shipmentMappings)
     if (!shipmentMapping) {
       errors.push({
@@ -127,6 +164,7 @@ export function validateOrderMappings(
 
   return errors
 }
+
 
 // Get all unmapped payment methods from errors
 export function getUnmappedPaymentMethods(errors: MappingError[]): string[] {

@@ -5,9 +5,9 @@ import { prisma } from '@/lib/prisma'
 export async function GET() {
   try {
     const mappings = await prisma.paymentMethodMapping.findMany({
-      orderBy: { createdAt: 'asc' }
+      orderBy: { id: 'asc' }
     })
-    
+
     return NextResponse.json({ success: true, data: mappings })
   } catch (error) {
     console.error('Error fetching payment method mappings:', error)

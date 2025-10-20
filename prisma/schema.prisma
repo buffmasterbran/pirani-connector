@@ -41,6 +41,8 @@ model Order {
   currency              String
   created_at            DateTime
   netsuiteDepositNumber String?
+  payment_gateway_names String?  // JSON string array of payment methods
+  shipping_lines        String?  // JSON string array of shipping methods
   createdAt             DateTime @default(now())
 }
 

@@ -4,8 +4,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Loader } from '@/components/Loader'
-import { Package, User, MapPin, CreditCard, Calendar } from 'lucide-react'
+import { Package, User, MapPin, CreditCard, Calendar, ChevronDown, ChevronUp, Code } from 'lucide-react'
 import { safeToLocaleDateString } from '@/lib/dateUtils'
+import { useState } from 'react'
 
 interface OrderInfoDialogProps {
   isOpen: boolean
@@ -24,6 +25,7 @@ export function OrderInfoDialog({
   isLoading, 
   hideSensitiveData 
 }: OrderInfoDialogProps) {
+  const [showRawData, setShowRawData] = useState(false)
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
@@ -244,6 +246,38 @@ export function OrderInfoDialog({
                 </div>
               </CardContent>
             </Card>
+
+            {/* Raw JSON Data Section */}
+            {order && (
+              <Card>
+                <CardHeader>
+                  <Button
+                    variant="ghost"
+                    onClick={() => setShowRawData(!showRawData)}
+                    className="flex items-center justify-between w-full p-0 h-auto"
+                  >
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                      <Code className="h-5 w-5" />
+                      Raw JSON Data
+                    </CardTitle>
+                    {showRawData ? (
+                      <ChevronUp className="h-5 w-5" />
+                    ) : (
+                      <ChevronDown className="h-5 w-5" />
+                    )}
+                  </Button>
+                </CardHeader>
+                {showRawData && (
+                  <CardContent>
+                    <div className="bg-slate-50 rounded-lg p-4 overflow-auto max-h-96">
+                      <pre className="text-xs text-slate-700 whitespace-pre-wrap font-mono">
+                        {JSON.stringify(order, null, 2)}
+                      </pre>
+                    </div>
+                  </CardContent>
+                )}
+              </Card>
+            )}
           </div>
         ) : (
           <div className="text-center py-8 text-muted-foreground">

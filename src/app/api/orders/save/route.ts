@@ -36,6 +36,8 @@ export async function POST(request: NextRequest) {
               currency: order.currency,
               created_at: new Date(order.created_at),
               netsuiteDepositNumber: order.netsuiteDepositNumber || null,
+              payment_gateway_names: order.payment_gateway_names ? JSON.stringify(order.payment_gateway_names) : null,
+              shipping_lines: order.shipping_lines ? JSON.stringify(order.shipping_lines) : null,
             }
           })
           
