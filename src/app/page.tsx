@@ -2057,68 +2057,25 @@ export default function Home() {
         {/* Shipment Methods Section */}
         {activeMappingTab === 'Shipment' && (
           <Card>
-        <CardHeader>
-          <CardTitle>Shipment Methods</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <span className="text-sm text-slate-600">Default shipment method to post to when no match found</span>
-                <Database className="h-4 w-4 text-slate-400" />
-              </div>
-              <div className="flex items-center space-x-2">
-                <Select defaultValue="do-not-post">
-                  <SelectTrigger className="w-48">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="do-not-post">Do Not Post</SelectItem>
-                    <SelectItem value="standard">Standard Shipping</SelectItem>
-                    <SelectItem value="express">Express Shipping</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button variant="ghost" size="sm">
-                  <Database className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-            
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-lg">
-                <div className="font-medium text-slate-700 flex items-center space-x-2">
-                  <span>Shopify-default Shipment Methods</span>
-                  <Database className="h-4 w-4 text-slate-400" />
-                </div>
-                <div className="font-medium text-slate-700 flex items-center space-x-2">
-                  <span>NetSuite Shipment Methods</span>
-                  <Database className="h-4 w-4 text-slate-400" />
-                </div>
-              </div>
-              
-              {[
-                { shopify: '(blank)', netsuite: 'Economy International (IID: 1036)' },
-                { shopify: 'Asheville', netsuite: 'Local Pickup (IID: 1035)' },
-                { shopify: 'Collective', netsuite: 'UPS® Ground (IID: 4)' },
-                { shopify: 'DHL', netsuite: 'DHL (IID: 1222)' },
-                { shopify: 'DHL Express Worldwide', netsuite: 'DHL (IID: 1222)' },
-                { shopify: 'DHL eCommerce Parcel Direct', netsuite: 'Economy International (IID: 1036)' },
-                { shopify: 'DHL eCommerce Parcel Standard', netsuite: 'Economy International (IID: 1036)' },
-                { shopify: 'Economy International', netsuite: 'Economy International (IID: 1036)' }
-              ].map((mapping, index) => (
-                <div key={index} className="grid grid-cols-2 gap-4 p-4 border rounded-lg">
-                  <div className="text-slate-700">{mapping.shopify}</div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-slate-400">→</span>
-                    <Select defaultValue={mapping.netsuite}>
-                      <SelectTrigger className="w-full">
+            <CardHeader>
+              <CardTitle>Shipment Methods</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-sm text-slate-600">Default shipment method to post to when no match found</span>
+                    <Database className="h-4 w-4 text-slate-400" />
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Select defaultValue="do-not-post">
+                      <SelectTrigger className="w-48">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Economy International (IID: 1036)">Economy International (IID: 1036)</SelectItem>
-                        <SelectItem value="Local Pickup (IID: 1035)">Local Pickup (IID: 1035)</SelectItem>
-                        <SelectItem value="UPS® Ground (IID: 4)">UPS® Ground (IID: 4)</SelectItem>
-                        <SelectItem value="DHL (IID: 1222)">DHL (IID: 1222)</SelectItem>
+                        <SelectItem value="do-not-post">Do Not Post</SelectItem>
+                        <SelectItem value="standard">Standard Shipping</SelectItem>
+                        <SelectItem value="express">Express Shipping</SelectItem>
                       </SelectContent>
                     </Select>
                     <Button variant="ghost" size="sm">
@@ -2126,10 +2083,91 @@ export default function Home() {
                     </Button>
                   </div>
                 </div>
-              ))}
-            </div>
-          </div>
-        </CardContent>
+                
+                <div className="border-t pt-4">
+                  <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-lg mb-3">
+                    <div className="font-medium text-slate-700 flex items-center space-x-2">
+                      <span>Shopify-default Shipment Methods</span>
+                      <Database className="h-4 w-4 text-slate-400" />
+                    </div>
+                    <div className="font-medium text-slate-700">NetSuite Shipment Methods</div>
+                  </div>
+                  
+                  {[
+                    { shopify: 'Asheville', netsuite: 'Local Pickup (IID: 1035)' },
+                    { shopify: 'Collective', netsuite: 'UPS® Ground (IID: 4)' },
+                    { shopify: 'DHL', netsuite: 'DHL (IID: 1222)' },
+                    { shopify: 'DHL Express Worldwide', netsuite: 'DHL (IID: 1222)' },
+                    { shopify: 'DHL eCommerce Parcel Direct', netsuite: 'Economy International (IID: 1036)' },
+                    { shopify: 'DHL eCommerce Parcel Standard', netsuite: 'Economy International (IID: 1036)' },
+                    { shopify: 'Economy International', netsuite: 'Economy International (IID: 1036)' },
+                    { shopify: 'First Class Package International', netsuite: 'Flate Rate (IID: 288)' },
+                    { shopify: 'Flat Rate', netsuite: 'Flate Rate (IID: 288)' },
+                    { shopify: 'Flat Rate (1lb. +)', netsuite: 'Flate Rate (IID: 288)' },
+                    { shopify: 'Flat Rate Shipping', netsuite: 'Flate Rate (IID: 288)' },
+                    { shopify: 'Flat Rate+', netsuite: 'Flate Rate (IID: 288)' },
+                    { shopify: 'Flat Rate+ (1lb. +)', netsuite: 'Flate Rate (IID: 288)' },
+                    { shopify: 'Free Shipping', netsuite: 'Free Shipping (IID: 293)' },
+                    { shopify: 'Free Shipping+', netsuite: 'Free Shipping (IID: 293)' },
+                    { shopify: 'Ground Advantage', netsuite: 'UPS® Ground (IID: 4)' },
+                    { shopify: 'Pirani Life - AVL', netsuite: 'Local Pickup (IID: 1035)' },
+                    { shopify: 'Shipped by Seller: Standard Shipping', netsuite: 'Flate Rate (IID: 288)' },
+                    { shopify: 'Shipping', netsuite: 'Free Shipping (IID: 293)' },
+                    { shopify: 'Shipping Fee (Canada)', netsuite: 'Free Shipping (IID: 293)' },
+                    { shopify: 'Shipping fee (8-pack SD)', netsuite: 'Flate Rate (IID: 288)' },
+                    { shopify: 'Standard Shipping', netsuite: 'Free Shipping (IID: 293)' },
+                    { shopify: 'Standard Shipping 1lb +', netsuite: 'Flate Rate (IID: 288)' },
+                    { shopify: 'Standard shipping', netsuite: 'Flate Rate (IID: 288)' },
+                    { shopify: 'UPS', netsuite: 'UPS® Ground (IID: 4)' },
+                    { shopify: 'UPS Ground', netsuite: 'UPS® Ground (IID: 4)' },
+                    { shopify: 'UPS Worldwide Expedited®', netsuite: 'UPS Worldwide Expedited® (IID: 1238)' },
+                    { shopify: 'UPS® Standard', netsuite: 'UPS® Ground (IID: 4)' },
+                    { shopify: 'Worldwide', netsuite: 'Flate Rate (IID: 288)' },
+                    { shopify: 'standard shipping', netsuite: 'Flate Rate (IID: 288)' }
+                  ].map((mapping, index) => (
+                    <div key={index} className="grid grid-cols-2 gap-4 p-4 border rounded-lg mb-2">
+                      <div className="text-slate-700">{mapping.shopify}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-400">→</span>
+                        <Select defaultValue={mapping.netsuite}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Economy International (IID: 1036)">Economy International (IID: 1036)</SelectItem>
+                            <SelectItem value="Local Pickup (IID: 1035)">Local Pickup (IID: 1035)</SelectItem>
+                            <SelectItem value="UPS® Ground (IID: 4)">UPS® Ground (IID: 4)</SelectItem>
+                            <SelectItem value="DHL (IID: 1222)">DHL (IID: 1222)</SelectItem>
+                            <SelectItem value="Flate Rate (IID: 288)">Flate Rate (IID: 288)</SelectItem>
+                            <SelectItem value="Free Shipping (IID: 293)">Free Shipping (IID: 293)</SelectItem>
+                            <SelectItem value="UPS Worldwide Expedited® (IID: 1238)">UPS Worldwide Expedited® (IID: 1238)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button variant="ghost" size="sm">
+                          <Database className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Advanced Options Section */}
+                <div className="border-t pt-4">
+                  <div className="space-y-3">
+                    <h4 className="font-medium text-slate-700">Advanced options</h4>
+                    <div className="flex items-center space-x-2">
+                      <input type="checkbox" className="w-4 h-4" />
+                      <span className="text-sm text-slate-600">Filter orders by weight/total</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Need Help Link */}
+                <div className="pt-4">
+                  <a href="#" className="text-sm text-blue-600 hover:underline">Need help?</a>
+                </div>
+              </div>
+            </CardContent>
           </Card>
         )}
 
