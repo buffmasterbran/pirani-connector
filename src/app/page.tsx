@@ -148,6 +148,8 @@ export default function Home() {
 
   // Mapping data state - Will be loaded from database
   const [paymentMappings, setPaymentMappings] = useState<PaymentMethodMapping[]>([])
+  const [paymentInputValues, setPaymentInputValues] = useState<{[key: string]: string}>({})
+  const [unmappedPaymentInputValues, setUnmappedPaymentInputValues] = useState<{[key: string]: string}>({})
 
   const [shipmentMappings, setShipmentMappings] = useState<ShipmentMethodMapping[]>([
     { id: '1', shopifyCode: 'free_shipping', netsuiteId: '293', isActive: true },
@@ -2898,25 +2900,25 @@ export default function Home() {
                           <Input 
                             placeholder="Enter NetSuite Internal ID"
                             className="flex-1"
+                            value={unmappedPaymentInputValues[`unmapped-${paymentMethod}`] || ''}
+                            onChange={(e) => setUnmappedPaymentInputValues(prev => ({ ...prev, [`unmapped-${paymentMethod}`]: e.target.value }))}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') {
-                                const input = e.target as HTMLInputElement;
-                                const netsuiteId = input.value.trim();
+                                const netsuiteId = unmappedPaymentInputValues[`unmapped-${paymentMethod}`]?.trim();
                                 if (netsuiteId) {
                                   addPaymentMethodMapping(paymentMethod, netsuiteId);
-                                  input.value = '';
+                                  setUnmappedPaymentInputValues(prev => ({ ...prev, [`unmapped-${paymentMethod}`]: '' }));
                                 }
                               }
                             }}
                           />
                           <Button 
                             size="sm" 
-                            onClick={(e) => {
-                              const input = e.currentTarget.previousElementSibling?.previousElementSibling as HTMLInputElement;
-                              const netsuiteId = input.value.trim();
+                            onClick={() => {
+                              const netsuiteId = unmappedPaymentInputValues[`unmapped-${paymentMethod}`]?.trim();
                               if (netsuiteId) {
                                 addPaymentMethodMapping(paymentMethod, netsuiteId);
-                                input.value = '';
+                                setUnmappedPaymentInputValues(prev => ({ ...prev, [`unmapped-${paymentMethod}`]: '' }));
                               }
                             }}
                           >
@@ -2935,25 +2937,25 @@ export default function Home() {
                           <Input 
                             placeholder="Enter NetSuite Internal ID"
                             className="flex-1"
+                            value={paymentInputValues[`tbd-${mapping.id}`] || ''}
+                            onChange={(e) => setPaymentInputValues(prev => ({ ...prev, [`tbd-${mapping.id}`]: e.target.value }))}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') {
-                                const input = e.target as HTMLInputElement;
-                                const netsuiteId = input.value.trim();
+                                const netsuiteId = paymentInputValues[`tbd-${mapping.id}`]?.trim();
                                 if (netsuiteId) {
                                   updatePaymentMethodMapping(mapping.id.toString(), mapping.shopifyCode, netsuiteId);
-                                  input.value = '';
+                                  setPaymentInputValues(prev => ({ ...prev, [`tbd-${mapping.id}`]: '' }));
                                 }
                               }
                             }}
                           />
                           <Button 
                             size="sm" 
-                            onClick={(e) => {
-                              const input = e.currentTarget.previousElementSibling?.previousElementSibling as HTMLInputElement;
-                              const netsuiteId = input.value.trim();
+                            onClick={() => {
+                              const netsuiteId = paymentInputValues[`tbd-${mapping.id}`]?.trim();
                               if (netsuiteId) {
                                 updatePaymentMethodMapping(mapping.id.toString(), mapping.shopifyCode, netsuiteId);
-                                input.value = '';
+                                setPaymentInputValues(prev => ({ ...prev, [`tbd-${mapping.id}`]: '' }));
                               }
                             }}
                           >
