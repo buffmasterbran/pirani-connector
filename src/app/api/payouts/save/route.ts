@@ -12,9 +12,9 @@ export async function POST(request: NextRequest) {
     
     // Debug: Check for null values in transactions
     if (transactions?.length > 0) {
-      const nullIds = transactions.filter(t => !t.id).length
-      const nullSourceIds = transactions.filter(t => !t.source_order_id).length
-      const nullDates = transactions.filter(t => !t.processed_at).length
+      const nullIds = transactions.filter((t: any) => !t.id).length
+      const nullSourceIds = transactions.filter((t: any) => !t.source_order_id).length
+      const nullDates = transactions.filter((t: any) => !t.processed_at).length
       console.log(`🔍 Transaction data check: ${nullIds} null IDs, ${nullSourceIds} null source_order_ids, ${nullDates} null dates`)
     }
     
