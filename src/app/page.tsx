@@ -2665,18 +2665,9 @@ export default function Home() {
                         <div className="text-red-700 font-medium">{paymentMethod}</div>
                         <div className="flex items-center gap-2">
                           <span className="text-slate-400">→</span>
-                          <Select onValueChange={(netsuiteId) => addPaymentMethodMapping(paymentMethod, netsuiteId)}>
-                            <SelectTrigger className="w-full">
-                              <SelectValue placeholder="Select NetSuite ID..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="177">177 - Shopify DTC Payout</SelectItem>
-                              <SelectItem value="228">228 - Credit Card</SelectItem>
-                              <SelectItem value="0">0 - Unknown/Default</SelectItem>
-                              <SelectItem value="300">300 - PayPal</SelectItem>
-                              <SelectItem value="301">301 - Custom Payment</SelectItem>
-                            </SelectContent>
-                          </Select>
+                          <div className="w-full p-2 border rounded bg-gray-50 text-sm text-gray-500">
+                            Select component temporarily disabled
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -2701,16 +2692,9 @@ export default function Home() {
                     <Database className="h-4 w-4 text-slate-400" />
                   </div>
                   <div className="flex items-center space-x-2">
-                    <Select defaultValue="do-not-post">
-                      <SelectTrigger className="w-48">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="do-not-post">Do Not Post</SelectItem>
-                        <SelectItem value="standard">Standard Shipping</SelectItem>
-                        <SelectItem value="express">Express Shipping</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <div className="w-48 p-2 border rounded bg-gray-50 text-sm text-gray-500">
+                      Select component temporarily disabled
+                    </div>
                     <Button variant="ghost" size="sm">
                       <Database className="h-4 w-4" />
                     </Button>
@@ -2804,17 +2788,9 @@ export default function Home() {
                          <div key={index} className="grid grid-cols-5 gap-4 p-4 border rounded-lg">
                            <div className="flex items-center space-x-2">
                              <input type="checkbox" defaultChecked className="w-4 h-4" />
-                             <Select defaultValue={mapping.mappingType}>
-                               <SelectTrigger className="w-32">
-                                 <SelectValue />
-                               </SelectTrigger>
-                               <SelectContent>
-                                 <SelectItem value="Fixed">Fixed</SelectItem>
-                                 <SelectItem value="Order Header">Order Header</SelectItem>
-                                 <SelectItem value="Order Header with Translation">Order Header with Translation</SelectItem>
-                                 <SelectItem value="Custom">Custom</SelectItem>
-                               </SelectContent>
-                             </Select>
+                             <div className="w-32 p-2 border rounded bg-gray-50 text-sm text-gray-500">
+                               Select disabled
+                             </div>
                            </div>
                            <div className="text-slate-700 font-mono text-sm">
                              {mapping.shopifyCode || mapping.shopifyValue}
@@ -2901,16 +2877,9 @@ export default function Home() {
               <div key={index} className="grid grid-cols-5 gap-4 p-4 border rounded-lg">
                 <div className="flex items-center space-x-2">
                   <input type="checkbox" defaultChecked className="w-4 h-4" />
-                  <Select defaultValue={mapping.mappingType}>
-                    <SelectTrigger className="w-32">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Fixed">Fixed</SelectItem>
-                      <SelectItem value="Order Line">Order Line</SelectItem>
-                      <SelectItem value="Custom">Custom</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    <div className="w-32 p-2 border rounded bg-gray-50 text-sm text-gray-500">
+                      Select disabled
+                    </div>
                 </div>
                 <div className="text-slate-700 font-mono text-sm">
                   {mapping.shopifyCode || mapping.shopifyValue}
@@ -2998,16 +2967,9 @@ export default function Home() {
               <div key={index} className="grid grid-cols-5 gap-4 p-4 border rounded-lg">
                 <div className="flex items-center space-x-2">
                   <input type="checkbox" defaultChecked={mapping.isActive} className="w-4 h-4" />
-                  <Select defaultValue={mapping.mappingType}>
-                    <SelectTrigger className="w-32">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Fixed">Fixed</SelectItem>
-                      <SelectItem value="Customer Field">Customer Field</SelectItem>
-                      <SelectItem value="Custom">Custom</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    <div className="w-32 p-2 border rounded bg-gray-50 text-sm text-gray-500">
+                      Select disabled
+                    </div>
                 </div>
                 <div className="text-slate-700 font-mono text-sm">
                   {mapping.shopifyCode || mapping.shopifyValue}
