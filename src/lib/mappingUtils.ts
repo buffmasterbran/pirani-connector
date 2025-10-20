@@ -135,7 +135,7 @@ export function getUnmappedPaymentMethods(errors: MappingError[]): string[] {
     .map(error => error.missingMapping.shopifyValue)
   
   // Remove duplicates
-  return [...new Set(unmapped)]
+  return Array.from(new Set(unmapped))
 }
 
 // Get all unmapped shipment methods from errors
@@ -145,5 +145,5 @@ export function getUnmappedShipmentMethods(errors: MappingError[]): string[] {
     .map(error => error.missingMapping.shopifyValue)
   
   // Remove duplicates
-  return [...new Set(unmapped)]
+  return Array.from(new Set(unmapped))
 }
