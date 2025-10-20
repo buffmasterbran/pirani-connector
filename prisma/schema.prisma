@@ -111,3 +111,16 @@ model MappingDefaults {
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 }
+
+model PayoutSettings {
+  id                        Int      @id @default(autoincrement())
+  settingName               String   @unique
+  settingDescription        String?
+  netsuiteAccountId         String
+  settingType               String   // 'account', 'delay', 'boolean', 'text'
+  defaultValue              String?
+  currentValue              String
+  isActive                  Boolean  @default(true)
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+}

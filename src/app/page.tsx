@@ -125,6 +125,11 @@ export default function Home() {
     itemId: ''
   })
 
+  // Payout settings state
+  const [payoutSettings, setPayoutSettings] = useState<any[]>([])
+  const [isLoadingPayoutSettings, setIsLoadingPayoutSettings] = useState(false)
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+
   // Mapping error popup dialog state
   const [mappingErrorDialog, setMappingErrorDialog] = useState<{
     isOpen: boolean
@@ -1050,6 +1055,64 @@ export default function Home() {
     }
   }
 
+  const fetchPayoutSettings = async () => {
+    setIsLoadingPayoutSettings(true)
+    try {
+      const response = await fetch('/api/payout-settings')
+      const result = await response.json()
+      if (response.ok) {
+        setPayoutSettings(result.settings || [])
+        console.log(`✅ Fetched ${result.settings.length} payout settings`)
+      } else {
+        console.error('Error fetching payout settings:', result.error)
+      }
+    } catch (error) {
+      console.error('Error fetching payout settings:', error)
+    } finally {
+      setIsLoadingPayoutSettings(false)
+    }
+  }
+
+  const updatePayoutSetting = async (settingId: number, newValue: string) => {
+    try {
+      const response = await fetch(`/api/payout-settings/${settingId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          currentValue: newValue
+        })
+      })
+
+      if (response.ok) {
+        // Update the local state
+        setPayoutSettings(prev => 
+          prev.map(setting => 
+            setting.id === settingId 
+              ? { ...setting, currentValue: newValue }
+              : setting
+          )
+        )
+        setHasUnsavedChanges(true)
+        console.log(`✅ Updated payout setting ${settingId} to ${newValue}`)
+      } else {
+        const result = await response.json()
+        console.error('Error updating payout setting:', result.error)
+        alert(`Failed to update setting: ${result.error}`)
+      }
+    } catch (error) {
+      console.error('Error updating payout setting:', error)
+      alert('Failed to update payout setting')
+    }
+  }
+
+  const saveAllChanges = async () => {
+    // Since we're updating immediately on change, we just need to reset the unsaved changes flag
+    setHasUnsavedChanges(false)
+    alert('All changes saved successfully!')
+  }
+
   // Load saved payouts and orders on component mount
   useEffect(() => {
     fetchSavedPayouts()
@@ -1060,6 +1123,7 @@ export default function Home() {
     fetchOrderMappings()
     fetchOrderItemMappings()
     fetchCustomerMappings()
+    fetchPayoutSettings()
   }, [])
 
   // Load existing payment mappings from database
@@ -3270,18 +3334,106 @@ export default function Home() {
   const renderMappingsPayoutsContent = () => (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-slate-800 mb-2">Payout Mappings</h2>
-        <p className="text-slate-600">Configure how Shopify payouts map to NetSuite transactions.</p>
+        <h2 className="text-2xl font-bold text-slate-800 mb-2">Payout Settings</h2>
+        <p className="text-slate-600">Configure hardcoded payout settings that apply to all payouts regardless of individual order characteristics.</p>
       </div>
       
       <Card>
-        <CardContent className="pt-6">
-          <div className="text-center py-12">
-            <h3 className="text-lg font-medium text-slate-600 mb-2">Payout Mappings</h3>
-            <p className="text-slate-500">Configure payout mappings between Shopify and NetSuite.</p>
-          </div>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Settings className="h-5 w-5" />
+            Advanced Options
+          </CardTitle>
+          <p className="text-sm text-slate-600">
+            Unless you are using Payout sync, saving these settings will not affect your syncs.
+          </p>
+        </CardHeader>
+        <CardContent>
+          {isLoadingPayoutSettings ? (
+            <LoaderWithText text="Loading payout settings..." />
+          ) : (
+            <div className="space-y-1">
+              {payoutSettings.map((setting, index) => (
+                <div key={setting.id} className={`flex items-center gap-4 py-4 px-4 rounded-lg ${
+                  index % 2 === 0 ? 'bg-slate-50' : 'bg-white'
+                }`}>
+                  <div className="flex items-center gap-2 min-w-[250px]">
+                    <label className="text-sm font-medium text-slate-700">
+                      {setting.settingName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                    </label>
+                  </div>
+                  
+                  <div className="flex-1 max-w-[200px]">
+                    {setting.settingType === 'boolean' ? (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={setting.currentValue === 'true'}
+                          onChange={(e) => {
+                            updatePayoutSetting(setting.id, e.target.checked.toString())
+                          }}
+                          className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                        />
+                        <span className="text-sm text-slate-600">
+                          {setting.currentValue === 'true' ? 'Enabled' : 'Disabled'}
+                        </span>
+                      </div>
+                    ) : setting.settingType === 'delay' ? (
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          value={setting.currentValue}
+                          onChange={(e) => {
+                            updatePayoutSetting(setting.id, e.target.value)
+                          }}
+                          className="max-w-[100px]"
+                          placeholder="36"
+                        />
+                        <span className="text-sm text-slate-600">hours</span>
+                      </div>
+                    ) : (
+                      <Input
+                        type="text"
+                        value={setting.currentValue}
+                        onChange={(e) => {
+                          updatePayoutSetting(setting.id, e.target.value)
+                        }}
+                        placeholder={setting.defaultValue || ''}
+                        className="font-mono text-sm"
+                      />
+                    )}
+                  </div>
+                </div>
+              ))}
+              
+              {payoutSettings.length === 0 && (
+                <div className="text-center py-8 text-slate-500">
+                  No payout settings configured yet.
+                </div>
+              )}
+              
+              {/* Save Button - Only show when there are unsaved changes */}
+              {hasUnsavedChanges && (
+                <div className="flex justify-center pt-4 border-t">
+                  <Button 
+                    onClick={saveAllChanges}
+                    className="bg-blue-600 hover:bg-blue-700 px-8 py-2"
+                  >
+                    Save Changes
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
+      
+      {/* Help Link */}
+      <div className="flex justify-start">
+        <a href="#" className="text-sm text-blue-600 hover:underline">
+          Need help?
+        </a>
+      </div>
     </div>
   )
 
