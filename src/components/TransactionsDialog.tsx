@@ -37,7 +37,12 @@ export function TransactionsDialog({
         </DialogHeader>
         <div className="mt-4">
           <TransactionsTable
-            transactions={transactions}
+            transactions={transactions.map(t => ({
+              ...t,
+              amount: typeof t.amount === 'string' ? parseFloat(t.amount) : t.amount,
+              fee: typeof t.fee === 'string' ? parseFloat(t.fee) : t.fee,
+              net: typeof t.net === 'string' ? parseFloat(t.net) : t.net,
+            }))}
             isLoading={isLoading}
             hideSensitiveData={hideSensitiveData}
           />
