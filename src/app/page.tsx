@@ -20,7 +20,10 @@ import {
   getUnmappedShipmentMethods,
   type MappingError,
   type PaymentMethodMapping,
-  type ShipmentMethodMapping
+  type ShipmentMethodMapping,
+  type OrderFieldMapping,
+  type OrderItemFieldMapping,
+  type CustomerFieldMapping
 } from '@/lib/mappingUtils'
 import { safeToLocaleDateString } from '@/lib/dateUtils'
 
