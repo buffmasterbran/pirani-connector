@@ -6,6 +6,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { Button } from "@/components/ui/button"
+import { Trash2 } from "lucide-react"
 import { safeFormatDate } from "@/lib/dateUtils"
 
 interface Transaction {
@@ -28,9 +30,15 @@ interface TransactionsTableProps {
   transactions: Transaction[]
   isLoading?: boolean
   hideSensitiveData?: boolean
+  onDeleteNetSuiteId?: (transactionId: string) => void
 }
 
-export function TransactionsTable({ transactions, isLoading, hideSensitiveData = false }: TransactionsTableProps) {
+export function TransactionsTable({ 
+  transactions, 
+  isLoading, 
+  hideSensitiveData = false,
+  onDeleteNetSuiteId 
+}: TransactionsTableProps) {
   if (isLoading) {
     return (
       <div className="space-y-2">
@@ -77,6 +85,16 @@ export function TransactionsTable({ transactions, isLoading, hideSensitiveData =
               <TableCell>
                 {hideSensitiveData ? (
                   <span className="text-gray-500">••••••</span>
+                ) : transaction.source_order_id && transaction.source_order_id !== 'N/A' ? (
+                  <a
+                    href={`https://admin.shopify.com/store/pirani-life/orders/${transaction.source_order_id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
+                    title={`View order ${transaction.source_order_id} in Shopify`}
+                  >
+                    {transaction.order_name || `#${transaction.source_order_id}`}
+                  </a>
                 ) : (
                   transaction.order_name || '—'
                 )}
@@ -112,11 +130,34 @@ export function TransactionsTable({ transactions, isLoading, hideSensitiveData =
                   <span className="text-gray-500">••••••</span>
                 ) : transaction.amountMismatch ? (
                   <div className="space-y-1">
-                    {transaction.netsuiteTransactionName && (
-                      <div className="text-sm font-medium text-red-600">
-                        {transaction.netsuiteTransactionName}
-                      </div>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {transaction.netsuiteTransactionName && transaction.netsuiteTransactionId ? (
+                        <a
+                          href={`https://7913744.app.netsuite.com/app/accounting/transactions/cashsale.nl?id=${transaction.netsuiteTransactionId}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm font-medium text-red-600 hover:text-red-800 hover:underline"
+                          title={`View ${transaction.netsuiteTransactionName} in NetSuite`}
+                        >
+                          {transaction.netsuiteTransactionName}
+                        </a>
+                      ) : transaction.netsuiteTransactionName ? (
+                        <div className="text-sm font-medium text-red-600">
+                          {transaction.netsuiteTransactionName}
+                        </div>
+                      ) : null}
+                      {transaction.netsuiteTransactionId && onDeleteNetSuiteId && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0 text-red-600 hover:text-red-800 hover:bg-red-50"
+                          onClick={() => onDeleteNetSuiteId(transaction.id)}
+                          title="Delete NetSuite transaction ID"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      )}
+                    </div>
                     <div className="text-xs text-red-600">
                       Amount mismatch!
                     </div>
@@ -128,8 +169,33 @@ export function TransactionsTable({ transactions, isLoading, hideSensitiveData =
                   </div>
                 ) : transaction.netsuiteTransactionName ? (
                   <div className="space-y-1">
-                    <div className="text-sm font-medium text-green-600">
-                      {transaction.netsuiteTransactionName}
+                    <div className="flex items-center gap-2">
+                      {transaction.netsuiteTransactionId ? (
+                        <a
+                          href={`https://7913744.app.netsuite.com/app/accounting/transactions/cashsale.nl?id=${transaction.netsuiteTransactionId}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm font-medium text-green-600 hover:text-green-800 hover:underline"
+                          title={`View ${transaction.netsuiteTransactionName} in NetSuite`}
+                        >
+                          {transaction.netsuiteTransactionName}
+                        </a>
+                      ) : (
+                        <div className="text-sm font-medium text-green-600">
+                          {transaction.netsuiteTransactionName}
+                        </div>
+                      )}
+                      {transaction.netsuiteTransactionId && onDeleteNetSuiteId && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0 text-green-600 hover:text-green-800 hover:bg-green-50"
+                          onClick={() => onDeleteNetSuiteId(transaction.id)}
+                          title="Delete NetSuite transaction ID"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      )}
                     </div>
                     {transaction.netsuiteTransactionId && (
                       <div className="text-xs text-muted-foreground">

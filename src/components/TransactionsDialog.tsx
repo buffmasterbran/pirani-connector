@@ -165,6 +165,33 @@ export function TransactionsDialog({
     }
   }
 
+  const handleDeleteNetSuiteId = async (transactionId: string) => {
+    if (!confirm('Are you sure you want to delete the NetSuite transaction ID? This will allow you to reimport it after resolving issues.')) {
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/payouts/transactions/${transactionId}/clear-netsuite`, {
+        method: 'DELETE',
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        // Refresh transactions to show the updated data
+        if (onRefreshTransactions) {
+          onRefreshTransactions()
+        }
+      } else {
+        console.error('Error deleting NetSuite transaction ID:', data.error)
+        alert(`Error deleting NetSuite transaction ID: ${data.error || 'Unknown error'}`)
+      }
+    } catch (error) {
+      console.error('Error deleting NetSuite transaction ID:', error)
+      alert(`Error deleting NetSuite transaction ID: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-6xl max-h-[80vh] overflow-y-auto">
@@ -292,6 +319,7 @@ export function TransactionsDialog({
             }))}
             isLoading={isLoading}
             hideSensitiveData={hideSensitiveData}
+            onDeleteNetSuiteId={handleDeleteNetSuiteId}
           />
         </div>
       </DialogContent>
