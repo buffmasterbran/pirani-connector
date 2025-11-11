@@ -1,33 +1,80 @@
-import { NextResponse } from 'next/server'
-import { getOrdersFromShopify, getAllOrdersFromShopify } from '@/lib/shopify'
+import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/prisma'
+import { fetchShopifyOrdersPaginated, flattenShopifyOrder } from '@/lib/shopify'
 
-export async function GET(request: Request) {
+const MAX_ORDERS = 4000
+
+export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const all = searchParams.get('all') === 'true'
-    const limit = searchParams.get('limit')
-    
-    console.log('=== FETCHING ORDERS FROM SHOPIFY ===')
-    
-    let orders
-    if (all) {
-      console.log('🔄 Fetching ALL orders with pagination...')
-      const maxLimit = limit ? parseInt(limit) : undefined
-      orders = await getAllOrdersFromShopify(maxLimit)
-    } else {
-      const orderLimit = limit ? parseInt(limit) : 250
-      console.log(`📄 Fetching ${orderLimit} orders (single page)...`)
-      orders = await getOrdersFromShopify(orderLimit)
-    }
-    
-    console.log(`✅ Found ${orders.length} orders from Shopify`)
-    
+    const limitParam = searchParams.get('limit')
+    const statusParam = searchParams.get('status')
+
+    const limit = limitParam ? Math.min(Number(limitParam), MAX_ORDERS) : 50
+    const status = (statusParam as 'any' | 'open' | 'closed') ?? 'any'
+
+    const { orders } = await fetchShopifyOrdersPaginated(limit, status)
+
     return NextResponse.json({ orders })
   } catch (error) {
-    console.error('Error fetching orders from Shopify:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch orders from Shopify' },
-      { status: 500 }
-    )
+    console.error('❌ Failed to fetch Shopify orders', error)
+    return NextResponse.json({ error: 'Failed to fetch orders from Shopify' }, { status: 500 })
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = (await request.json().catch(() => ({}))) as {
+      limit?: number
+      status?: 'any' | 'open' | 'closed'
+    }
+    const limit = body.limit ? Math.min(body.limit, MAX_ORDERS) : 50
+    const status = body.status ?? 'any'
+
+    const { orders } = await fetchShopifyOrdersPaginated(limit, status)
+
+    if (!orders.length) {
+      return NextResponse.json({ imported: 0, updated: 0, message: 'No orders retrieved from Shopify.' })
+    }
+
+    let imported = 0
+    let updated = 0
+
+    for (const order of orders) {
+      const flattenedLines = flattenShopifyOrder(order)
+
+      for (const line of flattenedLines) {
+        const { shopifyOrderId, lineItemId, ...rest } = line
+
+        const result = await prisma.orderLine.upsert({
+          where: {
+            shopifyOrderId_lineItemId: {
+              shopifyOrderId,
+              lineItemId,
+            },
+          },
+          create: {
+            shopifyOrderId,
+            lineItemId,
+            ...rest,
+          },
+          update: {
+            ...rest,
+            updatedAt: new Date(),
+          },
+        })
+
+        if (result.createdAt.getTime() === result.updatedAt.getTime()) {
+          imported += 1
+        } else {
+          updated += 1
+        }
+      }
+    }
+
+    return NextResponse.json({ imported, updated })
+  } catch (error) {
+    console.error('❌ Failed to import Shopify orders', error)
+    return NextResponse.json({ error: 'Failed to import Shopify orders' }, { status: 500 })
   }
 }

@@ -6,51 +6,31 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Button } from "@/components/ui/button"
 import { safeFormatDate } from "@/lib/dateUtils"
-import { useState } from "react"
 
 interface Transaction {
   id: string
   source_order_id: string
+  order_name?: string | null
   amount: number
   fee: number
   net: number
   type: string
   currency: string
-  processedAt: string
+  processedAt: string | null
+  netsuiteTransactionId?: string | null
+  netsuiteTransactionName?: string | null
+  netsuiteAmount?: number | null
+  amountMismatch?: boolean
 }
 
 interface TransactionsTableProps {
   transactions: Transaction[]
   isLoading?: boolean
-  onFetchOrderNumber?: (orderId: string) => Promise<string | null>
   hideSensitiveData?: boolean
 }
 
-export function TransactionsTable({ transactions, isLoading, onFetchOrderNumber, hideSensitiveData = false }: TransactionsTableProps) {
-  const [orderNumbers, setOrderNumbers] = useState<Record<string, string>>({})
-  const [loadingOrders, setLoadingOrders] = useState<Record<string, boolean>>({})
-
-  const fetchOrderNumber = async (orderId: string) => {
-    if (!orderId || orderId === 'N/A' || loadingOrders[orderId] || orderNumbers[orderId]) return
-
-    setLoadingOrders(prev => ({ ...prev, [orderId]: true }))
-    try {
-      const response = await fetch(`/api/shopify/orders/${orderId}`)
-      const data = await response.json()
-      if (response.ok && data.order) {
-        setOrderNumbers(prev => ({ ...prev, [orderId]: data.order.order_number || data.order.name || orderId }))
-      } else {
-        setOrderNumbers(prev => ({ ...prev, [orderId]: 'Not Found' }))
-      }
-    } catch (error) {
-      console.error('Error fetching order number:', error)
-      setOrderNumbers(prev => ({ ...prev, [orderId]: 'Error' }))
-    } finally {
-      setLoadingOrders(prev => ({ ...prev, [orderId]: false }))
-    }
-  }
+export function TransactionsTable({ transactions, isLoading, hideSensitiveData = false }: TransactionsTableProps) {
   if (isLoading) {
     return (
       <div className="space-y-2">
@@ -74,35 +54,33 @@ export function TransactionsTable({ transactions, isLoading, onFetchOrderNumber,
       <Table>
         <TableHeader>
           <TableRow>
-                <TableHead>Order ID</TableHead>
-                <TableHead>Order Number</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Amount</TableHead>
-                <TableHead>Fee</TableHead>
-                <TableHead>Net</TableHead>
-                <TableHead>Processed At</TableHead>
-                <TableHead>Actions</TableHead>
+            <TableHead>Transaction ID</TableHead>
+            <TableHead>Order ID</TableHead>
+            <TableHead>Order Name</TableHead>
+            <TableHead>Type</TableHead>
+            <TableHead>Amount</TableHead>
+            <TableHead>Fee</TableHead>
+            <TableHead>Net</TableHead>
+            <TableHead>NetSuite ID</TableHead>
+            <TableHead>Processed At</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {transactions.map((transaction) => (
             <TableRow key={transaction.id}>
               <TableCell className="font-medium">
+                {transaction.id ? `#${String(transaction.id).slice(-8)}` : 'N/A'}
+              </TableCell>
+              <TableCell className="font-medium">
                 {transaction.source_order_id ? `#${transaction.source_order_id}` : 'N/A'}
               </TableCell>
-               <TableCell>
-                 {hideSensitiveData ? (
-                   <span className="text-gray-500">••••••</span>
-                 ) : (
-                   orderNumbers[transaction.source_order_id] ? (
-                     <span className="font-medium text-green-600">
-                       #{orderNumbers[transaction.source_order_id]}
-                     </span>
-                   ) : (
-                     <span className="text-muted-foreground">-</span>
-                   )
-                 )}
-               </TableCell>
+              <TableCell>
+                {hideSensitiveData ? (
+                  <span className="text-gray-500">••••••</span>
+                ) : (
+                  transaction.order_name || '—'
+                )}
+              </TableCell>
               <TableCell>
                 <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs">
                   {transaction.type}
@@ -129,26 +107,47 @@ export function TransactionsTable({ transactions, isLoading, onFetchOrderNumber,
                   `${transaction.currency} ${Number(transaction.net).toFixed(2)}`
                 )}
               </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {safeFormatDate(transaction.processedAt, 'MMM dd, yyyy HH:mm')}
-                  </TableCell>
-                  <TableCell>
-                    {transaction.source_order_id && transaction.source_order_id !== 'N/A' && transaction.type === 'charge' && !hideSensitiveData ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => fetchOrderNumber(transaction.source_order_id)}
-                        disabled={loadingOrders[transaction.source_order_id]}
-                        className="h-7 text-xs px-2"
-                      >
-                        {loadingOrders[transaction.source_order_id] ? '...' : 'Get #'}
-                      </Button>
-                    ) : null}
-                  </TableCell>
-             </TableRow>
-           ))}
-         </TableBody>
-       </Table>
-     </div>
-   )
- }
+              <TableCell>
+                {hideSensitiveData ? (
+                  <span className="text-gray-500">••••••</span>
+                ) : transaction.amountMismatch ? (
+                  <div className="space-y-1">
+                    {transaction.netsuiteTransactionName && (
+                      <div className="text-sm font-medium text-red-600">
+                        {transaction.netsuiteTransactionName}
+                      </div>
+                    )}
+                    <div className="text-xs text-red-600">
+                      Amount mismatch!
+                    </div>
+                    {transaction.netsuiteAmount !== null && transaction.netsuiteAmount !== undefined && (
+                      <div className="text-xs text-muted-foreground">
+                        NS: {transaction.currency} {Math.abs(transaction.netsuiteAmount).toFixed(2)}
+                      </div>
+                    )}
+                  </div>
+                ) : transaction.netsuiteTransactionName ? (
+                  <div className="space-y-1">
+                    <div className="text-sm font-medium text-green-600">
+                      {transaction.netsuiteTransactionName}
+                    </div>
+                    {transaction.netsuiteTransactionId && (
+                      <div className="text-xs text-muted-foreground">
+                        ID: {transaction.netsuiteTransactionId}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                )}
+              </TableCell>
+              <TableCell className="text-sm text-muted-foreground">
+                {safeFormatDate(transaction.processedAt || undefined, 'MMM dd, yyyy HH:mm')}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}

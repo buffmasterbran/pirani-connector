@@ -7,105 +7,99 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model OrderLine {
+  id                     Int      @id @default(autoincrement())
+  shopifyOrderId         String
+  shopifyOrderName       String
+  shopifyOrderNumber     Int?
+  financialStatus        String
+  fulfillmentStatus      String?
+  currency               String
+  orderCreatedAt         DateTime
+  orderUpdatedAt         DateTime?
+  orderSubtotal          Float?
+  orderTax               Float?
+  orderShipping          Float?
+  orderDiscount          Float?
+  orderTotal             Float?
+  netsuiteSalesOrderId   String?
+  netsuiteSalesOrderName String?
+  netsuiteCashSaleId     String?
+  netsuiteCashSaleName   String?
+  netsuiteRefundId       String?
+  netsuiteRefundName     String?
+  netsuiteDepositId      String?
+  shopifyPayoutId        String?
+  shopifyPayoutStatus    String?
+  expectedPayoutAmount   Float?
+  actualDepositAmount    Float?
+  varianceAmount         Float?
+  depositCreatedAt       DateTime?
+  syncedShopifyAt        DateTime?
+  syncedNetsuiteAt       DateTime?
+  status                 String?
+  reconciliationStatus   String?
+  paymentGatewayNames    String?
+  shippingLines          String?
+  customerId             String?
+  customerEmail          String?
+  customerFirstName      String?
+  customerLastName       String?
+  shippingAddress        String?
+  lineItemId             String
+  lineItemSku            String?
+  lineItemName           String?
+  lineItemQuantity       Int?
+  lineItemPrice          Float?
+  lineItemTotal          Float?
+  lineItemNet            Float?
+  lineItemMetadata       String?
+  isDeleted              Boolean  @default(false)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  payoutTransactions     PayoutTransaction[]
+
+  @@unique([shopifyOrderId, lineItemId])
+  @@index([shopifyPayoutId])
+  @@index([netsuiteDepositId])
+  @@index([status])
+}
+
 model Payout {
-  id                    BigInt        @id
-  status                String
-  date                  DateTime
-  amount                Float
-  currency              String
-  createdAt             DateTime      @default(now())
-  netsuiteDepositNumber String?
-  transactions          Transaction[]
+  id                 String               @id
+  status             String?
+  currency           String?
+  totalAmount        Float?
+  payoutDate         DateTime?
+  type               String?
+  netsuiteDepositId  String?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  transactions PayoutTransaction[]
 }
 
-model Transaction {
-  id            BigInt   @id
-  payoutId      BigInt
-  sourceOrderId BigInt
-  amount        Float
-  fee           Float
-  net           Float
-  type          String
-  currency      String
-  processedAt   DateTime
-  createdAt     DateTime @default(now())
-  payout        Payout   @relation(fields: [payoutId], references: [id])
-}
+model PayoutTransaction {
+  id                    String    @id
+  payoutId              String
+  shopifyOrderId        String?
+  orderLineId           Int?
+  amount                Float?
+  net                   Float?
+  fee                   Float?
+  type                  String?
+  currency              String?
+  processedAt           DateTime?
+  netsuiteTransactionId String?
+  netsuiteTransactionName String?
+  netsuiteAmount        Float?
+  amountMismatch        Boolean   @default(false)
+  createdAt             DateTime  @default(now())
 
-model Order {
-  id                    BigInt   @id
-  name                  String
-  financial_status      String
-  fulfillment_status    String?
-  total_price           Float
-  currency              String
-  created_at            DateTime
-  netsuiteDepositNumber String?
-  createdAt             DateTime @default(now())
-}
+  payout     Payout     @relation(fields: [payoutId], references: [id], onDelete: Cascade)
+  orderLine  OrderLine? @relation(fields: [orderLineId], references: [id])
 
-model PaymentMethodMapping {
-  id          Int      @id @default(autoincrement())
-  shopifyCode String
-  netsuiteId  String
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-}
-
-model ShipmentMethodMapping {
-  id          Int      @id @default(autoincrement())
-  shopifyCode String
-  netsuiteId  String
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-}
-
-model OrderFieldMapping {
-  id                 Int      @id @default(autoincrement())
-  mappingType        String   @default("Fixed")
-  shopifyCode        String?
-  shopifyValue       String?
-  netsuiteId         String
-  applyToAllAccounts Boolean  @default(false)
-  isActive           Boolean  @default(true)
-  customFieldId      String?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-}
-
-model OrderItemFieldMapping {
-  id                 Int      @id @default(autoincrement())
-  mappingType        String   @default("Fixed")
-  shopifyCode        String?
-  shopifyValue       String?
-  netsuiteId         String
-  applyToAllAccounts Boolean  @default(false)
-  isActive           Boolean  @default(true)
-  customFieldId      String?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-}
-
-model CustomerFieldMapping {
-  id                 Int      @id @default(autoincrement())
-  mappingType        String   @default("Fixed")
-  shopifyCode        String?
-  shopifyValue       String?
-  netsuiteId         String
-  applyToAllAccounts Boolean  @default(false)
-  isActive           Boolean  @default(true)
-  customFieldId      String?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-}
-
-model MappingDefaults {
-  id                   Int      @id @default(autoincrement())
-  mappingType          String   @unique
-  defaultShopifyValue  String?
-  defaultNetsuiteValue String?
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  @@index([payoutId])
+  @@index([shopifyOrderId])
 }

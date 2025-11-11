@@ -1,271 +1,299 @@
-const SHOPIFY_STORE_URL = process.env.SHOPIFY_STORE_URL || 'https://pirani-life.myshopify.com'
-const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || ''
-const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || '2025-10'
+import { Prisma } from '@prisma/client'
 
-const SHOPIFY_BASE_URL = `${SHOPIFY_STORE_URL}/admin/api/${SHOPIFY_API_VERSION}`
+const SHOPIFY_STORE_URL = process.env.SHOPIFY_STORE_URL
+const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN
+const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || '2024-07'
 
-const headers = {
-  'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
+if (!SHOPIFY_STORE_URL || !SHOPIFY_ACCESS_TOKEN) {
+  console.warn('SHOPIFY credentials are not fully configured. Import routes will use mock responses.')
+}
+
+const SHOPIFY_BASE_URL = SHOPIFY_STORE_URL
+  ? `${SHOPIFY_STORE_URL.replace(/\/$/, '')}/admin/api/${SHOPIFY_API_VERSION}`
+  : ''
+
+const SHOPIFY_HEADERS: HeadersInit = {
   'Content-Type': 'application/json',
-  'Accept': 'application/json'
+  Accept: 'application/json',
+  ...(SHOPIFY_ACCESS_TOKEN ? { 'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN } : {}),
 }
 
-export async function getPayoutsFromShopify(limit: number = 250) {
+async function shopifyFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  if (!SHOPIFY_BASE_URL) {
+    throw new Error('Shopify credentials missing')
+  }
+
+  const res = await fetch(`${SHOPIFY_BASE_URL}${path}`, {
+    ...init,
+    headers: {
+      ...SHOPIFY_HEADERS,
+      ...(init?.headers || {}),
+    },
+    cache: 'no-store',
+  })
+
+  if (!res.ok) {
+    const message = await res.text()
+    throw new Error(`Shopify API error ${res.status}: ${message}`)
+  }
+
+  return res.json() as Promise<T>
+}
+
+function parseFloatOrNull(value: any): number | null {
+  if (value === null || value === undefined || value === '') return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function parseDate(value: any): Date | null {
+  if (!value) return null
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+function stringify(value: any): string | null {
+  if (value === null || value === undefined) return null
   try {
-    const response = await fetch(`${SHOPIFY_BASE_URL}/shopify_payments/payouts.json?limit=${limit}`, {
-      headers
+    return JSON.stringify(value)
+  } catch (error) {
+    console.warn('Failed to stringify value for storage', error)
+    return null
+  }
+}
+
+export type FlattenedOrderLine = Omit<Prisma.OrderLineUncheckedCreateInput, 'id'>
+
+export function flattenShopifyOrder(order: any): FlattenedOrderLine[] {
+  const shopifyOrderId = String(order.id)
+  const base: Omit<FlattenedOrderLine, 'lineItemId' | 'lineItemName' | 'lineItemQuantity' | 'lineItemPrice' | 'lineItemTotal' | 'lineItemNet'> = {
+    shopifyOrderId,
+    shopifyOrderName: order.name ?? shopifyOrderId,
+    shopifyOrderNumber: order.order_number ?? null,
+    financialStatus: order.financial_status ?? 'unknown',
+    fulfillmentStatus: order.fulfillment_status ?? null,
+    currency: order.currency ?? 'USD',
+    orderCreatedAt: parseDate(order.created_at) ?? new Date(),
+    orderUpdatedAt: parseDate(order.updated_at),
+    orderSubtotal: parseFloatOrNull(order.subtotal_price),
+    orderTax: parseFloatOrNull(order.total_tax),
+    orderShipping: parseFloatOrNull(
+      order.total_shipping_price_set?.shop_money?.amount ??
+        order.total_shipping_price_set?.presentment_money?.amount ??
+        order.total_shipping_price_set?.amount,
+    ),
+    orderDiscount: parseFloatOrNull(order.total_discounts),
+    orderTotal: parseFloatOrNull(order.total_price),
+    netsuiteSalesOrderId: null,
+    netsuiteSalesOrderName: null,
+    netsuiteCashSaleId: null,
+    netsuiteCashSaleName: null,
+    netsuiteRefundId: null,
+    netsuiteRefundName: null,
+    netsuiteDepositId: null,
+    shopifyPayoutId: null,
+    shopifyPayoutStatus: null,
+    expectedPayoutAmount: null,
+    actualDepositAmount: null,
+    varianceAmount: null,
+    depositCreatedAt: null,
+    syncedShopifyAt: new Date(),
+    syncedNetsuiteAt: null,
+    status: order.financial_status ?? 'unknown',
+    reconciliationStatus: null,
+    paymentGatewayNames: stringify(order.payment_gateway_names ?? []),
+    shippingLines: stringify(order.shipping_lines ?? []),
+    customerId: order.customer?.id ? String(order.customer.id) : null,
+    customerEmail: order.customer?.email ?? null,
+    customerFirstName: order.customer?.first_name ?? null,
+    customerLastName: order.customer?.last_name ?? null,
+    shippingAddress: stringify(order.shipping_address ?? null),
+    lineItemSku: null,
+    lineItemName: null,
+    lineItemQuantity: null,
+    lineItemPrice: null,
+    lineItemTotal: null,
+    lineItemNet: null,
+    lineItemMetadata: null,
+    isDeleted: false,
+  }
+
+  const lineItems = Array.isArray(order.line_items) ? order.line_items : []
+
+  if (lineItems.length === 0) {
+    return [
+      {
+        ...base,
+        lineItemId: `${shopifyOrderId}-line-0`,
+        lineItemName: 'Unknown Item',
+        lineItemQuantity: 0,
+        lineItemPrice: 0,
+        lineItemTotal: base.orderTotal ?? 0,
+        lineItemNet: base.orderTotal ?? 0,
+        lineItemMetadata: stringify({}),
+      },
+    ]
+  }
+
+  return lineItems.map((item: any, index: number) => {
+    const quantity = Number(item.quantity ?? 0)
+    const unitPrice =
+      parseFloatOrNull(item.price) ?? parseFloatOrNull(item.price_set?.shop_money?.amount) ?? 0
+    const total = parseFloatOrNull(item.total ?? item.line_price) ?? unitPrice * quantity
+    const net = total - (parseFloatOrNull(item.total_discount) ?? 0)
+
+    return {
+      ...base,
+      lineItemId: String(item.id ?? `${shopifyOrderId}-${index}`),
+      lineItemSku: item.sku ?? null,
+      lineItemName: item.name ?? item.title ?? 'Item',
+      lineItemQuantity: quantity,
+      lineItemPrice: unitPrice,
+      lineItemTotal: total,
+      lineItemNet: net,
+      lineItemMetadata: stringify(item ?? {}),
+    }
+  })
+}
+
+export async function fetchShopifyOrders(limit = 50, status: 'any' | 'open' | 'closed' = 'any') {
+  if (!SHOPIFY_BASE_URL) {
+    return { orders: [] }
+  }
+
+  const query = new URLSearchParams({
+    status,
+    limit: String(limit),
+  })
+
+  const data = await shopifyFetch<{ orders: any[] }>(`/orders.json?${query.toString()}`)
+  return { orders: data.orders ?? [] }
+}
+
+export async function fetchShopifyOrdersPaginated(maxOrders = 250, status: 'any' | 'open' | 'closed' = 'any') {
+  if (!SHOPIFY_BASE_URL) {
+    return { orders: [] }
+  }
+
+  const target = Math.min(maxOrders, 4000)
+  const allOrders: any[] = []
+  let nextUrl: string | null = null
+
+  while (allOrders.length < target) {
+    const remaining = target - allOrders.length
+    const limit = Math.min(remaining, 250)
+
+    const requestUrl = nextUrl
+      ? nextUrl
+      : `${SHOPIFY_BASE_URL}/orders.json?${new URLSearchParams({
+          status,
+          limit: String(limit),
+        }).toString()}`
+
+    const response = await fetch(requestUrl, {
+      headers: SHOPIFY_HEADERS,
+      cache: 'no-store',
     })
-    
+
     if (!response.ok) {
-      throw new Error(`Shopify API error: ${response.status} ${response.statusText}`)
+      const message = await response.text()
+      throw new Error(`Shopify API error ${response.status}: ${message}`)
     }
-    
-    const data = await response.json()
-    return data.payouts || []
-  } catch (error) {
-    console.error('Error fetching payouts from Shopify:', error)
-    throw error
+
+    const data = (await response.json()) as { orders?: any[] }
+    const batch = data.orders ?? []
+
+    if (!batch.length) {
+      break
+    }
+
+    allOrders.push(...batch)
+
+    if (allOrders.length >= target) {
+      break
+    }
+
+    const linkHeader = response.headers.get('Link')
+    if (!linkHeader) {
+      break
+    }
+
+    const nextMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/)
+    if (!nextMatch) {
+      break
+    }
+
+    nextUrl = nextMatch[1]
+    if (!nextUrl) {
+      break
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 150))
   }
+
+  return { orders: allOrders.slice(0, target) }
 }
 
-export async function getAllPayoutsFromShopify(maxPayouts?: number) {
-  try {
-    const allPayouts: any[] = []
-    let pageInfo: string | null = null
-    let totalFetched = 0
-    const limit = 250 // Shopify's max per request
-    
-    console.log('🔄 Starting paginated payout fetch...')
-    
-    while (true) {
-      // Build URL with pagination
-      let url = `${SHOPIFY_BASE_URL}/shopify_payments/payouts.json?limit=${limit}`
-      
-      if (pageInfo) {
-        url += `&page_info=${pageInfo}`
-      }
-      
-      console.log(`📄 Fetching payout page ${Math.floor(totalFetched / limit) + 1}... (${totalFetched} payouts fetched so far)`)
-      
-      const response = await fetch(url, { headers })
-      
-      if (!response.ok) {
-        throw new Error(`Shopify API error: ${response.status} ${response.statusText}`)
-      }
-      
-      const data = await response.json()
-      const payouts = data.payouts || []
-      
-      if (payouts.length === 0) {
-        console.log('✅ No more payouts to fetch')
-        break
-      }
-      
-      allPayouts.push(...payouts)
-      totalFetched += payouts.length
-      
-      console.log(`📦 Fetched ${payouts.length} payouts (total: ${totalFetched})`)
-      
-      // Check if we've hit the max limit
-      if (maxPayouts && totalFetched >= maxPayouts) {
-        console.log(`🛑 Reached max limit of ${maxPayouts} payouts`)
-        break
-      }
-      
-      // Check for next page using Link header
-      const linkHeader = response.headers.get('Link')
-      if (linkHeader) {
-        const nextPageMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/)
-        if (nextPageMatch) {
-          const nextUrl = new URL(nextPageMatch[1])
-          pageInfo = nextUrl.searchParams.get('page_info')
-        } else {
-          console.log('✅ No more pages available')
-          break
-        }
-      } else {
-        console.log('✅ No Link header found, assuming last page')
-        break
-      }
-      
-      // Add a small delay to be respectful to Shopify's API
-      await new Promise(resolve => setTimeout(resolve, 100))
-    }
-    
-    console.log(`🎉 Successfully fetched ${allPayouts.length} payouts total`)
-    return allPayouts
-    
-  } catch (error) {
-    console.error('Error fetching all payouts from Shopify:', error)
-    throw error
+export async function fetchShopifyPayouts(limit = 50) {
+  if (!SHOPIFY_BASE_URL) {
+    return { payouts: [] }
   }
+
+  const query = new URLSearchParams({ limit: String(limit) })
+  const data = await shopifyFetch<{ payouts: any[] }>(`/shopify_payments/payouts.json?${query.toString()}`)
+  return { payouts: data.payouts ?? [] }
 }
 
-export async function getTransactionsByPayout(payoutId: string) {
-  try {
-    const response = await fetch(
-      `${SHOPIFY_BASE_URL}/shopify_payments/balance/transactions.json?payout_id=${payoutId}`,
-      { headers }
-    )
-    
-    if (!response.ok) {
-      throw new Error(`Shopify API error: ${response.status} ${response.statusText}`)
-    }
-    
-    const data = await response.json()
-    return data.transactions || []
-  } catch (error) {
-    console.error('Error fetching transactions from Shopify:', error)
-    throw error
+export async function fetchShopifyPayoutTransactions(payoutId: string) {
+  if (!SHOPIFY_BASE_URL) {
+    return { transactions: [] }
   }
-}
 
-export async function getOrdersFromShopify(limit: number = 250) {
-  try {
-    const response = await fetch(`${SHOPIFY_BASE_URL}/orders.json?limit=${limit}&fields=id,name,financial_status,fulfillment_status,total_price,currency,created_at,payment_gateway_names,shipping_lines`, {
-      headers
-    })
-    
-    if (!response.ok) {
-      throw new Error(`Shopify API error: ${response.status} ${response.statusText}`)
-    }
-    
-    const data = await response.json()
-    return data.orders || []
-  } catch (error) {
-    console.error('Error fetching orders from Shopify:', error)
-    throw error
-  }
-}
-
-export async function getAllOrdersFromShopify(maxOrders?: number) {
-  try {
-    const allOrders: any[] = []
-    let pageInfo: string | null = null
-    let totalFetched = 0
-    const limit = 250 // Shopify's max per request
-    
-    console.log('🔄 Starting paginated order fetch...')
-    
-    while (true) {
-      // Build URL with pagination
-      let url = `${SHOPIFY_BASE_URL}/orders.json?limit=${limit}&fields=id,name,financial_status,fulfillment_status,total_price,currency,created_at,payment_gateway_names,shipping_lines`
-      
-      if (pageInfo) {
-        url += `&page_info=${pageInfo}`
-      }
-      
-      console.log(`📄 Fetching page ${Math.floor(totalFetched / limit) + 1}... (${totalFetched} orders fetched so far)`)
-      
-      const response = await fetch(url, { headers })
-      
-      if (!response.ok) {
-        throw new Error(`Shopify API error: ${response.status} ${response.statusText}`)
-      }
-      
-      const data = await response.json()
-      const orders = data.orders || []
-      
-      if (orders.length === 0) {
-        console.log('✅ No more orders to fetch')
-        break
-      }
-      
-      allOrders.push(...orders)
-      totalFetched += orders.length
-      
-      console.log(`📦 Fetched ${orders.length} orders (total: ${totalFetched})`)
-      
-      // Check if we've hit the max limit
-      if (maxOrders && totalFetched >= maxOrders) {
-        console.log(`🛑 Reached max limit of ${maxOrders} orders`)
-        break
-      }
-      
-      // Check for next page using Link header
-      const linkHeader = response.headers.get('Link')
-      if (linkHeader) {
-        const nextPageMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/)
-        if (nextPageMatch) {
-          const nextUrl = new URL(nextPageMatch[1])
-          pageInfo = nextUrl.searchParams.get('page_info')
-        } else {
-          console.log('✅ No more pages available')
-          break
-        }
-      } else {
-        console.log('✅ No Link header found, assuming last page')
-        break
-      }
-      
-      // Add a small delay to be respectful to Shopify's API
-      await new Promise(resolve => setTimeout(resolve, 100))
-    }
-    
-    console.log(`🎉 Successfully fetched ${allOrders.length} orders total`)
-    return allOrders
-    
-  } catch (error) {
-    console.error('Error fetching all orders from Shopify:', error)
-    throw error
-  }
-}
-
-export async function getOrderById(orderId: string) {
-  try {
-    const response = await fetch(`${SHOPIFY_BASE_URL}/orders/${orderId}.json`, {
-      headers
-    })
-    
-    if (!response.ok) {
-      throw new Error(`Shopify API error: ${response.status} ${response.statusText}`)
-    }
-    
-    const data = await response.json()
-    return data.order || null
-  } catch (error) {
-    console.error('Error fetching order from Shopify:', error)
-    throw error
-  }
+  const query = new URLSearchParams({ payout_id: payoutId, limit: '250' })
+  const data = await shopifyFetch<{ transactions: any[] }>(
+    `/shopify_payments/balance/transactions.json?${query.toString()}`,
+  )
+  return { transactions: data.transactions ?? [] }
 }
 
 export async function getOrderByNameFromShopify(orderName: string) {
+  if (!SHOPIFY_BASE_URL) {
+    return null
+  }
+
   try {
-    // Use the full order name including # symbol
-    console.log(`🔍 Searching for order with name: "${orderName}"`)
+    // Remove # if present to get the order number
+    const orderNumber = orderName.replace(/^#/, '')
     
-    // Search for orders with this name (including # if present)
-    const searchUrl = `${SHOPIFY_BASE_URL}/orders.json?name=${encodeURIComponent(orderName)}&limit=1`
-    console.log(`📡 Making request to: ${searchUrl}`)
-    
-    const response = await fetch(searchUrl, {
-      headers
+    // Try searching by order_number first (more reliable)
+    const queryByNumber = new URLSearchParams({ 
+      order_number: orderNumber,
+      limit: '1'
     })
     
-    if (!response.ok) {
-      throw new Error(`Shopify API error: ${response.status} ${response.statusText}`)
+    try {
+      const dataByNumber = await shopifyFetch<{ orders: any[] }>(`/orders.json?${queryByNumber.toString()}`)
+      if (dataByNumber.orders && dataByNumber.orders.length > 0) {
+        return dataByNumber.orders[0]
+      }
+    } catch (error) {
+      // If order_number doesn't work, try name parameter
+      console.log('Search by order_number failed, trying name parameter...')
     }
     
-    const data = await response.json()
-    const orders = data.orders || []
-    console.log(`📦 Found ${orders.length} orders from Shopify API`)
+    // Fallback: Try searching by name parameter
+    const queryByName = new URLSearchParams({ 
+      name: `#${orderNumber}`, // Include # in the search
+      limit: '1'
+    })
     
-    if (orders.length > 0) {
-      console.log(`📋 Order names found:`, orders.map((o: any) => o.name))
+    const dataByName = await shopifyFetch<{ orders: any[] }>(`/orders.json?${queryByName.toString()}`)
+    
+    if (dataByName.orders && dataByName.orders.length > 0) {
+      return dataByName.orders[0]
     }
     
-    // Find exact match by name (case insensitive) - compare against original orderName
-    const exactMatch = orders.find((order: any) => 
-      order.name.toLowerCase() === orderName.toLowerCase()
-    )
-    
-    if (exactMatch) {
-      console.log(`✅ Found exact match: ${exactMatch.name}`)
-    } else {
-      console.log(`❌ No exact match found for "${orderName}"`)
-    }
-    
-    return exactMatch || null
+    return null
   } catch (error) {
     console.error('Error fetching order by name from Shopify:', error)
     throw error

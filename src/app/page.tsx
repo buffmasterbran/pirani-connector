@@ -13,7 +13,7 @@ import { TransactionsDialog } from '@/components/TransactionsDialog'
 import { OrderInfoDialog } from '@/components/OrderInfoDialog'
 import { Sidebar } from '@/components/Sidebar'
 import { Loader, LoaderWithText } from '@/components/Loader'
-import { Download, Database, ArrowUpRight, Settings, Eye, EyeOff, Filter, Trash2, ChevronDown } from 'lucide-react'
+import { Download, Database, ArrowUpRight, Settings, Eye, EyeOff, Filter, Trash2, ChevronDown, Loader2 } from 'lucide-react'
 import { 
   validateOrderMappings, 
   getUnmappedPaymentMethods, 
@@ -36,6 +36,7 @@ interface Payout {
   inDatabase?: boolean
   addedToDatabaseAt?: string
   netsuiteDepositNumber?: string | null
+  netsuiteDepositId?: string | null
 }
 
 interface Transaction {
@@ -90,20 +91,41 @@ interface SavedPayout {
   currency: string
   status: string
   netsuiteDepositNumber: string | null
+  netsuiteDepositId: string | null
   transactions: Array<{
     id: string
-    sourceOrderId: string
+    source_order_id: string
+    order_name?: string | null
     amount: number
     fee: number
     net: number
     type: string
     currency: string
-    processedAt: string
+    processedAt: string | null
   }>
 }
 
 export default function Home() {
   const [payouts, setPayouts] = useState<Payout[]>([])
+  const [netsuitePreviewDialog, setNetsuitePreviewDialog] = useState<{
+    isOpen: boolean
+    payoutId: string | null
+    previewData: {
+      depositRequest: any
+      stats: {
+        totalTransactions: number
+        transactionsWithNS: number
+        depositItemsCount: number
+        totalFees: number
+      }
+    } | null
+    isLoading: boolean
+  }>({
+    isOpen: false,
+    payoutId: null,
+    previewData: null,
+    isLoading: false,
+  })
   const [selectedPayoutTransactions, setSelectedPayoutTransactions] = useState<Transaction[]>([])
   const [savedPayouts, setSavedPayouts] = useState<SavedPayout[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -268,6 +290,10 @@ export default function Home() {
     }
   })
   const [orderNameInput, setOrderNameInput] = useState('')
+  const [orderRangeStart, setOrderRangeStart] = useState('')
+  const [orderRangeEnd, setOrderRangeEnd] = useState('')
+  const [payoutRangeStart, setPayoutRangeStart] = useState('')
+  const [payoutRangeEnd, setPayoutRangeEnd] = useState('')
 
   const fetchSavedPayouts = async () => {
     setIsLoadingSaved(true)
@@ -293,8 +319,10 @@ export default function Home() {
       const response = await fetch('/api/orders')
       const data = await response.json()
       if (response.ok) {
-        setOrders(data.orders || [])
-        console.log(`✅ Loaded ${data.orders?.length || 0} saved orders from database`)
+        const fetchedOrders = data.orders || []
+        console.log(`✅ Loaded ${fetchedOrders.length} saved orders from database`)
+
+        setOrders(fetchedOrders.slice(0, 100))
       } else {
         console.error('Error fetching saved orders:', data.error)
         // If there's an error (like table doesn't exist), just set empty array
@@ -426,6 +454,67 @@ export default function Home() {
     }
   }
 
+  const importPayoutsByRange = async () => {
+    const start = parseInt(payoutRangeStart.trim())
+    const end = parseInt(payoutRangeEnd.trim())
+    
+    if (!payoutRangeStart.trim() || !payoutRangeEnd.trim()) {
+      alert('Please enter both start and end values')
+      return
+    }
+    
+    if (isNaN(start) || isNaN(end)) {
+      alert('Please enter valid numbers')
+      return
+    }
+    
+    if (start > end) {
+      alert('Start number must be less than or equal to end number')
+      return
+    }
+    
+    // Calculate the limit: if start is 1 and end is 10, we want 10 payouts
+    const limit = end
+    
+    setIsLoading(true)
+    try {
+      console.log(`🔄 Importing the most recent ${limit} payouts (positions ${start}-${end})...`)
+      
+      // Fetch the specified number of payouts (most recent first)
+      const response = await fetch(`/api/shopify/payouts?limit=${limit}`)
+      const data = await response.json()
+      
+      if (response.ok) {
+        const fetchedPayouts = data.payouts || []
+        console.log(`✅ Fetched ${fetchedPayouts.length} payouts from Shopify`)
+        
+        if (fetchedPayouts.length === 0) {
+          alert(`No payouts found`)
+        } else {
+          // Slice to get only the range requested (e.g., if start=1, end=10, get payouts 0-9)
+          const rangePayouts = fetchedPayouts.slice(start - 1, end)
+          
+          // Check database status first
+          await checkPayoutDatabaseStatus(rangePayouts)
+          
+          // Save payouts to database
+          await saveNewPayoutsOnly(rangePayouts)
+          
+          setPayouts(rangePayouts)
+          alert(`Successfully imported ${rangePayouts.length} payouts (positions ${start}-${end} of ${fetchedPayouts.length} total)`)
+        }
+      } else {
+        console.error('❌ Error fetching payouts:', data.error)
+        alert(`Error fetching payouts: ${data.error}`)
+      }
+    } catch (error) {
+      console.error('❌ Error importing payouts by range:', error)
+      alert('Error importing payouts by range: ' + error)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const saveNewPayoutsOnly = async (payoutsToSave: Payout[]) => {
     console.log('🔍 Checking existing payouts in database...')
     
@@ -443,16 +532,19 @@ export default function Home() {
     console.log(`🎯 Found ${newPayouts.length} new payouts to save out of ${payoutsToSave.length} total`)
     console.log('🆕 New payout IDs:', newPayouts.map(p => String(p.id)))
     
-    if (newPayouts.length === 0) {
-      console.log('ℹ️ No new payouts to save - all are already in database')
+    // Process all payouts to ensure transactions are imported (even for existing payouts)
+    const payoutsToProcess = payoutsToSave.length > 0 ? payoutsToSave : []
+    
+    if (payoutsToProcess.length === 0) {
+      console.log('ℹ️ No payouts to process')
       return
     }
     
-    for (const payout of newPayouts) {
+    for (const payout of payoutsToProcess) {
       console.log(`💾 Processing payout ${payout.id}...`)
       try {
-        // Fetch transactions for this payout
-        console.log(`📡 Fetching transactions for payout ${payout.id}...`)
+        // Fetch transactions for this payout from Shopify
+        console.log(`📡 Fetching transactions for payout ${payout.id} from Shopify...`)
         const transactionsResponse = await fetch(`/api/shopify/payouts/${payout.id}/transactions`)
         const transactionsData = await transactionsResponse.json()
         
@@ -506,7 +598,7 @@ export default function Home() {
     setIsLoadingTransactions(true)
     setSelectedPayoutId(payoutId)
     try {
-      const response = await fetch(`/api/shopify/payouts/${payoutId}/transactions`)
+      const response = await fetch(`/api/payouts/${payoutId}/transactions`)
       const data = await response.json()
       if (response.ok) {
         setSelectedPayoutTransactions(data.transactions || [])
@@ -524,8 +616,115 @@ export default function Home() {
   }
 
   const pushToNetSuite = async (payoutId: string) => {
-    alert(`Push to NetSuite functionality coming soon! Payout ID: ${payoutId}`)
-    // TODO: Implement actual NetSuite integration
+    // First, get the preview of what will be sent
+    setNetsuitePreviewDialog({
+      isOpen: true,
+      payoutId,
+      previewData: null,
+      isLoading: true,
+    })
+
+    try {
+      const previewResponse = await fetch(`/api/payouts/${payoutId}/preview-deposit`)
+      const previewData = await previewResponse.json()
+
+      if (!previewResponse.ok || !previewData.success) {
+        setNetsuitePreviewDialog({
+          isOpen: false,
+          payoutId: null,
+          previewData: null,
+          isLoading: false,
+        })
+        alert(`Cannot preview deposit:\n\n${JSON.stringify(previewData, null, 2)}`)
+        return
+      }
+
+      // Log to console for easy copying
+      console.log('📋 NetSuite Deposit Preview:', {
+        stats: previewData.stats,
+        depositRequest: previewData.depositRequest,
+      })
+      console.log('📋 JSON Body to be sent:', JSON.stringify(previewData.depositRequest, null, 2))
+
+      setNetsuitePreviewDialog({
+        isOpen: true,
+        payoutId,
+        previewData,
+        isLoading: false,
+      })
+    } catch (error) {
+      console.error('❌ Error previewing deposit:', error)
+      setNetsuitePreviewDialog({
+        isOpen: false,
+        payoutId: null,
+        previewData: null,
+        isLoading: false,
+      })
+      alert(`Error previewing deposit: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
+  const handleCreateNetSuiteDeposit = async () => {
+    if (!netsuitePreviewDialog.payoutId) return
+
+    setNetsuitePreviewDialog(prev => ({ ...prev, isLoading: true }))
+
+    try {
+      const response = await fetch(`/api/payouts/${netsuitePreviewDialog.payoutId}/create-deposit`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      let data
+      try {
+        data = await response.json()
+      } catch (parseError) {
+        const text = await response.text()
+        console.error('❌ Failed to parse response:', parseError, 'Response text:', text)
+        setNetsuitePreviewDialog({
+          isOpen: false,
+          payoutId: null,
+          previewData: null,
+          isLoading: false,
+        })
+        alert(`Failed to parse response:\n\n${text}`)
+        return
+      }
+
+      setNetsuitePreviewDialog({
+        isOpen: false,
+        payoutId: null,
+        previewData: null,
+        isLoading: false,
+      })
+
+      if (response.ok && data.success) {
+        console.log(`✅ Successfully created NetSuite deposit:`, data)
+        const fullResponse = JSON.stringify(data, null, 2)
+        alert(`✅ Successfully created NetSuite deposit!\n\nFull Response:\n${fullResponse}`)
+        
+        // Refresh payouts to show the new deposit ID
+        fetchSavedPayouts()
+      } else {
+        console.error('❌ Failed to create NetSuite deposit:', data)
+        const fullResponse = JSON.stringify(data, null, 2)
+        alert(`Failed to create NetSuite deposit:\n\nFull Response:\n${fullResponse}`)
+      }
+    } catch (error) {
+      console.error('❌ Error creating NetSuite deposit:', error)
+      const errorDetails = error instanceof Error 
+        ? JSON.stringify({ message: error.message, stack: error.stack }, null, 2)
+        : JSON.stringify(error, null, 2)
+      setNetsuitePreviewDialog({
+        isOpen: false,
+        payoutId: null,
+        previewData: null,
+        isLoading: false,
+      })
+      alert(`Error creating NetSuite deposit:\n\n${errorDetails}`)
+    }
   }
 
   const deletePayout = async (payoutId: string) => {
@@ -561,9 +760,10 @@ export default function Home() {
   const fetchOrders = async (fetchAll: boolean = false, maxOrders?: number) => {
     setIsLoadingOrders(true)
     try {
-      let url = '/api/shopify/orders'
+      const importLimit = 4000
+      let url = `/api/shopify/orders?limit=${importLimit}`
       if (fetchAll) {
-        url += '?all=true'
+        url = '/api/shopify/orders?all=true'
         if (maxOrders) {
           url += `&limit=${maxOrders}`
         }
@@ -580,7 +780,7 @@ export default function Home() {
         // Automatically save new orders to database
         await saveNewOrdersOnly(fetchedOrders)
         
-        setOrders(fetchedOrders)
+        setOrders(fetchedOrders.slice(0, 100))
       } else {
         console.error('❌ Error fetching orders:', data.error)
         alert(`Error fetching orders: ${data.error}`)
@@ -608,7 +808,7 @@ export default function Home() {
       const data = await response.json()
       
       if (response.ok) {
-        console.log(`✅ Successfully saved orders to database:`, data.message)
+        console.log(`✅ Successfully saved orders to database: imported=${data.imported ?? 0}, updated=${data.updated ?? 0}`)
         
         // Update orders with database status - only update existing orders, don't replace the entire list
         setOrders(prevOrders => {
@@ -617,6 +817,8 @@ export default function Home() {
             return savedOrder || existingOrder
           })
         })
+
+        await fetchSavedOrders()
       } else {
         console.error('❌ Failed to save orders to database:', data.error)
         alert(`Failed to save orders to database: ${data.error}`)
@@ -677,6 +879,64 @@ export default function Home() {
     } catch (error) {
       console.error('❌ Error fetching order:', error)
       alert('Error fetching order from Shopify')
+    } finally {
+      setIsLoadingOrders(false)
+    }
+  }
+
+  const importOrdersByRange = async () => {
+    const start = parseInt(orderRangeStart.trim())
+    const end = parseInt(orderRangeEnd.trim())
+    
+    if (!orderRangeStart.trim() || !orderRangeEnd.trim()) {
+      alert('Please enter both start and end values')
+      return
+    }
+    
+    if (isNaN(start) || isNaN(end)) {
+      alert('Please enter valid numbers')
+      return
+    }
+    
+    if (start > end) {
+      alert('Start number must be less than or equal to end number')
+      return
+    }
+    
+    // Calculate the limit: if start is 1 and end is 10, we want 10 orders
+    const limit = end
+    
+    setIsLoadingOrders(true)
+    try {
+      console.log(`🔄 Importing the most recent ${limit} orders (positions ${start}-${end})...`)
+      
+      // Fetch the specified number of orders (most recent first)
+      const response = await fetch(`/api/shopify/orders?limit=${limit}`)
+      const data = await response.json()
+      
+      if (response.ok) {
+        const fetchedOrders = data.orders || []
+        console.log(`✅ Fetched ${fetchedOrders.length} orders from Shopify`)
+        
+        if (fetchedOrders.length === 0) {
+          alert(`No orders found`)
+        } else {
+          // Slice to get only the range requested (e.g., if start=1, end=10, get orders 0-9)
+          const rangeOrders = fetchedOrders.slice(start - 1, end)
+          
+          // Automatically save new orders to database
+          await saveNewOrdersOnly(rangeOrders)
+          
+          setOrders(rangeOrders.slice(0, 100))
+          alert(`Successfully imported ${rangeOrders.length} orders (positions ${start}-${end} of ${fetchedOrders.length} total)`)
+        }
+      } else {
+        console.error('❌ Error fetching orders:', data.error)
+        alert(`Error fetching orders: ${data.error}`)
+      }
+    } catch (error) {
+      console.error('❌ Error importing orders by range:', error)
+      alert('Error importing orders by range: ' + error)
     } finally {
       setIsLoadingOrders(false)
     }
@@ -993,7 +1253,8 @@ export default function Home() {
     status: p.status,
     inDatabase: true,
     addedToDatabaseAt: p.date, // Using date as proxy for now
-    netsuiteDepositNumber: p.netsuiteDepositNumber
+    netsuiteDepositNumber: p.netsuiteDepositNumber,
+    netsuiteDepositId: p.netsuiteDepositId
   })), ...payouts.filter(p => !p.inDatabase)]
 
   // Filter payouts based on selected filters
@@ -1120,7 +1381,7 @@ export default function Home() {
 
                     <Button 
                       onClick={() => fetchOrders(false)} 
-                      disabled={isLoadingOrders}
+                      disabled={true}
                       className="flex items-center gap-2 h-9"
                       size="sm"
                     >
@@ -1134,7 +1395,7 @@ export default function Home() {
 
                     <div className="flex items-center gap-2">
                       <Input
-                        placeholder="Order Name (#38266) or ID (6559002624257)"
+                        placeholder="Order Name (#38266) or ID"
                         value={orderNameInput}
                         onChange={(e) => setOrderNameInput(e.target.value)}
                         className="w-[140px] h-9"
@@ -1146,6 +1407,36 @@ export default function Home() {
                         size="sm"
                       >
                         Import
+                      </Button>
+                    </div>
+                    
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground whitespace-nowrap">Import:</span>
+                      <Input
+                        type="number"
+                        placeholder="Start"
+                        value={orderRangeStart}
+                        onChange={(e) => setOrderRangeStart(e.target.value)}
+                        className="w-[70px] h-9"
+                        title="Starting position (e.g., 1 for first order)"
+                      />
+                      <span className="text-sm text-muted-foreground">-</span>
+                      <Input
+                        type="number"
+                        placeholder="End"
+                        value={orderRangeEnd}
+                        onChange={(e) => setOrderRangeEnd(e.target.value)}
+                        className="w-[70px] h-9"
+                        title="Ending position (e.g., 10 for 10th order)"
+                      />
+                      <Button 
+                        onClick={importOrdersByRange} 
+                        disabled={isLoadingOrders || !orderRangeStart.trim() || !orderRangeEnd.trim()}
+                        className="h-9"
+                        size="sm"
+                        variant="outline"
+                      >
+                        Import Range
                       </Button>
                     </div>
                   </div>
@@ -1999,6 +2290,36 @@ export default function Home() {
                         Import
                       </Button>
                     </div>
+                    
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground whitespace-nowrap">Import:</span>
+                      <Input
+                        type="number"
+                        placeholder="Start"
+                        value={payoutRangeStart}
+                        onChange={(e) => setPayoutRangeStart(e.target.value)}
+                        className="w-[70px] h-9"
+                        title="Starting position (e.g., 1 for first payout)"
+                      />
+                      <span className="text-sm text-muted-foreground">-</span>
+                      <Input
+                        type="number"
+                        placeholder="End"
+                        value={payoutRangeEnd}
+                        onChange={(e) => setPayoutRangeEnd(e.target.value)}
+                        className="w-[70px] h-9"
+                        title="Ending position (e.g., 10 for 10th payout)"
+                      />
+                      <Button 
+                        onClick={importPayoutsByRange} 
+                        disabled={isLoading || !payoutRangeStart.trim() || !payoutRangeEnd.trim()}
+                        className="h-9"
+                        size="sm"
+                        variant="outline"
+                      >
+                        Import Range
+                      </Button>
+                    </div>
                   </div>
 
                   {/* Results Count */}
@@ -2030,9 +2351,37 @@ export default function Home() {
                     {/* Left side - Payout info */}
                     <div className="flex items-center space-x-6">
                       <div className="flex items-center space-x-3">
-                        <h4 className="font-semibold text-sm">
-                          #{String(payout.id).slice(-8)}
-                        </h4>
+                        <div className="flex items-center space-x-2">
+                          <h4 className="font-semibold text-sm">
+                            #{String(payout.id).slice(-8)}
+                          </h4>
+                          {/* Shopify Link */}
+                          <a
+                            href={`https://admin.shopify.com/store/pirani-life/payments/payouts/${payout.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:text-blue-800 text-xs"
+                            title="View in Shopify"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            </svg>
+                          </a>
+                          {/* NetSuite Link */}
+                          {payout.netsuiteDepositId && (
+                            <a
+                              href={`https://7913744.app.netsuite.com/app/accounting/transactions/deposit.nl?id=${payout.netsuiteDepositId}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-green-600 hover:text-green-800 text-xs"
+                              title="View in NetSuite"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                              </svg>
+                            </a>
+                          )}
+                        </div>
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                           payout.status === 'paid' 
                             ? 'bg-green-100 text-green-800' 
@@ -2126,6 +2475,7 @@ export default function Home() {
             transactions={selectedPayoutTransactions}
             isLoading={isLoadingTransactions}
             hideSensitiveData={hideSensitiveData}
+            onRefreshTransactions={selectedPayoutId ? () => fetchTransactions(selectedPayoutId) : undefined}
           />
         </CardContent>
       </Card>
@@ -3087,6 +3437,106 @@ export default function Home() {
       <div className="flex-1 p-8 overflow-auto">
         {renderContent()}
       </div>
+
+      {/* NetSuite Deposit Preview Dialog */}
+      <Dialog 
+        open={netsuitePreviewDialog.isOpen} 
+        onOpenChange={(open) => {
+          if (!open) {
+            setNetsuitePreviewDialog({
+              isOpen: false,
+              payoutId: null,
+              previewData: null,
+              isLoading: false,
+            })
+          }
+        }}
+      >
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              NetSuite Deposit Preview - Payout #{netsuitePreviewDialog.payoutId ? String(netsuitePreviewDialog.payoutId).slice(-8) : ''}
+            </DialogTitle>
+          </DialogHeader>
+          
+          {netsuitePreviewDialog.isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader />
+            </div>
+          ) : netsuitePreviewDialog.previewData ? (
+            <div className="space-y-4">
+              {/* Stats */}
+              <div className="p-4 bg-gray-50 rounded-lg border">
+                <h3 className="font-semibold mb-3">Summary</h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Total Transactions</p>
+                    <p className="text-lg font-semibold">{netsuitePreviewDialog.previewData.stats.totalTransactions}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Transactions with NS IDs</p>
+                    <p className="text-lg font-semibold text-green-600">{netsuitePreviewDialog.previewData.stats.transactionsWithNS}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Deposit Items</p>
+                    <p className="text-lg font-semibold">{netsuitePreviewDialog.previewData.stats.depositItemsCount}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Total Fees</p>
+                    <p className="text-lg font-semibold text-red-600">
+                      {netsuitePreviewDialog.previewData.stats.totalFees.toFixed(2)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* JSON Body */}
+              <div>
+                <h3 className="font-semibold mb-2">JSON Body to be sent to NetSuite</h3>
+                <div className="bg-slate-900 text-slate-100 p-4 rounded-lg overflow-x-auto">
+                  <pre className="text-xs whitespace-pre-wrap break-words">
+                    {JSON.stringify(netsuitePreviewDialog.previewData.depositRequest, null, 2)}
+                  </pre>
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Also logged to browser console for easy copying
+                </p>
+              </div>
+
+              {/* Actions */}
+              <div className="flex justify-end gap-2 pt-4 border-t">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setNetsuitePreviewDialog({
+                      isOpen: false,
+                      payoutId: null,
+                      previewData: null,
+                      isLoading: false,
+                    })
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleCreateNetSuiteDeposit}
+                  disabled={netsuitePreviewDialog.isLoading}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  {netsuitePreviewDialog.isLoading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      Creating...
+                    </>
+                  ) : (
+                    'Create Deposit'
+                  )}
+                </Button>
+              </div>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
       {/* Mapping Error Dialog - Global overlay */}
       <Dialog open={mappingErrorDialog.isOpen} onOpenChange={closeMappingErrorDialog}>

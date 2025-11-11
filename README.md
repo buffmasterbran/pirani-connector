@@ -1,137 +1,111 @@
-# Pirani Payout Sync
+# Pirani Connector
 
-A modern Next.js 14 application for reconciling Shopify Payouts and NetSuite Orders.
+Modern Next.js 14 application for reconciling Shopify payouts, NetSuite deposits, and Shopify order state inside a single Postgres-ready (SQLite local) source of truth.
 
-## 🚀 Features
+## Overview
 
-- **Pull Payouts from Shopify**: Fetch and display payouts and transactions from Shopify's Admin API
-- **Push Orders to NetSuite**: Placeholder for future NetSuite integration
-- **Previous Payouts**: View and manage previously saved payout data
-- **Modern UI**: Built with shadcn/ui components and TailwindCSS
-- **Database Storage**: SQLite for local development, Postgres-ready schema
+Pirani Connector now stores Shopify orders as a flattened "order line" table so the UI can render everything without joins. Import buttons call backend routes that pull Shopify data, transform it into the flattened structure, and upsert the rows. You can keep iterating on the UI while the database evolves from local SQLite to Supabase later.
 
-## 🛠️ Tech Stack
+## Core Features
 
-- **Next.js 14** (App Router)
-- **TypeScript**
-- **TailwindCSS**
-- **shadcn/ui** components
-- **Prisma ORM** with SQLite
-- **Lucide React** icons
-- **date-fns** for date formatting
+- Shopify order & payout ingestion (UI triggers `POST /api/shopify/orders` and `POST /api/shopify/payouts`)
+- Flattened `OrderLine` table (one row per order line item with all NetSuite + payout fields)
+- Aggregated read endpoints for orders and payouts used by the dashboard
+- Seed script with demo data for local development
 
-## 📦 Installation
+## Getting Started
 
-1. Clone the repository:
-```bash
-git clone <repository-url>
-cd pirani-connector
-```
+### Prerequisites
 
-2. Install dependencies:
-```bash
-npm install
-```
+- Node.js 18 or later
+- npm 9+ (bundled with Node 18)
+- Shopify Admin API credentials in `.env.local`
 
-3. Set up the database:
-```bash
-npm run db:push
-```
+### Installation
 
-4. (Optional) Seed the database with sample data:
-```bash
-npm run db:seed
-```
-
-5. Start the development server:
-```bash
-npm run dev
-```
-
-6. Open [http://localhost:3000](http://localhost:3000) in your browser.
-
-## 🏗️ Project Structure
-
-```
-src/
-├── app/
-│   ├── api/
-│   │   ├── shopify/
-│   │   │   └── payouts/
-│   │   └── payouts/
-│   ├── globals.css
-│   ├── layout.tsx
-│   └── page.tsx
-├── components/
-│   ├── ui/          # shadcn/ui components
-│   ├── PayoutCard.tsx
-│   ├── TransactionsTable.tsx
-│   └── Loader.tsx
-└── lib/
-    ├── prisma.ts
-    ├── shopify.ts
-    └── utils.ts
-prisma/
-├── schema.prisma
-└── seed.ts
-```
-
-## 🔧 Configuration
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
+2. Sync the Prisma schema to SQLite:
+   ```bash
+   npm run db:push
+   ```
+3. (Optional) load demo data:
+   ```bash
+   npm run db:seed
+   ```
+4. Launch the dev server:
+   ```bash
+   npm run dev
+   ```
+5. Open http://localhost:3000 for the UI.
 
 ### Environment Variables
 
-Create a `.env.local` file in the root directory with your Shopify credentials:
-
-```bash
-# Shopify Configuration
+```
 SHOPIFY_STORE_URL=https://pirani-life.myshopify.com
 SHOPIFY_ACCESS_TOKEN=your_shopify_access_token_here
 SHOPIFY_API_VERSION=2025-10
+DATABASE_URL="file:./dev.db"
 ```
 
-### Database
+### Import Workflow
 
-- **Development**: SQLite (`dev.db`)
-- **Production Ready**: Postgres-compatible schema
+- `POST /api/shopify/orders` – fetches the latest Shopify orders, flattens line items, and upserts the `OrderLine` table.
+- `POST /api/shopify/payouts` – fetches Shopify payouts and balance transactions, then updates matching rows with payout/deposit data.
+- `GET /api/orders` – returns aggregated order objects for the dashboard (groups line rows back into orders).
+- `GET /api/payouts` – returns aggregated payout summaries (with inline transactions) derived from `OrderLine` rows.
 
-## 📊 API Endpoints
+### Database Model (SQLite / Supabase compatible)
 
-- `GET /api/shopify/payouts` - Fetch payouts from Shopify
-- `GET /api/shopify/payouts/[id]/transactions` - Fetch transactions for a payout
-- `POST /api/payouts/save` - Save payout and transactions to database
-- `GET /api/payouts` - Retrieve saved payouts from database
+| Table | Description |
+| --- | --- |
+| `OrderLine` | Flattened Shopify order line items with Shopify/NetSuite metadata |
+| `Payout` | One row per Shopify payout with aggregate status/amount |
+| `PayoutTransaction` | Bridge table linking payouts to orders/lines with transaction-level amounts |
 
-## 🎨 UI Components
+Key columns that feed the UI:
 
-- **PayoutCard**: Displays payout summary with actions
-- **TransactionsTable**: Shows detailed transaction data
-- **Tabs**: Navigation between different sections
-- **Loader**: Loading states and animations
+| Column                      | Description                                        |
+|-----------------------------|----------------------------------------------------|
+| `shopifyOrderId`            | Shopify order ID (string)                          |
+| `lineItemId`                | Shopify line item ID (string)                      |
+| `financialStatus`           | Shopify financial status                           |
+| `fulfillmentStatus`         | Shopify fulfillment status                         |
+| `currency`                  | ISO currency code                                  |
+| `orderSubtotal`/`orderTotal`| Order-level amounts                                |
+| `lineItemPrice`/`lineItemNet`| Per-line amounts                                   |
+| `netsuite*` columns         | NetSuite references (sales order, cash sale, refund, deposit)
+| `shopifyPayoutId`           | Latest associated Shopify payout ID (for quick display) |
+| `expectedPayoutAmount`      | Expected amount per line/order                     |
+| `actualDepositAmount`       | Actual settled amount                              |
+| `varianceAmount`            | Difference actual vs expected                      |
+| `paymentGatewayNames`       | JSON array of gateway codes                        |
+| `shippingLines`             | JSON array of shipping lines                       |
 
-## 🚀 Deployment
+### API Surface
 
-The application is ready for deployment to platforms like Vercel, Netlify, or any Node.js hosting service.
+- `GET /api/orders` – aggregated orders for the UI
+- `GET /api/orders/:id` – single order with line items
+- `POST /api/shopify/orders` – import from Shopify (optional `{ "limit": 50 }` body)
+- `POST /api/shopify/payouts` – import payouts/transactions
+- `GET /api/payouts` – aggregated payout summaries
+- `GET /api/payouts/:id/transactions` – transactions for a payout
 
-For production deployment:
+### Database Notes
 
-1. Set up a Postgres database
-2. Update the `DATABASE_URL` in your environment variables
-3. Run `npm run build` to create the production build
-4. Deploy to your preferred platform
+- Local development uses SQLite (`file:./dev.db`).
+- Prisma migrations are stored under `prisma/migrations/20241110_flat_schema/`.
+- When you’re ready to switch to Supabase/Postgres, set `DATABASE_URL` accordingly and run `npx prisma migrate deploy`.
 
-## 🔮 Future Enhancements
+## UI Highlights
 
-- NetSuite integration for pushing orders
-- Automated cron sync functionality
-- Advanced filtering and search
-- Export functionality
-- Real-time notifications
-- User authentication and authorization
+The UI still uses static demo data by default. When you’re ready to hook it up, replace the mock state in `src/app/page.tsx` with calls to the endpoints above (the payload shape already matches the sample data).
 
-## 📝 License
+## Deployment
 
-Built by Pirani Life for internal use.
-
----
-
-**Built by Pirani Life • Shopify ↔ NetSuite Sync Tool**
+1. Provision a Postgres database (Supabase, RDS, etc.).
+2. Update `DATABASE_URL` (and optionally `SHADOW_DATABASE_URL`).
+3. Run `npx prisma migrate deploy`.
+4. Deploy to your preferred Next.js host.

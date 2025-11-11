@@ -1,51 +1,110 @@
 import { NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
+import { prisma } from '@/lib/prisma'
 
-const prisma = new PrismaClient()
+const toISO = (date: Date | null | undefined) => (date ? date.toISOString() : null)
+
+const parseStringArray = (value?: string | null): string[] => {
+  if (!value) return []
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed.map((entry) => String(entry ?? '')) : []
+  } catch {
+    return []
+  }
+}
+
+const parseShippingLines = (
+  value?: string | null,
+): Array<{ title: string; price: string }> => {
+  if (!value) return []
+  try {
+    const parsed = JSON.parse(value)
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .map((entry) => {
+        if (!entry || typeof entry !== 'object') return null
+        const title = 'title' in entry ? String((entry as any).title ?? '') : ''
+        const price = 'price' in entry ? String((entry as any).price ?? '') : ''
+        return { title, price }
+      })
+      .filter(Boolean) as Array<{ title: string; price: string }>
+  } catch {
+    return []
+  }
+}
+
+const parseObject = (value?: string | null): Record<string, unknown> | null => {
+  if (!value) return null
+  try {
+    const parsed = JSON.parse(value)
+    return parsed && typeof parsed === 'object' ? parsed : null
+  } catch {
+    return null
+  }
+}
 
 export async function GET() {
   try {
-    console.log('=== FETCHING SAVED ORDERS FROM DATABASE ===')
-    
-    // Try to fetch orders, but handle the case where the Order table might not exist yet
-    let orders = []
-    
-    try {
-      orders = await prisma.order.findMany({
-        orderBy: {
-          created_at: 'desc'
-        }
-      })
-      console.log(`✅ Found ${orders.length} saved orders in database`)
-    } catch (dbError: any) {
-      // If the table doesn't exist yet, return empty array
-      if (dbError.message && dbError.message.includes('no such table: Order')) {
-        console.log('⚠️ Order table does not exist yet, returning empty array')
-        return NextResponse.json({ orders: [] })
+    const lines = await prisma.orderLine.findMany({
+      where: { isDeleted: false },
+      orderBy: [{ orderCreatedAt: 'desc' }, { lineItemName: 'asc' }],
+    })
+
+    const ordersMap = new Map<string, any>()
+
+    for (const line of lines) {
+      const existing = ordersMap.get(line.shopifyOrderId)
+
+      const baseOrder = existing ?? {
+        id: line.shopifyOrderId,
+        shopifyId: line.shopifyOrderId,
+        name: line.shopifyOrderName,
+        financial_status: line.financialStatus,
+        fulfillment_status: line.fulfillmentStatus,
+        total_price: line.orderTotal ?? 0,
+        currency: line.currency,
+        created_at: toISO(line.orderCreatedAt),
+        netsuiteDepositNumber: line.netsuiteDepositId,
+        netsuiteSalesOrderId: line.netsuiteSalesOrderId,
+        netsuiteSalesOrderName: line.netsuiteSalesOrderName,
+        netsuiteCashSaleId: line.netsuiteCashSaleId,
+        netsuiteCashSaleName: line.netsuiteCashSaleName,
+        netsuiteRefundId: line.netsuiteRefundId,
+        netsuiteRefundName: line.netsuiteRefundName,
+        payoutId: line.shopifyPayoutId,
+        payoutStatus: line.shopifyPayoutStatus,
+        variance_amount: line.varianceAmount ?? 0,
+        synced_shopify_at: toISO(line.syncedShopifyAt),
+        synced_netsuite_at: toISO(line.syncedNetsuiteAt),
+        payment_gateway_names: parseStringArray(line.paymentGatewayNames),
+        shipping_lines: parseShippingLines(line.shippingLines),
+        customer: {
+          first_name: line.customerFirstName,
+          last_name: line.customerLastName,
+          email: line.customerEmail,
+        },
+        shipping_address: parseObject(line.shippingAddress),
+        subtotal_price: line.orderSubtotal ?? 0,
+        total_tax: line.orderTax ?? 0,
+        shipping_cost: line.orderShipping ?? 0,
+        discount_amount: line.orderDiscount ?? 0,
+        original: {},
+        line_items: [] as Array<{ title: string; sku?: string; quantity: number; price: number }>,
       }
-      throw dbError // Re-throw if it's a different error
+
+      baseOrder.line_items.push({
+        title: line.lineItemName ?? 'Item',
+        sku: line.lineItemSku ?? undefined,
+        quantity: line.lineItemQuantity ?? 0,
+        price: line.lineItemPrice ?? 0,
+      })
+
+      ordersMap.set(line.shopifyOrderId, baseOrder)
     }
-    
-    // Convert BigInt to string for JSON serialization
-    const serializedOrders = orders.map(order => ({
-      id: order.id.toString(),
-      name: order.name,
-      financial_status: order.financial_status,
-      fulfillment_status: order.fulfillment_status,
-      total_price: order.total_price,
-      currency: order.currency,
-      created_at: order.created_at.toISOString(),
-      netsuiteDepositNumber: order.netsuiteDepositNumber,
-      inDatabase: true,
-      addedToDatabaseAt: order.createdAt.toISOString()
-    }))
-    
-    return NextResponse.json({ orders: serializedOrders })
+
+    return NextResponse.json({ orders: Array.from(ordersMap.values()) })
   } catch (error) {
-    console.error('❌ Error fetching orders from database:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch orders from database', details: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
-    )
+    console.error('❌ Failed to load orders', error)
+    return NextResponse.json({ error: 'Failed to load orders' }, { status: 500 })
   }
 }

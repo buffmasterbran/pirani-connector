@@ -1,50 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
 
-// GET - Fetch all payment method mappings
+const legacyMappings: Array<{
+  id: string
+  shopifyCode: string
+  netsuiteId: string
+  isActive: boolean
+}> = []
+
 export async function GET() {
-  try {
-    const mappings = await prisma.paymentMethodMapping.findMany({
-      orderBy: { createdAt: 'asc' }
-    })
-    
-    return NextResponse.json({ success: true, data: mappings })
-  } catch (error) {
-    console.error('Error fetching payment method mappings:', error)
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch payment method mappings' },
-      { status: 500 }
-    )
-  }
+  return NextResponse.json({ success: true, data: legacyMappings })
 }
 
-// POST - Create a new payment method mapping
 export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json()
-    const { shopifyCode, netsuiteId, isActive = true } = body
+  const body = await request.json().catch(() => ({}))
+  const { shopifyCode, netsuiteId } = body
 
-    if (!shopifyCode || !netsuiteId) {
-      return NextResponse.json(
-        { success: false, error: 'shopifyCode and netsuiteId are required' },
-        { status: 400 }
-      )
-    }
-
-    const mapping = await prisma.paymentMethodMapping.create({
-      data: {
-        shopifyCode,
-        netsuiteId,
-        isActive
-      }
-    })
-
-    return NextResponse.json({ success: true, data: mapping })
-  } catch (error) {
-    console.error('Error creating payment method mapping:', error)
+  if (!shopifyCode || !netsuiteId) {
     return NextResponse.json(
-      { success: false, error: 'Failed to create payment method mapping' },
-      { status: 500 }
+      { success: false, error: 'shopifyCode and netsuiteId are required' },
+      { status: 400 },
     )
   }
+
+  const mapping = {
+    id: `${Date.now()}`,
+    shopifyCode,
+    netsuiteId,
+    isActive: true,
+  }
+
+  legacyMappings.push(mapping)
+
+  return NextResponse.json({ success: true, data: mapping })
 }
