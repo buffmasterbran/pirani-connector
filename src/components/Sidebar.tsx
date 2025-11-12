@@ -73,6 +73,11 @@ export function Sidebar({ activeSection, onSectionChange }: SidebarProps) {
       parent: 'mappings'
     },
     {
+      id: 'mappings-payouts',
+      name: 'Payouts',
+      parent: 'mappings'
+    },
+    {
       id: 'mappings-other',
       name: 'Other transactions',
       parent: 'mappings'

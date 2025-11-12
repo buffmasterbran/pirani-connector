@@ -127,6 +127,8 @@ export default function Home() {
     isLoading: false,
   })
   const [selectedPayoutTransactions, setSelectedPayoutTransactions] = useState<Transaction[]>([])
+  const [selectedPayoutTotalAmount, setSelectedPayoutTotalAmount] = useState<number | null>(null)
+  const [selectedPayoutCurrency, setSelectedPayoutCurrency] = useState<string>('USD')
   const [savedPayouts, setSavedPayouts] = useState<SavedPayout[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [isLoadingTransactions, setIsLoadingTransactions] = useState(false)
@@ -602,6 +604,8 @@ export default function Home() {
       const data = await response.json()
       if (response.ok) {
         setSelectedPayoutTransactions(data.transactions || [])
+        setSelectedPayoutTotalAmount(data.payoutTotalAmount ?? null)
+        setSelectedPayoutCurrency(data.payoutCurrency || 'USD')
         setIsDialogOpen(true) // Open the dialog
       } else {
         console.error('Error fetching transactions:', data.error)
@@ -2222,6 +2226,9 @@ export default function Home() {
       case 'mappings-fulfillments':
         return renderMappingsFulfillmentsContent()
         
+      case 'mappings-payouts':
+        return renderMappingsPayoutsContent()
+        
       case 'mappings-other':
         return renderMappingsOtherContent()
         
@@ -2353,7 +2360,7 @@ export default function Home() {
                       <div className="flex items-center space-x-3">
                         <div className="flex items-center space-x-2">
                           <h4 className="font-semibold text-sm">
-                            #{String(payout.id).slice(-8)}
+                            #{payout.id}
                           </h4>
                           {/* Shopify Link */}
                           <a
@@ -2473,6 +2480,8 @@ export default function Home() {
             onClose={() => setIsDialogOpen(false)}
             payoutId={selectedPayoutId}
             transactions={selectedPayoutTransactions}
+            payoutTotalAmount={selectedPayoutTotalAmount}
+            payoutCurrency={selectedPayoutCurrency}
             isLoading={isLoadingTransactions}
             hideSensitiveData={hideSensitiveData}
             onRefreshTransactions={selectedPayoutId ? () => fetchTransactions(selectedPayoutId) : undefined}
@@ -3412,6 +3421,78 @@ export default function Home() {
     </div>
   )
 
+  const renderMappingsPayoutsContent = () => (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold text-slate-800 mb-2">Payout Mappings</h2>
+        <p className="text-slate-600">Configure how Shopify payouts map to NetSuite deposits.</p>
+      </div>
+      
+      <Card>
+        <CardHeader>
+          <CardTitle>Payout Mappings</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <p className="text-sm text-slate-600">
+              Configure how Shopify payouts map to NetSuite deposits.
+            </p>
+            
+            {/* Payout Mappings Table */}
+            <div className="border rounded-lg">
+              <table className="w-full">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">Mapping Type</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">NetSuite ID</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">Description</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">Status</th>
+                    <th className="px-4 py-3 text-right text-sm font-medium text-slate-700">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  <tr>
+                    <td className="px-4 py-3 text-sm text-slate-900">Deposit Account</td>
+                    <td className="px-4 py-3 text-sm text-slate-600">217</td>
+                    <td className="px-4 py-3 text-sm text-slate-600">Default deposit account</td>
+                    <td className="px-4 py-3">
+                      <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">Active</span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <Button variant="ghost" size="sm">Edit</Button>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="px-4 py-3 text-sm text-slate-900">Fees Account</td>
+                    <td className="px-4 py-3 text-sm text-slate-600">989</td>
+                    <td className="px-4 py-3 text-sm text-slate-600">Shopify fees account</td>
+                    <td className="px-4 py-3">
+                      <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">Active</span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <Button variant="ghost" size="sm">Edit</Button>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="px-4 py-3 text-sm text-slate-900">Fees Description</td>
+                    <td className="px-4 py-3 text-sm text-slate-600">—</td>
+                    <td className="px-4 py-3 text-sm text-slate-600">Shopify Fees</td>
+                    <td className="px-4 py-3">
+                      <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">Active</span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <Button variant="ghost" size="sm">Edit</Button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+
   const renderMappingsOtherContent = () => (
     <div className="space-y-6">
       <div>
@@ -3455,7 +3536,7 @@ export default function Home() {
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              NetSuite Deposit Preview - Payout #{netsuitePreviewDialog.payoutId ? String(netsuitePreviewDialog.payoutId).slice(-8) : ''}
+              NetSuite Deposit Preview - Payout #{netsuitePreviewDialog.payoutId || ''}
             </DialogTitle>
           </DialogHeader>
           

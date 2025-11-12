@@ -32,11 +32,12 @@ export async function POST(
       )
     }
 
-    // Get transactions that need NetSuite IDs (have order name but no NetSuite transaction ID)
+    // Get transactions that need NetSuite IDs (have order name but no NetSuite transaction ID, and are included)
     const transactionsNeedingNS = payout.transactions.filter(
       (txn) =>
         (txn.orderLine?.shopifyOrderName || txn.shopifyOrderId) &&
-        !txn.netsuiteTransactionId
+        !txn.netsuiteTransactionId &&
+        (txn.includeInNetSuite !== false)
     )
 
     if (transactionsNeedingNS.length === 0) {
@@ -107,6 +108,9 @@ export async function POST(
     // Match NetSuite transactions to our transactions by order name
     const transactionMap = new Map<string, typeof payout.transactions[0]>()
     for (const txn of payout.transactions) {
+      // Only include transactions that are marked for NetSuite matching
+      if (txn.includeInNetSuite === false) continue
+      
       const orderName =
         txn.orderLine?.shopifyOrderName ||
         (txn.shopifyOrderId ? `#${txn.shopifyOrderId}` : null)

@@ -66,19 +66,24 @@ export async function GET() {
           netsuiteTransactionName: transaction.netsuiteTransactionName ?? null,
           netsuiteAmount: transaction.netsuiteAmount ?? null,
           amountMismatch: transaction.amountMismatch ?? false,
+          includeInNetSuite: transaction.includeInNetSuite ?? true,
+          adjustmentReason: transaction.adjustmentReason ?? null,
         }
       })
 
       const expectedDepositAmount = transactions.reduce((acc, current) => acc + (current.amount ?? 0), 0)
       const actualDepositAmount = transactions.reduce((acc, current) => acc + (current.net ?? 0), 0)
       const varianceAmount = actualDepositAmount - expectedDepositAmount
+      
+      // Use Shopify's payout totalAmount if available, otherwise fall back to calculated actualDepositAmount
+      const payoutAmount = payout.totalAmount ?? actualDepositAmount
 
       return {
         id: payout.id,
         internalId: payout.id,
         shopifyPayoutId: payout.id,
         date: toISO(payout.payoutDate) ?? toISO(payout.updatedAt),
-        amount: actualDepositAmount,
+        amount: payoutAmount,
         currency: payout.currency ?? 'USD',
         status: payout.status ?? 'pending',
         expectedDepositAmount,

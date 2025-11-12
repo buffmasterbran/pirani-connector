@@ -27,9 +27,12 @@ export async function GET(
       )
     }
 
-    // Get ALL transactions with NetSuite IDs (both charges and refunds)
+    // Get ALL transactions with NetSuite IDs (both charges and refunds) that are included
     const transactionsWithNS = payout.transactions.filter(
-      (txn) => txn.netsuiteTransactionId && txn.netsuiteTransactionId.trim() !== ''
+      (txn) => 
+        txn.netsuiteTransactionId && 
+        txn.netsuiteTransactionId.trim() !== '' &&
+        (txn.includeInNetSuite !== false)
     )
 
     if (transactionsWithNS.length === 0) {
@@ -43,10 +46,12 @@ export async function GET(
       )
     }
 
-    // Calculate total fees (negative amount for "other" items)
-    const totalFees = payout.transactions.reduce((sum, txn) => {
-      return sum + (txn.fee || 0)
-    }, 0)
+    // Calculate total fees (negative amount for "other" items) - only from included transactions
+    const totalFees = payout.transactions
+      .filter((txn) => txn.includeInNetSuite !== false)
+      .reduce((sum, txn) => {
+        return sum + (txn.fee || 0)
+      }, 0)
 
     // Prepare deposit request
     const payoutDate = payout.payoutDate || new Date()

@@ -39,6 +39,8 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       }
     }
 
+    const payout = transactions[0]?.payout
+    
     const payload = transactions.map((transaction) => {
       // Try to get order name from relation first, then fallback to lookup map
       const orderName = transaction.orderLine?.shopifyOrderName 
@@ -59,10 +61,16 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
         netsuiteTransactionName: transaction.netsuiteTransactionName ?? null,
         netsuiteAmount: transaction.netsuiteAmount ?? null,
         amountMismatch: transaction.amountMismatch ?? false,
+        includeInNetSuite: transaction.includeInNetSuite ?? true,
+        adjustmentReason: transaction.adjustmentReason ?? null,
       }
     })
 
-    return NextResponse.json({ transactions: payload })
+    return NextResponse.json({ 
+      transactions: payload,
+      payoutTotalAmount: payout?.totalAmount ?? null,
+      payoutCurrency: payout?.currency ?? 'USD',
+    })
   } catch (error) {
     console.error('❌ Failed to load payout transactions', error)
     return NextResponse.json({ error: 'Failed to load payout transactions' }, { status: 500 })

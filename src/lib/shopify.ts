@@ -40,6 +40,29 @@ async function shopifyFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>
 }
 
+async function shopifyFetchWithHeaders<T>(path: string, init?: RequestInit): Promise<{ data: T; headers: Headers }> {
+  if (!SHOPIFY_BASE_URL) {
+    throw new Error('Shopify credentials missing')
+  }
+
+  const res = await fetch(`${SHOPIFY_BASE_URL}${path}`, {
+    ...init,
+    headers: {
+      ...SHOPIFY_HEADERS,
+      ...(init?.headers || {}),
+    },
+    cache: 'no-store',
+  })
+
+  if (!res.ok) {
+    const message = await res.text()
+    throw new Error(`Shopify API error ${res.status}: ${message}`)
+  }
+
+  const data = await res.json() as T
+  return { data, headers: res.headers }
+}
+
 function parseFloatOrNull(value: any): number | null {
   if (value === null || value === undefined || value === '') return null
   const parsed = Number(value)
@@ -249,11 +272,75 @@ export async function fetchShopifyPayoutTransactions(payoutId: string) {
     return { transactions: [] }
   }
 
-  const query = new URLSearchParams({ payout_id: payoutId, limit: '250' })
-  const data = await shopifyFetch<{ transactions: any[] }>(
-    `/shopify_payments/balance/transactions.json?${query.toString()}`,
-  )
-  return { transactions: data.transactions ?? [] }
+  // Fetch all transactions with pagination using Shopify's Link header
+  // Handles large payouts (5000+ transactions) by paginating through all pages
+  const allTransactions: any[] = []
+  let nextUrl: string | null = null
+  let hasNextPage = true
+  let pageCount = 0
+  const maxPages = 100 // Safety limit: 100 pages * 250 = 25,000 transactions max
+
+  while (hasNextPage && pageCount < maxPages) {
+    pageCount++
+    const url = nextUrl || `/shopify_payments/balance/transactions.json?payout_id=${payoutId}&limit=250`
+    
+    try {
+      const { data, headers } = await shopifyFetchWithHeaders<{ transactions: any[] }>(url)
+      const transactions = data.transactions ?? []
+      allTransactions.push(...transactions)
+
+      // Log progress for large imports
+      if (pageCount % 5 === 0 || transactions.length < 250) {
+        console.log(`📦 Fetched page ${pageCount}: ${allTransactions.length} transactions so far...`)
+      }
+
+      // Parse Link header to get next page URL
+      const linkHeader = headers.get('link')
+      if (linkHeader) {
+        // Parse Link header: <url>; rel="next" (can be full URL or relative)
+        const nextMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/)
+        if (nextMatch) {
+          let extractedUrl = nextMatch[1]
+          // Handle both full URLs and relative paths
+          if (extractedUrl.startsWith('http')) {
+            // Full URL - extract just the path part
+            try {
+              const urlObj = new URL(extractedUrl)
+              extractedUrl = urlObj.pathname + urlObj.search
+              // Remove the base API path if present
+              extractedUrl = extractedUrl.replace(/^\/admin\/api\/[^/]+/, '')
+            } catch (e) {
+              // If URL parsing fails, try to extract path manually
+              const pathMatch = extractedUrl.match(/\/admin\/api\/[^/]+(\/.*)/)
+              extractedUrl = pathMatch ? pathMatch[1] : extractedUrl.replace(SHOPIFY_BASE_URL, '')
+            }
+          }
+          nextUrl = extractedUrl
+          hasNextPage = true
+        } else {
+          hasNextPage = false
+        }
+      } else {
+        // If no Link header, we're done (got less than limit)
+        hasNextPage = false
+      }
+    } catch (error) {
+      console.error(`❌ Error fetching transactions page ${pageCount}:`, error)
+      // If we have some transactions, return what we have rather than failing completely
+      if (allTransactions.length > 0) {
+        console.warn(`⚠️ Returning ${allTransactions.length} transactions despite error on page ${pageCount}`)
+        break
+      }
+      throw error
+    }
+  }
+
+  if (pageCount >= maxPages) {
+    console.warn(`⚠️ Reached maximum page limit (${maxPages}). There may be more transactions.`)
+  }
+
+  console.log(`✅ Fetched ${allTransactions.length} transactions for payout ${payoutId} (${pageCount} pages)`)
+  return { transactions: allTransactions }
 }
 
 export async function getOrderByNameFromShopify(orderName: string) {

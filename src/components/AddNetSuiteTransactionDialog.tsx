@@ -1,0 +1,209 @@
+"use client"
+
+import { useState } from "react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+
+interface AddNetSuiteTransactionDialogProps {
+  isOpen: boolean
+  onClose: () => void
+  transaction: {
+    id: string
+    source_order_id?: string | null
+    order_name?: string | null
+    amount: number
+    net: number
+    currency: string
+  }
+  onSave: (data: {
+    netsuiteTransactionId: string
+    netsuiteTransactionName: string
+    netsuiteAmount: number
+  }) => Promise<void>
+}
+
+export function AddNetSuiteTransactionDialog({
+  isOpen,
+  onClose,
+  transaction,
+  onSave,
+}: AddNetSuiteTransactionDialogProps) {
+  const [netsuiteTransactionId, setNetsuiteTransactionId] = useState("")
+  const [netsuiteTransactionName, setNetsuiteTransactionName] = useState("")
+  const [netsuiteAmount, setNetsuiteAmount] = useState("")
+  const [isSaving, setIsSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const handleSave = async () => {
+    setError(null)
+
+    if (!netsuiteTransactionId.trim()) {
+      setError("NetSuite Transaction ID is required")
+      return
+    }
+
+    if (!netsuiteTransactionName.trim()) {
+      setError("NetSuite Transaction Name is required")
+      return
+    }
+
+    if (!netsuiteAmount.trim()) {
+      setError("NetSuite Amount is required")
+      return
+    }
+
+    const amount = parseFloat(netsuiteAmount)
+    if (isNaN(amount)) {
+      setError("NetSuite Amount must be a valid number")
+      return
+    }
+
+    setIsSaving(true)
+    try {
+      await onSave({
+        netsuiteTransactionId: netsuiteTransactionId.trim(),
+        netsuiteTransactionName: netsuiteTransactionName.trim(),
+        netsuiteAmount: amount,
+      })
+      
+      // Reset form
+      setNetsuiteTransactionId("")
+      setNetsuiteTransactionName("")
+      setNetsuiteAmount("")
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save transaction")
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleClose = () => {
+    if (!isSaving) {
+      setNetsuiteTransactionId("")
+      setNetsuiteTransactionName("")
+      setNetsuiteAmount("")
+      setError(null)
+      onClose()
+    }
+  }
+
+  return (
+    <Dialog open={isOpen} onOpenChange={handleClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Add NetSuite Transaction</DialogTitle>
+        </DialogHeader>
+        
+        <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label htmlFor="order-id">Order ID</Label>
+            <Input
+              id="order-id"
+              value={transaction.source_order_id && transaction.source_order_id !== 'N/A' 
+                ? `#${transaction.source_order_id}` 
+                : transaction.order_name || "N/A"}
+              disabled
+              className="bg-gray-50"
+            />
+            {transaction.source_order_id && transaction.source_order_id !== 'N/A' && (
+              <a
+                href={`https://admin.shopify.com/store/pirani-life/orders/${transaction.source_order_id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-blue-600 hover:text-blue-800 hover:underline"
+              >
+                View order in Shopify →
+              </a>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="shopify-amount">Shopify Amount</Label>
+            <Input
+              id="shopify-amount"
+              value={`${transaction.currency} ${transaction.net.toFixed(2)}`}
+              disabled
+              className="bg-gray-50"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="netsuite-id">
+              NetSuite Transaction ID <span className="text-red-500">*</span>
+            </Label>
+            <Input
+              id="netsuite-id"
+              value={netsuiteTransactionId}
+              onChange={(e) => setNetsuiteTransactionId(e.target.value)}
+              placeholder="e.g., 1376989"
+              disabled={isSaving}
+            />
+            <p className="text-xs text-muted-foreground">
+              The internal NetSuite transaction ID
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="netsuite-name">
+              NetSuite Transaction Name <span className="text-red-500">*</span>
+            </Label>
+            <Input
+              id="netsuite-name"
+              value={netsuiteTransactionName}
+              onChange={(e) => setNetsuiteTransactionName(e.target.value)}
+              placeholder="e.g., CS123, RFND296"
+              disabled={isSaving}
+            />
+            <p className="text-xs text-muted-foreground">
+              The transaction name/tranid from NetSuite
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="netsuite-amount">
+              NetSuite Amount <span className="text-red-500">*</span>
+            </Label>
+            <Input
+              id="netsuite-amount"
+              type="number"
+              step="0.01"
+              value={netsuiteAmount}
+              onChange={(e) => setNetsuiteAmount(e.target.value)}
+              placeholder={`e.g., ${transaction.net.toFixed(2)}`}
+              disabled={isSaving}
+            />
+            <p className="text-xs text-muted-foreground">
+              The transaction amount from NetSuite (will be compared with Shopify amount)
+            </p>
+          </div>
+
+          {error && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+              <p className="text-sm text-red-600">{error}</p>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={handleClose}
+            disabled={isSaving}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSave}
+            disabled={isSaving}
+          >
+            {isSaving ? "Saving..." : "Save"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+

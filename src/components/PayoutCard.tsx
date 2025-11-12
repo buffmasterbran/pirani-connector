@@ -23,7 +23,7 @@ export function PayoutCard({ payout, onViewTransactions, isLoading, hideSensitiv
     <Card className="hover:shadow-md transition-shadow">
       <CardHeader>
         <CardTitle className="text-lg">
-          Payout #{String(payout.id).slice(-8)}
+          Payout #{payout.id}
         </CardTitle>
         <div className="text-sm text-muted-foreground">
           {safeFormatDate(payout.date, 'MMM dd, yyyy')}

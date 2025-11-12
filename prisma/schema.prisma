@@ -91,10 +91,12 @@ model PayoutTransaction {
   type                  String?
   currency              String?
   processedAt           DateTime?
+  adjustmentReason      String?
   netsuiteTransactionId String?
   netsuiteTransactionName String?
   netsuiteAmount        Float?
   amountMismatch        Boolean   @default(false)
+  includeInNetSuite     Boolean   @default(true)
   createdAt             DateTime  @default(now())
 
   payout     Payout     @relation(fields: [payoutId], references: [id], onDelete: Cascade)
@@ -102,4 +104,118 @@ model PayoutTransaction {
 
   @@index([payoutId])
   @@index([shopifyOrderId])
+  @@index([adjustmentReason])
+}
+
+model PayoutMapping {
+  id                    Int      @id @default(autoincrement())
+  mappingType           String   // 'deposit_account', 'fees_account', 'fees_description'
+  netsuiteId            String   // NetSuite account ID or value
+  description           String?  // Optional description/name
+  isActive              Boolean  @default(true)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@unique([mappingType])
+  @@index([isActive])
+}
+
+model PaymentMethodMapping {
+  id                    Int      @id @default(autoincrement())
+  shopifyCode           String   // Shopify payment method code (e.g., 'shopify_payments', 'visa')
+  netsuiteId            String   // NetSuite payment method ID
+  isActive              Boolean  @default(true)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@unique([shopifyCode])
+  @@index([isActive])
+}
+
+model ShipmentMethodMapping {
+  id                    Int      @id @default(autoincrement())
+  shopifyCode           String   // Shopify shipment method code (e.g., 'free_shipping', 'standard_shipping')
+  netsuiteId            String   // NetSuite shipment method ID
+  isActive              Boolean  @default(true)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@unique([shopifyCode])
+  @@index([isActive])
+}
+
+model OrderFieldMapping {
+  id                    Int      @id @default(autoincrement())
+  mappingType           String   // 'Fixed', 'Order Header', 'Order Header with Translation', 'Custom'
+  shopifyCode           String?  // Shopify field code (e.g., 'order_id', 'payment_gateway_names')
+  shopifyValue          String?  // Fixed value (e.g., 'Online Sales', 'Unchecked')
+  netsuiteId            String   // NetSuite Internal ID or field name
+  applyToAllAccounts    Boolean  @default(true)
+  isActive              Boolean  @default(true)
+  customFieldId         String?  // For custom fields
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([isActive])
+  @@index([mappingType])
+}
+
+model OrderItemFieldMapping {
+  id                    Int      @id @default(autoincrement())
+  mappingType           String   // 'Fixed', 'Line Item Field', 'Custom'
+  shopifyCode           String?  // Shopify line item field code
+  shopifyValue          String?  // Fixed value
+  netsuiteId            String   // NetSuite Internal ID or field name
+  applyToAllAccounts    Boolean  @default(true)
+  isActive              Boolean  @default(true)
+  customFieldId         String?  // For custom fields
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([isActive])
+  @@index([mappingType])
+}
+
+model CustomerFieldMapping {
+  id                    Int      @id @default(autoincrement())
+  mappingType           String   // 'Fixed', 'Customer Field', 'Custom'
+  shopifyCode           String?  // Shopify field code (e.g., 'customer_id', 'email')
+  shopifyValue          String?  // Fixed value
+  netsuiteId            String   // NetSuite Internal ID or field name
+  applyToAllAccounts    Boolean  @default(true)
+  isActive              Boolean  @default(true)
+  customFieldId         String?  // For custom fields
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([isActive])
+  @@index([mappingType])
+}
+
+model ProductMapping {
+  id                    Int      @id @default(autoincrement())
+  shopifySku            String?  // Shopify SKU
+  shopifyProductId      String?  // Shopify product ID
+  netsuiteItemId        String   // NetSuite item ID
+  netsuiteItemName      String?  // NetSuite item name
+  isActive              Boolean  @default(true)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([shopifySku])
+  @@index([shopifyProductId])
+  @@index([isActive])
+}
+
+model MappingDefaults {
+  id                    Int      @id @default(autoincrement())
+  settingKey            String   // Setting key (e.g., 'default_account', 'default_location')
+  settingValue          String   // Setting value
+  description           String?  // Optional description
+  isActive              Boolean  @default(true)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@unique([settingKey])
+  @@index([isActive])
 }

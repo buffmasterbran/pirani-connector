@@ -45,6 +45,7 @@ export async function POST(request: NextRequest) {
       const fee = transaction.fee !== undefined ? Number(transaction.fee) : null
       const processedAtRaw = transaction.processed_at ?? transaction.processedAt ?? null
       const processedAt = processedAtRaw ? new Date(processedAtRaw) : payoutData.payoutDate ?? null
+      const adjustmentReason = transaction.adjustment_reason ? String(transaction.adjustment_reason) : null
 
       let orderLineId: number | null = null
       if (shopifyOrderId) {
@@ -67,6 +68,7 @@ export async function POST(request: NextRequest) {
           type: transaction.type ?? null,
           currency: transaction.currency ?? payout.currency ?? null,
           processedAt,
+          adjustmentReason,
         },
         create: {
           id: transactionId,
@@ -79,6 +81,7 @@ export async function POST(request: NextRequest) {
           type: transaction.type ?? null,
           currency: transaction.currency ?? payout.currency ?? null,
           processedAt,
+          adjustmentReason,
         },
       })
 
