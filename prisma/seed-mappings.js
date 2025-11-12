@@ -109,6 +109,22 @@ async function seedMappings() {
       await prisma.mappingDefaults.create({ data: defaultMapping })
     }
 
+    // Payout Mappings
+    await prisma.payoutMapping.deleteMany()
+    const payoutMappings = [
+      { mappingType: 'deposit_account', netsuiteId: '217', description: 'Default deposit account', isActive: true },
+      { mappingType: 'fees_account', netsuiteId: '989', description: 'Shopify fees account', isActive: true },
+      { mappingType: 'fees_description', netsuiteId: '', description: 'Shopify Fees', isActive: true },
+    ]
+
+    for (const mapping of payoutMappings) {
+      await prisma.payoutMapping.upsert({
+        where: { mappingType: mapping.mappingType },
+        update: mapping,
+        create: mapping,
+      })
+    }
+
     console.log('✅ Mapping data seeded successfully!')
     console.log(`📊 Created:`)
     console.log(`   - ${paymentMappings.length} Payment Method Mappings`)
@@ -117,6 +133,7 @@ async function seedMappings() {
     console.log(`   - ${orderItemMappings.length} Order Item Field Mappings`)
     console.log(`   - ${customerMappings.length} Customer Field Mappings`)
     console.log(`   - ${defaults.length} Mapping Defaults`)
+    console.log(`   - ${payoutMappings.length} Payout Mappings`)
 
   } catch (error) {
     console.error('❌ Error seeding mapping data:', error)

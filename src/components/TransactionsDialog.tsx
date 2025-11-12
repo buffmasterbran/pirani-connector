@@ -28,6 +28,9 @@ interface TransactionsDialogProps {
     amountMismatch?: boolean
     includeInNetSuite?: boolean
     adjustmentReason?: string | null
+    otherFeesDescription?: string | null
+    amountDescription?: string | null
+    feeDescription?: string | null
   }>
   payoutTotalAmount?: number | null
   payoutCurrency?: string
@@ -67,6 +70,40 @@ export function TransactionsDialog({
   const missingNSTransactions = transactions.filter(
     t => t.order_name && t.order_name !== '—' && !t.netsuiteTransactionId
   )
+
+  // Helper function to check if transaction is cash sale or cash refund
+  const isCashSaleOrRefund = (transaction: typeof transactions[0]): boolean => {
+    if (!transaction.netsuiteTransactionName) return false
+    const name = transaction.netsuiteTransactionName.toUpperCase()
+    // Check for NetSuite transaction name patterns: CS (Cash Sale), RFND (Cash Refund)
+    return name.startsWith('CS') || 
+           name.startsWith('RFND') || 
+           name.includes('CASH SALE') || 
+           name.includes('CASH REFUND')
+  }
+
+  // Helper function to get the amount to use for NetSuite totals
+  // For cash sales: use NetSuite amount if available, otherwise Shopify amount
+  // For non-cash sales (with dropdown): use Shopify amount
+  const getNetSuiteAmount = (transaction: typeof transactions[0]): number => {
+    const isCashSale = isCashSaleOrRefund(transaction)
+    
+    if (isCashSale) {
+      // For cash sales, prefer NetSuite amount, fall back to Shopify amount
+      if (transaction.netsuiteAmount !== null && transaction.netsuiteAmount !== undefined) {
+        const nsAmount = typeof transaction.netsuiteAmount === 'string' 
+          ? parseFloat(transaction.netsuiteAmount) 
+          : transaction.netsuiteAmount
+        if (!isNaN(nsAmount)) {
+          return nsAmount
+        }
+      }
+    }
+    
+    // For non-cash sales (with dropdown) or if NetSuite amount not available, use Shopify amount
+    const amount = typeof transaction.amount === 'string' ? parseFloat(transaction.amount) : transaction.amount
+    return amount || 0
+  }
 
   // Calculate Shopify summary breakdown (matching Shopify payout format)
   const includedTransactions = transactions.filter(t => t.includeInNetSuite !== false)
@@ -132,18 +169,13 @@ export function TransactionsDialog({
   const calculatedShopifyTotal = totalCharges + totalRefunds + totalAdjustments + totalMarketplaceSalesTax + totalFees
   const totalShopifyAmount = payoutTotalAmount ?? calculatedShopifyTotal
 
-  // Calculate NetSuite total - only include transactions that have NetSuite IDs and are included
-  // This should match the Shopify payout total when all transactions are matched
-  const transactionsWithNetSuiteAmounts = transactions.filter(t => 
-    t.netsuiteTransactionId && 
-    t.netsuiteAmount !== null && 
-    t.netsuiteAmount !== undefined &&
-    t.includeInNetSuite !== false
-  )
+  // Calculate NetSuite total using hybrid approach:
+  // - For cash sales: use NetSuite amount if available, otherwise Shopify amount
+  // - For non-cash sales (with dropdown): use Shopify amount
+  const includedTransactionsForNetSuite = transactions.filter(t => t.includeInNetSuite !== false)
   
-  const totalNetSuiteAmount = transactionsWithNetSuiteAmounts.reduce((sum, t) => {
-    const amount = typeof t.netsuiteAmount === 'string' ? parseFloat(t.netsuiteAmount) : t.netsuiteAmount
-    return sum + (amount || 0)
+  const totalNetSuiteAmount = includedTransactionsForNetSuite.reduce((sum, t) => {
+    return sum + getNetSuiteAmount(t)
   }, 0)
 
   const currency = payoutCurrency || transactions[0]?.currency || 'USD'
@@ -355,6 +387,85 @@ export function TransactionsDialog({
     }
   }
 
+  const handleUpdateOtherFeesDescription = async (transactionId: string, description: string | null) => {
+    try {
+      const response = await fetch(`/api/payouts/transactions/${transactionId}/other-fees-description`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ otherFeesDescription: description }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        // Refresh transactions to show the updated data
+        if (onRefreshTransactions) {
+          onRefreshTransactions()
+        }
+      } else {
+        console.error('Error updating other fees description:', data.error)
+        alert(`Error updating other fees description: ${data.error || 'Unknown error'}`)
+      }
+    } catch (error) {
+      console.error('Error updating other fees description:', error)
+      alert(`Error updating other fees description: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
+  const handleUpdateAmountDescription = async (transactionId: string, description: string | null) => {
+    try {
+      const response = await fetch(`/api/payouts/transactions/${transactionId}/amount-description`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ amountDescription: description }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        if (onRefreshTransactions) {
+          onRefreshTransactions()
+        }
+      } else {
+        console.error('Error updating amount description:', data.error)
+        alert(`Error updating amount description: ${data.error || 'Unknown error'}`)
+      }
+    } catch (error) {
+      console.error('Error updating amount description:', error)
+      alert(`Error updating amount description: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
+  const handleUpdateFeeDescription = async (transactionId: string, description: string | null) => {
+    try {
+      const response = await fetch(`/api/payouts/transactions/${transactionId}/fee-description`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ feeDescription: description }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        if (onRefreshTransactions) {
+          onRefreshTransactions()
+        }
+      } else {
+        console.error('Error updating fee description:', data.error)
+        alert(`Error updating fee description: ${data.error || 'Unknown error'}`)
+      }
+    } catch (error) {
+      console.error('Error updating fee description:', error)
+      alert(`Error updating fee description: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-[95vw] w-full max-h-[80vh] overflow-y-auto">
@@ -449,7 +560,7 @@ export function TransactionsDialog({
             <div className="mb-4">
               <p className="text-xs text-muted-foreground mb-1">Proposed NetSuite</p>
               <p className={`text-2xl font-bold ${
-                transactionsWithNS.length > 0 
+                includedTransactionsForNetSuite.length > 0 
                   ? Math.abs(totalNetSuiteAmount - totalShopifyAmount) < 0.01 
                     ? 'text-green-600' 
                     : 'text-orange-600'
@@ -457,15 +568,15 @@ export function TransactionsDialog({
               }`}>
                 {hideSensitiveData ? (
                   <span className="text-gray-500">••••••</span>
-                ) : transactionsWithNS.length > 0 ? (
+                ) : includedTransactionsForNetSuite.length > 0 ? (
                   `${currency} ${totalNetSuiteAmount.toFixed(2)}`
                 ) : (
                   '—'
                 )}
               </p>
-              {transactionsWithNS.length > 0 && (
+              {includedTransactionsForNetSuite.length > 0 && (
                 <p className="text-xs text-muted-foreground mt-1">
-                  {transactionsWithNS.length} of {transactions.filter(t => t.includeInNetSuite !== false).length} transactions included
+                  {includedTransactionsForNetSuite.length} of {transactions.filter(t => t.includeInNetSuite !== false).length} transactions included
                 </p>
               )}
             </div>
@@ -474,21 +585,23 @@ export function TransactionsDialog({
               <p className="text-sm font-semibold text-slate-700 mb-3">Summary</p>
               <div className="space-y-2">
                 {(() => {
-                  // Calculate NetSuite breakdown from transactions that will be included
-                  const nsCharges = transactionsWithNetSuiteAmounts
-                    .filter(t => t.type === 'charge' && (t.netsuiteAmount || 0) > 0)
-                    .reduce((sum, t) => sum + (t.netsuiteAmount || 0), 0)
+                  // Calculate NetSuite breakdown using hybrid approach:
+                  // - For cash sales: use NetSuite amount if available, otherwise Shopify amount
+                  // - For non-cash sales (with dropdown): use Shopify amount
+                  const nsCharges = includedTransactionsForNetSuite
+                    .filter(t => t.type === 'charge' && getNetSuiteAmount(t) > 0)
+                    .reduce((sum, t) => sum + getNetSuiteAmount(t), 0)
                   
-                  const nsRefunds = transactionsWithNetSuiteAmounts
+                  const nsRefunds = includedTransactionsForNetSuite
                     .filter(t => t.type === 'refund')
-                    .reduce((sum, t) => sum + (t.netsuiteAmount || 0), 0)
+                    .reduce((sum, t) => sum + getNetSuiteAmount(t), 0)
                   
-                  const nsAdjustments = transactionsWithNetSuiteAmounts
+                  const nsAdjustments = includedTransactionsForNetSuite
                     .filter(t => t.adjustmentReason && t.adjustmentReason !== null)
-                    .reduce((sum, t) => sum + (t.netsuiteAmount || 0), 0)
+                    .reduce((sum, t) => sum + getNetSuiteAmount(t), 0)
                   
-                  // Sum fees from included NetSuite transactions (fees are stored as positive, displayed as negative)
-                  const nsFeesRaw = transactionsWithNetSuiteAmounts
+                  // Sum fees from included transactions (fees are stored as positive, displayed as negative)
+                  const nsFeesRaw = includedTransactionsForNetSuite
                     .reduce((sum, t) => {
                       const fee = typeof t.fee === 'string' ? parseFloat(t.fee) : t.fee
                       return sum + Math.abs(fee || 0)
@@ -650,6 +763,9 @@ export function TransactionsDialog({
             onToggleInclude={handleToggleInclude}
             onReassignNetSuite={handleReassignNetSuite}
             onAddNetSuite={handleAddNetSuite}
+            onUpdateOtherFeesDescription={handleUpdateOtherFeesDescription}
+            onUpdateAmountDescription={handleUpdateAmountDescription}
+            onUpdateFeeDescription={handleUpdateFeeDescription}
           />
         </div>
       </DialogContent>

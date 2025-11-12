@@ -68,6 +68,9 @@ export async function GET() {
           amountMismatch: transaction.amountMismatch ?? false,
           includeInNetSuite: transaction.includeInNetSuite ?? true,
           adjustmentReason: transaction.adjustmentReason ?? null,
+          otherFeesDescription: transaction.otherFeesDescription ?? null,
+          amountDescription: transaction.amountDescription ?? null,
+          feeDescription: transaction.feeDescription ?? null,
         }
       })
 

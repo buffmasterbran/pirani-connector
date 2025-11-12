@@ -8,9 +8,10 @@ import {
 } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Trash2, Users, GripVertical, Plus } from "lucide-react"
 import { safeFormatDate } from "@/lib/dateUtils"
-import { useState, type ReactNode } from "react"
+import { useState, type ReactNode, useEffect } from "react"
 import {
   DndContext,
   DragOverlay,
@@ -43,6 +44,9 @@ interface Transaction {
   amountMismatch?: boolean
   includeInNetSuite?: boolean
   adjustmentReason?: string | null
+  otherFeesDescription?: string | null
+  amountDescription?: string | null
+  feeDescription?: string | null
 }
 
 interface TransactionsTableProps {
@@ -53,6 +57,9 @@ interface TransactionsTableProps {
   onToggleInclude?: (transactionId: string, include: boolean) => void
   onReassignNetSuite?: (fromTransactionId: string, toTransactionId: string) => Promise<void>
   onAddNetSuite?: (transactionId: string) => void
+  onUpdateOtherFeesDescription?: (transactionId: string, description: string | null) => Promise<void>
+  onUpdateAmountDescription?: (transactionId: string, description: string | null) => Promise<void>
+  onUpdateFeeDescription?: (transactionId: string, description: string | null) => Promise<void>
 }
 
 // Helper function to get NetSuite URL based on transaction type
@@ -244,10 +251,65 @@ export function TransactionsTable({
   onDeleteNetSuiteId,
   onToggleInclude,
   onReassignNetSuite,
-  onAddNetSuite
+  onAddNetSuite,
+  onUpdateOtherFeesDescription,
+  onUpdateAmountDescription,
+  onUpdateFeeDescription
 }: TransactionsTableProps) {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [draggedTransactionId, setDraggedTransactionId] = useState<string | null>(null)
+  const [feesDescriptionOptions, setFeesDescriptionOptions] = useState<Array<{ id: number; netsuiteId: string; description: string | null }>>([])
+  const [loadingFeesOptions, setLoadingFeesOptions] = useState(false)
+
+  // Fetch fees description options from payout mappings
+  useEffect(() => {
+    const fetchFeesOptions = async () => {
+      setLoadingFeesOptions(true)
+      try {
+        const response = await fetch('/api/mappings/payout-mappings')
+        const data = await response.json()
+        console.log('Fees description API response:', data)
+        if (data.success && data.data) {
+          // Collect all mappings except deposit_account and fees_account
+          // This includes fees_description, test mappings, and any other fee-related mappings
+          const allFeesOptions: Array<{ id: number; netsuiteId: string; description: string | null }> = []
+          
+          // Exclude these account types - they're not for the "Other Fees" dropdown
+          const excludedTypes = ['deposit_account', 'fees_account']
+          
+          Object.keys(data.data).forEach(key => {
+            const lowerKey = key.toLowerCase()
+            // Include all mappings except deposit_account and fees_account
+            if (!excludedTypes.includes(lowerKey) && Array.isArray(data.data[key])) {
+              allFeesOptions.push(...data.data[key])
+            }
+          })
+          
+          console.log('Setting fees description options:', allFeesOptions)
+          setFeesDescriptionOptions(allFeesOptions)
+        } else {
+          console.warn('No fees_description in API response:', data)
+        }
+      } catch (error) {
+        console.error('Error fetching fees description options:', error)
+      } finally {
+        setLoadingFeesOptions(false)
+      }
+    }
+    fetchFeesOptions()
+  }, [])
+
+  // Helper function to check if transaction is cash sale or cash refund
+  const isCashSaleOrRefund = (transaction: Transaction): boolean => {
+    if (!transaction.netsuiteTransactionName) return false
+    const name = transaction.netsuiteTransactionName.toUpperCase()
+    // Check for NetSuite transaction name patterns: CS (Cash Sale), RFND (Cash Refund)
+    // or explicit "Cash Sale"/"Cash Refund" text
+    return name.startsWith('CS') || 
+           name.startsWith('RFND') || 
+           name.includes('CASH SALE') || 
+           name.includes('CASH REFUND')
+  }
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -443,7 +505,6 @@ export function TransactionsTable({
             <TableHead>Adjustment Reason</TableHead>
                 <TableHead>Amount</TableHead>
                 <TableHead>Fee</TableHead>
-                <TableHead>Other Fees</TableHead>
                 <TableHead>Net</TableHead>
                 <TableHead>NetSuite Amount</TableHead>
             <TableHead>NetSuite ID</TableHead>
@@ -528,31 +589,155 @@ export function TransactionsTable({
               <TableCell>
                 {hideSensitiveData ? (
                   <span className="text-gray-500">••••••</span>
-                ) : (
-                  `${transaction.currency} ${Number(transaction.amount).toFixed(2)}`
-                )}
-              </TableCell>
-              <TableCell className="text-red-600">
-                {hideSensitiveData ? (
-                  <span className="text-gray-500">••••••</span>
-                ) : (
-                  `-${transaction.currency} ${Number(transaction.fee).toFixed(2)}`
-                )}
+                ) : (() => {
+                  const isCashSaleRefund = isCashSaleOrRefund(transaction)
+                  return (
+                    <div className="flex flex-col gap-1">
+                      <span>{transaction.currency || 'USD'} {Number(transaction.amount).toFixed(2)}</span>
+                      {!isCashSaleRefund && onUpdateAmountDescription && (
+                        <Select
+                          value={(() => {
+                            if (!transaction.amountDescription) return '__none__'
+                            const matchingOption = feesDescriptionOptions.find(
+                              opt => opt.netsuiteId === transaction.amountDescription ||
+                                     opt.description === transaction.amountDescription ||
+                                     (!opt.netsuiteId && opt.description === transaction.amountDescription)
+                            )
+                            if (matchingOption) {
+                              if (matchingOption.netsuiteId && matchingOption.netsuiteId.trim() !== '') {
+                                return matchingOption.netsuiteId
+                              } else {
+                                return `opt_${matchingOption.id}_${matchingOption.description || 'unknown'}`
+                              }
+                            }
+                            return transaction.amountDescription
+                          })()}
+                          onValueChange={async (value) => {
+                            if (onUpdateAmountDescription) {
+                              if (value === '__none__') {
+                                await onUpdateAmountDescription(String(transaction.id), null)
+                                return
+                              }
+                              const selectedOption = feesDescriptionOptions.find(opt => {
+                                if (opt.netsuiteId && opt.netsuiteId.trim() !== '' && opt.netsuiteId === value) {
+                                  return true
+                                }
+                                const expectedValue = `opt_${opt.id}_${opt.description || 'unknown'}`
+                                if (expectedValue === value) {
+                                  return true
+                                }
+                                return false
+                              })
+                              const valueToStore = selectedOption?.netsuiteId && selectedOption.netsuiteId.trim() !== '' 
+                                ? selectedOption.netsuiteId 
+                                : selectedOption?.description || null
+                              await onUpdateAmountDescription(String(transaction.id), valueToStore)
+                            }
+                          }}
+                          disabled={loadingFeesOptions}
+                        >
+                          <SelectTrigger className="h-7 w-[140px] text-xs border border-gray-300">
+                            <SelectValue placeholder={loadingFeesOptions ? "Loading..." : "Select..."} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">None</SelectItem>
+                            {feesDescriptionOptions.length === 0 && !loadingFeesOptions ? (
+                              <SelectItem value="__no_options__" disabled>No options available</SelectItem>
+                            ) : (
+                              feesDescriptionOptions.map((option) => {
+                                const value = option.netsuiteId && option.netsuiteId.trim() !== '' 
+                                  ? option.netsuiteId 
+                                  : `opt_${option.id}_${option.description || 'unknown'}`
+                                const display = option.description || option.netsuiteId || 'Unknown'
+                                return (
+                                  <SelectItem key={option.id} value={value}>
+                                    {display}
+                                  </SelectItem>
+                                )
+                              })
+                            )}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </div>
+                  )
+                })()}
               </TableCell>
               <TableCell className="text-red-600">
                 {hideSensitiveData ? (
                   <span className="text-gray-500">••••••</span>
                 ) : (() => {
-                  // Calculate other fees: (amount - net) - fee
-                  const amount = Number(transaction.amount) || 0
-                  const net = Number(transaction.net) || 0
-                  const fee = Number(transaction.fee) || 0
-                  const totalFees = amount - net
-                  const otherFees = totalFees - fee
-                  if (Math.abs(otherFees) < 0.01) {
-                    return <span className="text-muted-foreground text-xs">—</span>
-                  }
-                  return `-${transaction.currency} ${Math.abs(otherFees).toFixed(2)}`
+                  const isCashSaleRefund = isCashSaleOrRefund(transaction)
+                  return (
+                    <div className="flex flex-col gap-1">
+                      <span>-{transaction.currency || 'USD'} {Number(transaction.fee).toFixed(2)}</span>
+                      {!isCashSaleRefund && onUpdateFeeDescription && (
+                        <Select
+                          value={(() => {
+                            if (!transaction.feeDescription) return '__none__'
+                            const matchingOption = feesDescriptionOptions.find(
+                              opt => opt.netsuiteId === transaction.feeDescription ||
+                                     opt.description === transaction.feeDescription ||
+                                     (!opt.netsuiteId && opt.description === transaction.feeDescription)
+                            )
+                            if (matchingOption) {
+                              if (matchingOption.netsuiteId && matchingOption.netsuiteId.trim() !== '') {
+                                return matchingOption.netsuiteId
+                              } else {
+                                return `opt_${matchingOption.id}_${matchingOption.description || 'unknown'}`
+                              }
+                            }
+                            return transaction.feeDescription
+                          })()}
+                          onValueChange={async (value) => {
+                            if (onUpdateFeeDescription) {
+                              if (value === '__none__') {
+                                await onUpdateFeeDescription(String(transaction.id), null)
+                                return
+                              }
+                              const selectedOption = feesDescriptionOptions.find(opt => {
+                                if (opt.netsuiteId && opt.netsuiteId.trim() !== '' && opt.netsuiteId === value) {
+                                  return true
+                                }
+                                const expectedValue = `opt_${opt.id}_${opt.description || 'unknown'}`
+                                if (expectedValue === value) {
+                                  return true
+                                }
+                                return false
+                              })
+                              const valueToStore = selectedOption?.netsuiteId && selectedOption.netsuiteId.trim() !== '' 
+                                ? selectedOption.netsuiteId 
+                                : selectedOption?.description || null
+                              await onUpdateFeeDescription(String(transaction.id), valueToStore)
+                            }
+                          }}
+                          disabled={loadingFeesOptions}
+                        >
+                          <SelectTrigger className="h-7 w-[140px] text-xs border border-gray-300">
+                            <SelectValue placeholder={loadingFeesOptions ? "Loading..." : "Select..."} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">None</SelectItem>
+                            {feesDescriptionOptions.length === 0 && !loadingFeesOptions ? (
+                              <SelectItem value="__no_options__" disabled>No options available</SelectItem>
+                            ) : (
+                              feesDescriptionOptions.map((option) => {
+                                const value = option.netsuiteId && option.netsuiteId.trim() !== '' 
+                                  ? option.netsuiteId 
+                                  : `opt_${option.id}_${option.description || 'unknown'}`
+                                const display = option.description || option.netsuiteId || 'Unknown'
+                                return (
+                                  <SelectItem key={option.id} value={value}>
+                                    {display}
+                                  </SelectItem>
+                                )
+                              })
+                            )}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </div>
+                  )
                 })()}
               </TableCell>
               <TableCell className="font-medium">

@@ -97,6 +97,9 @@ model PayoutTransaction {
   netsuiteAmount        Float?
   amountMismatch        Boolean   @default(false)
   includeInNetSuite     Boolean   @default(true)
+  otherFeesDescription  String?
+  amountDescription     String?
+  feeDescription        String?
   createdAt             DateTime  @default(now())
 
   payout     Payout     @relation(fields: [payoutId], references: [id], onDelete: Cascade)
@@ -116,7 +119,7 @@ model PayoutMapping {
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
-  @@unique([mappingType])
+  @@index([mappingType])
   @@index([isActive])
 }
 

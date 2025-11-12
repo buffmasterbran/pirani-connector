@@ -1222,6 +1222,174 @@ export default function Home() {
     }
   }
 
+  // Payout mappings state
+  const [payoutMappings, setPayoutMappings] = useState<Array<{
+    id: number
+    mappingType: string
+    netsuiteId: string
+    description: string | null
+    isActive: boolean
+  }>>([])
+
+  // Payout mapping edit dialog state
+  const [payoutMappingEditDialog, setPayoutMappingEditDialog] = useState<{
+    isOpen: boolean
+    mapping: {
+      id: number
+      mappingType: string
+      netsuiteId: string
+      description: string | null
+      isActive: boolean
+    } | null
+  }>({
+    isOpen: false,
+    mapping: null
+  })
+
+  const fetchPayoutMappings = async () => {
+    try {
+      const response = await fetch('/api/mappings/payout-mappings')
+      const result = await response.json()
+      if (result.success && result.data) {
+        // Flatten the grouped data into an array
+        const allMappings: Array<{
+          id: number
+          mappingType: string
+          netsuiteId: string
+          description: string | null
+          isActive: boolean
+        }> = []
+        
+        Object.keys(result.data).forEach((mappingType) => {
+          result.data[mappingType].forEach((mapping: any) => {
+            allMappings.push({
+              id: mapping.id,
+              mappingType: mappingType,
+              netsuiteId: mapping.netsuiteId,
+              description: mapping.description,
+              isActive: mapping.isActive,
+            })
+          })
+        })
+        
+        setPayoutMappings(allMappings)
+      }
+    } catch (error) {
+      console.error('Error fetching payout mappings:', error)
+    }
+  }
+
+  // Payout mapping handlers
+  const handleEditPayoutMapping = (mapping: {
+    id: number
+    mappingType: string
+    netsuiteId: string
+    description: string | null
+    isActive: boolean
+  }) => {
+    setPayoutMappingEditDialog({
+      isOpen: true,
+      mapping: { ...mapping }
+    })
+  }
+
+  const handleSavePayoutMapping = async (mapping: {
+    id: number
+    mappingType: string
+    netsuiteId: string
+    description: string | null
+    isActive: boolean
+  }) => {
+    try {
+      const response = await fetch(`/api/mappings/payout-mappings/${mapping.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          mappingType: mapping.mappingType,
+          netsuiteId: mapping.netsuiteId,
+          description: mapping.description,
+          isActive: mapping.isActive
+        }),
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        await fetchPayoutMappings()
+        setPayoutMappingEditDialog({ isOpen: false, mapping: null })
+      } else {
+        alert(`Error updating payout mapping: ${result.error || 'Unknown error'}`)
+      }
+    } catch (error) {
+      console.error('Error updating payout mapping:', error)
+      alert(`Error updating payout mapping: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
+  const handleDeletePayoutMapping = async (mappingId: number) => {
+    try {
+      const response = await fetch(`/api/mappings/payout-mappings/${mappingId}`, {
+        method: 'DELETE',
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        await fetchPayoutMappings()
+        closeDeleteConfirmDialog()
+      } else {
+        alert(`Error deleting payout mapping: ${result.error || 'Unknown error'}`)
+      }
+    } catch (error) {
+      console.error('Error deleting payout mapping:', error)
+      alert(`Error deleting payout mapping: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
+  const handleAddPayoutMapping = () => {
+    setPayoutMappingEditDialog({
+      isOpen: true,
+      mapping: {
+        id: 0,
+        mappingType: '',
+        netsuiteId: '',
+        description: '',
+        isActive: true
+      }
+    })
+  }
+
+  const handleCreatePayoutMapping = async (mapping: {
+    mappingType: string
+    netsuiteId: string
+    description: string | null
+    isActive: boolean
+  }) => {
+    try {
+      const response = await fetch('/api/mappings/payout-mappings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(mapping),
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        await fetchPayoutMappings()
+        setPayoutMappingEditDialog({ isOpen: false, mapping: null })
+      } else {
+        alert(`Error creating payout mapping: ${result.error || 'Unknown error'}`)
+      }
+    } catch (error) {
+      console.error('Error creating payout mapping:', error)
+      alert(`Error creating payout mapping: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
   // Load saved payouts and orders on component mount
   useEffect(() => {
     fetchSavedPayouts()
@@ -1232,6 +1400,7 @@ export default function Home() {
     fetchOrderMappings()
     fetchOrderItemMappings()
     fetchCustomerMappings()
+    fetchPayoutMappings()
   }, [])
 
   // Detect missing mappings when orders are loaded
@@ -2753,6 +2922,10 @@ export default function Home() {
         case 'Customer Mapping':
           apiEndpoint = `/api/mappings/customer-fields/${itemId}`
           break
+        case 'Payout Mapping':
+          await handleDeletePayoutMapping(parseInt(itemId))
+          closeDeleteConfirmDialog()
+          return // handleDeletePayoutMapping already refreshes the list
         default:
           console.log(`Unknown item type: ${itemType}`)
           return
@@ -2931,7 +3104,7 @@ export default function Home() {
           <p className="text-slate-600">Configure how Shopify orders map to NetSuite transactions.</p>
         </div>
         
-        {/* Navigation Tabs */}
+        {/* Navigation Tabs - nav-mappings-orders-tab-payment, nav-mappings-orders-tab-shipment, nav-mappings-orders-tab-order, nav-mappings-orders-tab-order-item, nav-mappings-orders-tab-customer */}
         <div className="flex space-x-1 border-b">
           {['Payment', 'Shipment', 'Order', 'Order Item', 'Customer'].map((tab) => (
             <Button
@@ -3358,27 +3531,6 @@ export default function Home() {
             </Card>
           </div>
         )}
-
-        {/* Delete Confirmation Dialog */}
-        <Dialog open={deleteConfirmDialog.isOpen} onOpenChange={closeDeleteConfirmDialog}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Confirm Delete</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <p>Are you sure you want to delete this {deleteConfirmDialog.itemType}?</p>
-              <p className="text-sm text-slate-600">{deleteConfirmDialog.itemName}</p>
-              <div className="flex justify-end space-x-2">
-                <Button variant="outline" onClick={closeDeleteConfirmDialog}>
-                  Cancel
-                </Button>
-                <Button variant="destructive" onClick={confirmDelete}>
-                  Yes, Delete
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
       </div>
     )
   }
@@ -3421,77 +3573,212 @@ export default function Home() {
     </div>
   )
 
-  const renderMappingsPayoutsContent = () => (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-slate-800 mb-2">Payout Mappings</h2>
-        <p className="text-slate-600">Configure how Shopify payouts map to NetSuite deposits.</p>
-      </div>
-      
-      <Card>
-        <CardHeader>
-          <CardTitle>Payout Mappings</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <p className="text-sm text-slate-600">
-              Configure how Shopify payouts map to NetSuite deposits.
-            </p>
-            
-            {/* Payout Mappings Table */}
-            <div className="border rounded-lg">
-              <table className="w-full">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">Mapping Type</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">NetSuite ID</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">Description</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">Status</th>
-                    <th className="px-4 py-3 text-right text-sm font-medium text-slate-700">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
-                  <tr>
-                    <td className="px-4 py-3 text-sm text-slate-900">Deposit Account</td>
-                    <td className="px-4 py-3 text-sm text-slate-600">217</td>
-                    <td className="px-4 py-3 text-sm text-slate-600">Default deposit account</td>
-                    <td className="px-4 py-3">
-                      <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">Active</span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <Button variant="ghost" size="sm">Edit</Button>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="px-4 py-3 text-sm text-slate-900">Fees Account</td>
-                    <td className="px-4 py-3 text-sm text-slate-600">989</td>
-                    <td className="px-4 py-3 text-sm text-slate-600">Shopify fees account</td>
-                    <td className="px-4 py-3">
-                      <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">Active</span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <Button variant="ghost" size="sm">Edit</Button>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="px-4 py-3 text-sm text-slate-900">Fees Description</td>
-                    <td className="px-4 py-3 text-sm text-slate-600">—</td>
-                    <td className="px-4 py-3 text-sm text-slate-600">Shopify Fees</td>
-                    <td className="px-4 py-3">
-                      <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">Active</span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <Button variant="ghost" size="sm">Edit</Button>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+  const renderMappingsPayoutsContent = () => {
+    // Helper function to format mapping type for display
+    const formatMappingType = (mappingType: string): string => {
+      return mappingType
+        .split('_')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ')
+    }
+
+    return (
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-800 mb-2">Payout Mappings</h2>
+          <p className="text-slate-600">Configure how Shopify payouts map to NetSuite deposits.</p>
+        </div>
+        
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>Payout Mappings</CardTitle>
+            <Button onClick={handleAddPayoutMapping} className="bg-blue-600 hover:bg-blue-700 text-white">
+              Add Mapping
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <p className="text-sm text-slate-600">
+                Configure how Shopify payouts map to NetSuite deposits.
+              </p>
+              
+              {/* Payout Mappings Table */}
+              <div className="border rounded-lg">
+                <table className="w-full">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">Mapping Type</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">NetSuite ID</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">Description</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">Status</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-slate-700">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {payoutMappings.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500">
+                          No payout mappings found. Loading...
+                        </td>
+                      </tr>
+                    ) : (
+                      payoutMappings.map((mapping) => (
+                        <tr key={mapping.id}>
+                          <td className="px-4 py-3 text-sm text-slate-900">{formatMappingType(mapping.mappingType)}</td>
+                          <td className="px-4 py-3 text-sm text-slate-600">{mapping.netsuiteId || '—'}</td>
+                          <td className="px-4 py-3 text-sm text-slate-600">{mapping.description || '—'}</td>
+                          <td className="px-4 py-3">
+                            <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                              mapping.isActive 
+                                ? 'bg-green-100 text-green-800' 
+                                : 'bg-gray-100 text-gray-800'
+                            }`}>
+                              {mapping.isActive ? 'Active' : 'Inactive'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <Button 
+                                variant="ghost" 
+                                size="sm"
+                                onClick={() => handleEditPayoutMapping(mapping)}
+                              >
+                                Edit
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="sm"
+                                onClick={() => openDeleteConfirmDialog('Payout Mapping', formatMappingType(mapping.mappingType), mapping.id.toString())}
+                              >
+                                <Trash2 className="h-4 w-4 text-red-500" />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  )
+          </CardContent>
+        </Card>
+
+        {/* Edit/Create Payout Mapping Dialog */}
+        <Dialog open={payoutMappingEditDialog.isOpen} onOpenChange={(open) => {
+          if (!open) {
+            setPayoutMappingEditDialog({ isOpen: false, mapping: null })
+          }
+        }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                {payoutMappingEditDialog.mapping?.id === 0 ? 'Add Payout Mapping' : 'Edit Payout Mapping'}
+              </DialogTitle>
+            </DialogHeader>
+            {payoutMappingEditDialog.mapping && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Mapping Type
+                  </label>
+                  <Input
+                    value={payoutMappingEditDialog.mapping.mappingType}
+                    onChange={(e) => setPayoutMappingEditDialog({
+                      ...payoutMappingEditDialog,
+                      mapping: {
+                        ...payoutMappingEditDialog.mapping!,
+                        mappingType: e.target.value
+                      }
+                    })}
+                    placeholder="e.g., deposit_account, fees_account, fees_description"
+                    disabled={payoutMappingEditDialog.mapping.id !== 0}
+                  />
+                  <p className="text-xs text-slate-500 mt-1">
+                    Use lowercase with underscores (e.g., deposit_account)
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    NetSuite ID
+                  </label>
+                  <Input
+                    value={payoutMappingEditDialog.mapping.netsuiteId}
+                    onChange={(e) => setPayoutMappingEditDialog({
+                      ...payoutMappingEditDialog,
+                      mapping: {
+                        ...payoutMappingEditDialog.mapping!,
+                        netsuiteId: e.target.value
+                      }
+                    })}
+                    placeholder="NetSuite account ID or value"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Description
+                  </label>
+                  <Input
+                    value={payoutMappingEditDialog.mapping.description || ''}
+                    onChange={(e) => setPayoutMappingEditDialog({
+                      ...payoutMappingEditDialog,
+                      mapping: {
+                        ...payoutMappingEditDialog.mapping!,
+                        description: e.target.value || null
+                      }
+                    })}
+                    placeholder="Optional description"
+                  />
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    checked={payoutMappingEditDialog.mapping.isActive}
+                    onChange={(e) => setPayoutMappingEditDialog({
+                      ...payoutMappingEditDialog,
+                      mapping: {
+                        ...payoutMappingEditDialog.mapping!,
+                        isActive: e.target.checked
+                      }
+                    })}
+                    className="w-4 h-4"
+                  />
+                  <label className="text-sm font-medium text-slate-700">
+                    Active
+                  </label>
+                </div>
+                <div className="flex justify-end space-x-2 pt-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => setPayoutMappingEditDialog({ isOpen: false, mapping: null })}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                    onClick={() => {
+                      if (payoutMappingEditDialog.mapping!.id === 0) {
+                        handleCreatePayoutMapping({
+                          mappingType: payoutMappingEditDialog.mapping!.mappingType,
+                          netsuiteId: payoutMappingEditDialog.mapping!.netsuiteId,
+                          description: payoutMappingEditDialog.mapping!.description,
+                          isActive: payoutMappingEditDialog.mapping!.isActive
+                        })
+                      } else {
+                        handleSavePayoutMapping(payoutMappingEditDialog.mapping!)
+                      }
+                    }}
+                  >
+                    {payoutMappingEditDialog.mapping!.id === 0 ? 'Create' : 'Save'}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+      </div>
+    )
+  }
 
   const renderMappingsOtherContent = () => (
     <div className="space-y-6">
@@ -3665,6 +3952,27 @@ export default function Home() {
             <div className="flex justify-end">
               <Button onClick={closeMappingErrorDialog}>
                 Got it
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteConfirmDialog.isOpen} onOpenChange={closeDeleteConfirmDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm Delete</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p>Are you sure you want to delete this {deleteConfirmDialog.itemType}?</p>
+            <p className="text-sm text-slate-600">{deleteConfirmDialog.itemName}</p>
+            <div className="flex justify-end space-x-2">
+              <Button variant="outline" onClick={closeDeleteConfirmDialog}>
+                Cancel
+              </Button>
+              <Button variant="destructive" onClick={confirmDelete}>
+                Yes, Delete
               </Button>
             </div>
           </div>
