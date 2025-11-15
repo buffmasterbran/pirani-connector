@@ -3,49 +3,29 @@ import { prisma } from '@/lib/prisma'
 
 export async function GET() {
   try {
-    // First, try to get all mappings (including inactive) to debug
+    // Get all mappings (including inactive) for the UI table
     const allMappings = await prisma.payoutMapping.findMany({
-      orderBy: {
-        mappingType: 'asc',
-      },
+      orderBy: [
+        { mappingType: 'asc' },
+        { id: 'asc' },
+      ],
     })
 
-    console.log('All payout mappings found:', allMappings.length, allMappings)
+    console.log('All payout mappings found:', allMappings.length)
 
-    // Get active mappings
-    const mappings = await prisma.payoutMapping.findMany({
-      where: {
-        isActive: true,
-      },
-      orderBy: {
-        mappingType: 'asc',
-      },
+    // Return flat array for UI table display
+    return NextResponse.json({ 
+      success: true, 
+      data: allMappings.map(m => ({
+        id: m.id,
+        mappingType: m.mappingType,
+        netsuiteId: m.netsuiteId,
+        description: m.description,
+        isActive: m.isActive,
+        isDefaultDepositAccount: (m as any).isDefaultDepositAccount || false,
+        isDefaultFeesAccount: (m as any).isDefaultFeesAccount || false,
+      }))
     })
-
-    console.log('Active payout mappings found:', mappings.length)
-
-    // Group by mappingType (normalize to lowercase with underscores for consistency)
-    const grouped = mappings.reduce((acc, mapping) => {
-      // Normalize mappingType: "Fees Description" -> "fees_description", "fees_description" -> "fees_description"
-      const normalizedType = mapping.mappingType
-        .toLowerCase()
-        .replace(/\s+/g, '_')
-      
-      if (!acc[normalizedType]) {
-        acc[normalizedType] = []
-      }
-      acc[normalizedType].push({
-        id: mapping.id,
-        netsuiteId: mapping.netsuiteId,
-        description: mapping.description,
-        isActive: mapping.isActive,
-      })
-      return acc
-    }, {} as Record<string, any[]>)
-
-    console.log('Grouped mappings:', grouped)
-
-    return NextResponse.json({ success: true, data: grouped })
   } catch (error) {
     console.error('Error fetching payout mappings:', error)
     return NextResponse.json(
@@ -55,10 +35,58 @@ export async function GET() {
   }
 }
 
-// POST - Create a new payout mapping
+// POST - Create a new payout mapping or set default
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
+    
+    // Check if this is a request to set default accounts
+    if (body.action === 'setDefault') {
+      const { mappingId, defaultType } = body
+      
+      if (!mappingId || !defaultType) {
+        return NextResponse.json(
+          { success: false, error: 'Missing mappingId or defaultType' },
+          { status: 400 }
+        )
+      }
+      
+      // Get the mapping to check its type
+      const mapping = await prisma.payoutMapping.findUnique({
+        where: { id: mappingId }
+      })
+      
+      if (!mapping) {
+        return NextResponse.json(
+          { success: false, error: 'Mapping not found' },
+          { status: 404 }
+        )
+      }
+      
+      // Unset all other defaults of the same type (regardless of mapping type)
+      await prisma.payoutMapping.updateMany({
+        where: {
+          id: { not: mappingId }
+        },
+        data: {
+          ...(defaultType === 'deposit_account' ? { isDefaultDepositAccount: false } : {}),
+          ...(defaultType === 'fees_account' ? { isDefaultFeesAccount: false } : {})
+        }
+      })
+      
+      // Set this mapping as default
+      const updated = await prisma.payoutMapping.update({
+        where: { id: mappingId },
+        data: {
+          ...(defaultType === 'deposit_account' ? { isDefaultDepositAccount: true } : {}),
+          ...(defaultType === 'fees_account' ? { isDefaultFeesAccount: true } : {})
+        }
+      })
+      
+      return NextResponse.json({ success: true, data: updated })
+    }
+    
+    // Regular create mapping
     const { mappingType, netsuiteId, description, isActive } = body
 
     if (!mappingType) {

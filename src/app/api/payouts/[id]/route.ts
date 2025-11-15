@@ -1,6 +1,45 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const payoutId = params.id
+    const body = await request.json()
+
+    // Clear netsuiteDepositId if requested
+    if (body.clearNetsuiteDepositId === true) {
+      await prisma.payout.update({
+        where: { id: payoutId },
+        data: {
+          netsuiteDepositId: null,
+        },
+      })
+
+      return NextResponse.json({
+        success: true,
+        message: `Successfully cleared NetSuite deposit ID for payout ${payoutId}`,
+      })
+    }
+
+    return NextResponse.json(
+      { success: false, error: 'Invalid request body' },
+      { status: 400 }
+    )
+  } catch (error) {
+    console.error('❌ Error updating payout:', error)
+    return NextResponse.json(
+      {
+        error: 'Failed to update payout',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      },
+      { status: 500 },
+    )
+  }
+}
+
 export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }

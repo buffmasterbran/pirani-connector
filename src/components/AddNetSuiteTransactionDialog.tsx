@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Checkbox } from "@/components/ui/checkbox"
 
 interface AddNetSuiteTransactionDialogProps {
   isOpen: boolean
@@ -33,6 +34,15 @@ export function AddNetSuiteTransactionDialog({
   const [netsuiteTransactionId, setNetsuiteTransactionId] = useState("")
   const [netsuiteTransactionName, setNetsuiteTransactionName] = useState("")
   const [netsuiteAmount, setNetsuiteAmount] = useState("")
+  const [transactionType, setTransactionType] = useState<{
+    cashSale: boolean
+    refund: boolean
+    payment: boolean
+  }>({
+    cashSale: false,
+    refund: false,
+    payment: false,
+  })
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -72,6 +82,7 @@ export function AddNetSuiteTransactionDialog({
       setNetsuiteTransactionId("")
       setNetsuiteTransactionName("")
       setNetsuiteAmount("")
+      setTransactionType({ cashSale: false, refund: false, payment: false })
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save transaction")
@@ -85,6 +96,7 @@ export function AddNetSuiteTransactionDialog({
       setNetsuiteTransactionId("")
       setNetsuiteTransactionName("")
       setNetsuiteAmount("")
+      setTransactionType({ cashSale: false, refund: false, payment: false })
       setError(null)
       onClose()
     }
@@ -177,6 +189,63 @@ export function AddNetSuiteTransactionDialog({
             />
             <p className="text-xs text-muted-foreground">
               The transaction amount from NetSuite (will be compared with Shopify amount)
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Transaction Type</Label>
+            <div className="flex flex-col gap-3 pt-2">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="type-cash-sale"
+                  checked={transactionType.cashSale}
+                  onCheckedChange={(checked) =>
+                    setTransactionType((prev) => ({ ...prev, cashSale: checked === true }))
+                  }
+                  disabled={isSaving}
+                />
+                <Label
+                  htmlFor="type-cash-sale"
+                  className="text-sm font-normal cursor-pointer"
+                >
+                  Cash Sale
+                </Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="type-refund"
+                  checked={transactionType.refund}
+                  onCheckedChange={(checked) =>
+                    setTransactionType((prev) => ({ ...prev, refund: checked === true }))
+                  }
+                  disabled={isSaving}
+                />
+                <Label
+                  htmlFor="type-refund"
+                  className="text-sm font-normal cursor-pointer"
+                >
+                  Refund
+                </Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="type-payment"
+                  checked={transactionType.payment}
+                  onCheckedChange={(checked) =>
+                    setTransactionType((prev) => ({ ...prev, payment: checked === true }))
+                  }
+                  disabled={isSaving}
+                />
+                <Label
+                  htmlFor="type-payment"
+                  className="text-sm font-normal cursor-pointer"
+                >
+                  Payment
+                </Label>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Select the transaction type(s) to help identify this NetSuite transaction
             </p>
           </div>
 

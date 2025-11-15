@@ -11,7 +11,8 @@ import {
   Home,
   MapPin,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  HelpCircle
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -52,6 +53,12 @@ export function Sidebar({ activeSection, onSectionChange }: SidebarProps) {
       id: 'settings',
       name: 'Settings',
       icon: Settings,
+      color: 'text-slate-600'
+    },
+    {
+      id: 'help',
+      name: 'Help',
+      icon: HelpCircle,
       color: 'text-slate-600'
     }
   ]

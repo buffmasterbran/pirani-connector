@@ -27,12 +27,22 @@ interface NetSuiteRefund {
   type: string
 }
 
+interface NetSuitePayment {
+  id: number
+  tranid: string
+  otherrefnum: string // Order name like "#40567"
+  entity: string
+  amount: number
+  type: string
+}
+
 interface NetSuiteResponse {
   status: string
   message: string
   details: {
     cashsales: NetSuiteCashSale[]
     refunds: NetSuiteRefund[]
+    payments?: NetSuitePayment[] // Optional for backward compatibility
   }
 }
 
@@ -42,6 +52,7 @@ export interface NetSuiteTransactionRequest {
   date: string // YYYY-MM-DD
   cashsales: string[] // Array of order names like ["#40567", "#39768"]
   refunds: string[] // Array of order names like ["#31509"]
+  payments?: string[] // Array of order names for payments
 }
 
 /**
@@ -152,7 +163,7 @@ export function generateOAuthHeader(method: string, url: string): string {
 }
 
 /**
- * Fetches NetSuite transaction IDs for cash sales and refunds
+ * Fetches NetSuite transaction IDs for cash sales, refunds, and payments
  */
 export async function fetchNetSuiteTransactions(
   request: NetSuiteTransactionRequest
@@ -223,6 +234,22 @@ export function matchNetSuiteTransactions(
         amount: refund.amount,
         type: 'Cash Refund',
       })
+      continue
+    }
+
+    // Check payments
+    if (netsuiteData.details.payments) {
+      const payment = netsuiteData.details.payments.find(
+        (pmt) => pmt.otherrefnum === orderName
+      )
+      if (payment) {
+        matches.set(transaction.order_name!, {
+          id: payment.id,
+          tranid: payment.tranid,
+          amount: payment.amount,
+          type: 'Payment',
+        })
+      }
     }
   }
 

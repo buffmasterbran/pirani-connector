@@ -116,11 +116,15 @@ model PayoutMapping {
   netsuiteId            String   // NetSuite account ID or value
   description           String?  // Optional description/name
   isActive              Boolean  @default(true)
+  isDefaultDepositAccount Boolean @default(false) // Only one deposit_account can be default
+  isDefaultFeesAccount  Boolean @default(false) // Only one fees_account can be default
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
   @@index([mappingType])
   @@index([isActive])
+  @@index([isDefaultDepositAccount])
+  @@index([isDefaultFeesAccount])
 }
 
 model PaymentMethodMapping {

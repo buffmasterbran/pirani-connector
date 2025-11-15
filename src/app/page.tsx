@@ -13,7 +13,8 @@ import { TransactionsDialog } from '@/components/TransactionsDialog'
 import { OrderInfoDialog } from '@/components/OrderInfoDialog'
 import { Sidebar } from '@/components/Sidebar'
 import { Loader, LoaderWithText } from '@/components/Loader'
-import { Download, Database, ArrowUpRight, Settings, Eye, EyeOff, Filter, Trash2, ChevronDown, Loader2 } from 'lucide-react'
+import { Download, Database, ArrowUpRight, Settings, Eye, EyeOff, Filter, Trash2, ChevronDown, Loader2, X, HelpCircle, ChevronRight } from 'lucide-react'
+import JsonView from '@uiw/react-json-view'
 import { 
   validateOrderMappings, 
   getUnmappedPaymentMethods, 
@@ -102,6 +103,9 @@ interface SavedPayout {
     type: string
     currency: string
     processedAt: string | null
+    netsuiteTransactionId?: string | null
+    netsuiteTransactionName?: string | null
+    netsuiteAmount?: number | null
   }>
 }
 
@@ -140,11 +144,16 @@ export default function Home() {
   const [activeSection, setActiveSection] = useState('orders')
   const [activeMappingTab, setActiveMappingTab] = useState('Payment')
   const [activeSettingsTab, setActiveSettingsTab] = useState('General')
+  const [expandedFaq, setExpandedFaq] = useState<string | null>(null)
   const [deleteConfirmDialog, setDeleteConfirmDialog] = useState<{isOpen: boolean, itemType: string, itemName: string, itemId: string}>({
     isOpen: false,
     itemType: '',
     itemName: '',
     itemId: ''
+  })
+  const [clearDbDialog, setClearDbDialog] = useState<{isOpen: boolean, isClearing: boolean}>({
+    isOpen: false,
+    isClearing: false
   })
 
   // Mapping error popup dialog state
@@ -731,6 +740,42 @@ export default function Home() {
     }
   }
 
+  const clearNetSuiteDepositId = async (payoutId: string, e?: React.MouseEvent) => {
+    // Prevent event bubbling if event is provided
+    if (e) {
+      e.stopPropagation()
+    }
+
+    if (!confirm(`⚠️ Are you sure you want to clear the NetSuite Deposit ID for payout ${payoutId}? This will allow you to retest creating the deposit.`)) {
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/payouts/${payoutId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ clearNetsuiteDepositId: true }),
+      })
+      
+      const data = await response.json()
+      
+      if (response.ok) {
+        console.log(`✅ Successfully cleared NetSuite deposit ID:`, data.message)
+        
+        // Refresh payouts to show updated state
+        fetchSavedPayouts()
+      } else {
+        console.error('❌ Failed to clear NetSuite deposit ID:', data.error)
+        alert(`Failed to clear NetSuite deposit ID: ${data.error}`)
+      }
+    } catch (error) {
+      console.error('❌ Error clearing NetSuite deposit ID:', error)
+      alert('Error clearing NetSuite deposit ID from database')
+    }
+  }
+
   const deletePayout = async (payoutId: string) => {
     if (!confirm(`⚠️ Are you sure you want to delete payout ${payoutId} and all its transactions? This action cannot be undone!`)) {
       return
@@ -1229,6 +1274,8 @@ export default function Home() {
     netsuiteId: string
     description: string | null
     isActive: boolean
+    isDefaultDepositAccount: boolean
+    isDefaultFeesAccount: boolean
   }>>([])
 
   // Payout mapping edit dialog state
@@ -1240,6 +1287,8 @@ export default function Home() {
       netsuiteId: string
       description: string | null
       isActive: boolean
+      isDefaultDepositAccount: boolean
+      isDefaultFeesAccount: boolean
     } | null
   }>({
     isOpen: false,
@@ -1251,31 +1300,37 @@ export default function Home() {
       const response = await fetch('/api/mappings/payout-mappings')
       const result = await response.json()
       if (result.success && result.data) {
-        // Flatten the grouped data into an array
-        const allMappings: Array<{
-          id: number
-          mappingType: string
-          netsuiteId: string
-          description: string | null
-          isActive: boolean
-        }> = []
-        
-        Object.keys(result.data).forEach((mappingType) => {
-          result.data[mappingType].forEach((mapping: any) => {
-            allMappings.push({
-              id: mapping.id,
-              mappingType: mappingType,
-              netsuiteId: mapping.netsuiteId,
-              description: mapping.description,
-              isActive: mapping.isActive,
-            })
-          })
-        })
-        
-        setPayoutMappings(allMappings)
+        // API now returns flat array directly
+        setPayoutMappings(result.data)
       }
     } catch (error) {
       console.error('Error fetching payout mappings:', error)
+    }
+  }
+
+  const handleSetDefaultAccount = async (mappingId: number, defaultType: 'deposit_account' | 'fees_account') => {
+    try {
+      const response = await fetch('/api/mappings/payout-mappings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'setDefault',
+          mappingId,
+          defaultType,
+        }),
+      })
+
+      const result = await response.json()
+      if (result.success) {
+        await fetchPayoutMappings()
+      } else {
+        alert(`Failed to set default: ${result.error}`)
+      }
+    } catch (error) {
+      console.error('Error setting default account:', error)
+      alert('Error setting default account')
     }
   }
 
@@ -1286,6 +1341,8 @@ export default function Home() {
     netsuiteId: string
     description: string | null
     isActive: boolean
+    isDefaultDepositAccount: boolean
+    isDefaultFeesAccount: boolean
   }) => {
     setPayoutMappingEditDialog({
       isOpen: true,
@@ -1299,6 +1356,8 @@ export default function Home() {
     netsuiteId: string
     description: string | null
     isActive: boolean
+    isDefaultDepositAccount: boolean
+    isDefaultFeesAccount: boolean
   }) => {
     try {
       const response = await fetch(`/api/mappings/payout-mappings/${mapping.id}`, {
@@ -1310,7 +1369,9 @@ export default function Home() {
           mappingType: mapping.mappingType,
           netsuiteId: mapping.netsuiteId,
           description: mapping.description,
-          isActive: mapping.isActive
+          isActive: mapping.isActive,
+          isDefaultDepositAccount: mapping.isDefaultDepositAccount,
+          isDefaultFeesAccount: mapping.isDefaultFeesAccount
         }),
       })
 
@@ -1356,9 +1417,37 @@ export default function Home() {
         mappingType: '',
         netsuiteId: '',
         description: '',
-        isActive: true
+        isActive: true,
+        isDefaultDepositAccount: false,
+        isDefaultFeesAccount: false
       }
     })
+  }
+
+  const handleClearDatabase = async () => {
+    setClearDbDialog({ isOpen: true, isClearing: true })
+    try {
+      const response = await fetch('/api/admin/clear-database', {
+        method: 'POST',
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        // Refresh all data
+        fetchSavedPayouts()
+        setClearDbDialog({ isOpen: false, isClearing: false })
+        alert(`Database cleared successfully!\n\nDeleted:\n- ${data.stats.transactions} transactions\n- ${data.stats.payouts} payouts\n- ${data.stats.orderLines} order lines`)
+      } else {
+        console.error('Error clearing database:', data.error)
+        alert(`Error clearing database: ${data.error || 'Unknown error'}`)
+        setClearDbDialog({ isOpen: false, isClearing: false })
+      }
+    } catch (error) {
+      console.error('Error clearing database:', error)
+      alert(`Error clearing database: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      setClearDbDialog({ isOpen: false, isClearing: false })
+    }
   }
 
   const handleCreatePayoutMapping = async (mapping: {
@@ -1366,6 +1455,8 @@ export default function Home() {
     netsuiteId: string
     description: string | null
     isActive: boolean
+    isDefaultDepositAccount: boolean
+    isDefaultFeesAccount: boolean
   }) => {
     try {
       const response = await fetch('/api/mappings/payout-mappings', {
@@ -1429,6 +1520,24 @@ export default function Home() {
     netsuiteDepositNumber: p.netsuiteDepositNumber,
     netsuiteDepositId: p.netsuiteDepositId
   })), ...payouts.filter(p => !p.inDatabase)]
+
+  // Helper function to check if a payout has transactions with issues (missing cash sales, etc.)
+  const hasMissingCashSale = (payout: typeof allPayouts[0]): boolean => {
+    // Find the saved payout with transactions
+    const savedPayout = savedPayouts.find(sp => String(sp.id) === String(payout.id))
+    if (!savedPayout || !savedPayout.transactions) return false
+    
+    // Check if any transaction has an order_name but no netsuiteTransactionName
+    return savedPayout.transactions.some((transaction: any) => {
+      const hasOrderName = transaction.order_name && 
+                          transaction.order_name !== '—' && 
+                          transaction.order_name !== 'N/A'
+      const missingNetSuiteName = !transaction.netsuiteTransactionName || 
+                                  transaction.netsuiteTransactionName === null ||
+                                  transaction.netsuiteTransactionName === ''
+      return hasOrderName && missingNetSuiteName
+    })
+  }
 
   // Filter payouts based on selected filters
   const filteredPayouts = allPayouts.filter(payout => {
@@ -1520,6 +1629,26 @@ export default function Home() {
                 </div>
               </Card>
             </div>
+            
+            {/* Clear Database Button */}
+            <Card className="border-red-200 bg-red-50">
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold text-red-900 mb-1">Database Management</h3>
+                    <p className="text-sm text-red-700">Clear all payouts, transactions, and order lines from the database.</p>
+                  </div>
+                  <Button
+                    variant="destructive"
+                    onClick={() => setClearDbDialog({ isOpen: true, isClearing: false })}
+                    className="flex items-center gap-2"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Clear Database
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         )
         
@@ -2383,6 +2512,130 @@ export default function Home() {
           </div>
         )
         
+      case 'help':
+        return (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-2xl font-bold text-slate-800 mb-2">Help & FAQ</h2>
+              <p className="text-slate-600">Common questions and guidance for using the Shopify to NetSuite connector.</p>
+            </div>
+            
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <HelpCircle className="h-5 w-5" />
+                  Frequently Asked Questions
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {/* FAQ Item: Shopify Tax Handling */}
+                  <div className="border rounded-lg overflow-hidden">
+                    <button
+                      onClick={() => setExpandedFaq(expandedFaq === 'tax-handling' ? null : 'tax-handling')}
+                      className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <ChevronRight 
+                          className={`h-5 w-5 text-slate-500 transition-transform ${
+                            expandedFaq === 'tax-handling' ? 'transform rotate-90' : ''
+                          }`}
+                        />
+                        <span className="font-semibold text-slate-800">
+                          Shopify Tax Adjustments
+                        </span>
+                      </div>
+                    </button>
+                    {expandedFaq === 'tax-handling' && (
+                      <div className="px-4 pb-4 pt-0 border-t bg-gray-50">
+                        <div className="pt-4 space-y-3 text-sm text-slate-700">
+                          <div>
+                            <p className="font-medium mb-2">Understanding Shopify Tax Handling:</p>
+                            <p>
+                              When Shopify Pay processes an order, they charge tax to the customer regardless of your tax settings because Shopify handles tax collection and remittance. This tax amount is then <strong>deducted from your payout</strong> as a pass-through - meaning you never actually receive the tax money.
+                            </p>
+                          </div>
+                          <div>
+                            <p className="font-medium mb-2">What happens when an order is cancelled?</p>
+                            <p>
+                              If an order is cancelled, Shopify will <strong>refund the tax</strong> to the customer. This creates a tax adjustment in your payout that needs to be properly categorized.
+                            </p>
+                          </div>
+                          <div className="bg-blue-50 border border-blue-200 rounded p-3">
+                            <p className="font-medium text-blue-900 mb-1">💡 Recommendation:</p>
+                            <p className="text-blue-800">
+                              All tax adjustments should be set to <strong>"Shopify Tax Adjustment"</strong> in the dropdown. This ensures proper categorization in NetSuite and maintains accurate accounting records.
+                            </p>
+                            <p className="text-blue-800 mt-2 text-xs">
+                              <strong>Note:</strong> This is a recommendation, not a requirement. You can still choose other options if needed for your specific use case.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* FAQ Item: Split Shopify Pay Payments */}
+                  <div className="border rounded-lg overflow-hidden">
+                    <button
+                      onClick={() => setExpandedFaq(expandedFaq === 'split-payments' ? null : 'split-payments')}
+                      className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <ChevronRight 
+                          className={`h-5 w-5 text-slate-500 transition-transform ${
+                            expandedFaq === 'split-payments' ? 'transform rotate-90' : ''
+                          }`}
+                        />
+                        <span className="font-semibold text-slate-800">
+                          Split Shopify Pay Payments Across Multiple Payouts
+                        </span>
+                      </div>
+                    </button>
+                    {expandedFaq === 'split-payments' && (
+                      <div className="px-4 pb-4 pt-0 border-t bg-gray-50">
+                        <div className="pt-4 space-y-3 text-sm text-slate-700">
+                          <div>
+                            <p className="font-medium mb-2">When Shopify Pay payments span multiple payouts:</p>
+                            <p>
+                              In some cases, Shopify Pay may split a single order's payment across <strong>two separate payouts</strong>. This typically happens when there are timing differences or payment processing delays.
+                            </p>
+                          </div>
+                          <div>
+                            <p className="font-medium mb-2">Required NetSuite workflow:</p>
+                            <ol className="list-decimal list-inside space-y-2 ml-2">
+                              <li>
+                                <strong>Delete the Cash Sale:</strong> The original cash sale created for the order must be deleted in NetSuite.
+                              </li>
+                              <li>
+                                <strong>Invoice the Sales Order:</strong> Convert the sales order to an invoice instead of using a cash sale.
+                              </li>
+                              <li>
+                                <strong>Match Payments:</strong> Apply payment matching to link the split payments from both payouts to the invoiced sales order.
+                              </li>
+                            </ol>
+                          </div>
+                          <div className="bg-yellow-50 border border-yellow-200 rounded p-3">
+                            <p className="font-medium text-yellow-900 mb-1">⚠️ Important:</p>
+                            <p className="text-yellow-800">
+                              This workflow <strong>only applies</strong> when a Shopify Pay payment is split across <strong>2 payouts</strong>. For single-payout payments, use the standard cash sale workflow.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Placeholder for future FAQs */}
+                  <div className="text-center py-8 text-slate-400 text-sm">
+                    More help topics coming soon...
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )
+        
       case 'payouts':
         return renderPayoutsContent()
         
@@ -2590,13 +2843,22 @@ export default function Home() {
                           </span>
                         )}
                         {payout.netsuiteDepositNumber && (
-                          <button 
-                            onClick={() => openEditNetSuiteIdDialog(payout)}
-                            className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 hover:bg-blue-200 cursor-pointer transition-colors"
-                            title="Click to edit NetSuite ID"
-                          >
-                            ✓ NS: {payout.netsuiteDepositNumber}
-                          </button>
+                          <div className="inline-flex items-center gap-1">
+                            <button 
+                              onClick={() => openEditNetSuiteIdDialog(payout)}
+                              className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 hover:bg-blue-200 cursor-pointer transition-colors"
+                              title="Click to edit NetSuite ID"
+                            >
+                              ✓ NS: {payout.netsuiteDepositNumber}
+                            </button>
+                            <button
+                              onClick={(e) => clearNetSuiteDepositId(String(payout.id), e)}
+                              className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-red-100 text-red-600 hover:bg-red-200 cursor-pointer transition-colors"
+                              title="Clear NetSuite Deposit ID (for testing)"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </div>
                         )}
                         {payout.inDatabase && !payout.netsuiteDepositNumber && (
                           <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
@@ -2612,7 +2874,11 @@ export default function Home() {
                            size="sm" 
                            onClick={() => fetchTransactions(String(payout.id))}
                            disabled={isLoadingTransactions}
-                           className="text-xs"
+                           className={`text-xs ${
+                             hasMissingCashSale(payout) 
+                               ? 'border-red-500 bg-red-50 text-red-700 hover:bg-red-100 hover:border-red-600' 
+                               : ''
+                           }`}
                          >
                            View Transactions
                          </Button>
@@ -3610,14 +3876,15 @@ export default function Home() {
                       <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">Mapping Type</th>
                       <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">NetSuite ID</th>
                       <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">Description</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">Status</th>
+                      <th className="px-4 py-3 text-center text-sm font-medium text-slate-700">Default Deposit Account</th>
+                      <th className="px-4 py-3 text-center text-sm font-medium text-slate-700">Default Fees Account</th>
                       <th className="px-4 py-3 text-right text-sm font-medium text-slate-700">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200">
                     {payoutMappings.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500">
+                        <td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-500">
                           No payout mappings found. Loading...
                         </td>
                       </tr>
@@ -3627,14 +3894,23 @@ export default function Home() {
                           <td className="px-4 py-3 text-sm text-slate-900">{formatMappingType(mapping.mappingType)}</td>
                           <td className="px-4 py-3 text-sm text-slate-600">{mapping.netsuiteId || '—'}</td>
                           <td className="px-4 py-3 text-sm text-slate-600">{mapping.description || '—'}</td>
-                          <td className="px-4 py-3">
-                            <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                              mapping.isActive 
-                                ? 'bg-green-100 text-green-800' 
-                                : 'bg-gray-100 text-gray-800'
-                            }`}>
-                              {mapping.isActive ? 'Active' : 'Inactive'}
-                            </span>
+                          <td className="px-4 py-3 text-center">
+                            <input
+                              type="radio"
+                              name="defaultDepositAccount"
+                              checked={mapping.isDefaultDepositAccount}
+                              onChange={() => handleSetDefaultAccount(mapping.id, 'deposit_account')}
+                              className="w-4 h-4 text-blue-600"
+                            />
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <input
+                              type="radio"
+                              name="defaultFeesAccount"
+                              checked={mapping.isDefaultFeesAccount}
+                              onChange={() => handleSetDefaultAccount(mapping.id, 'fees_account')}
+                              className="w-4 h-4 text-blue-600"
+                            />
                           </td>
                           <td className="px-4 py-3 text-right">
                             <div className="flex items-center justify-end gap-2">
@@ -3762,7 +4038,9 @@ export default function Home() {
                           mappingType: payoutMappingEditDialog.mapping!.mappingType,
                           netsuiteId: payoutMappingEditDialog.mapping!.netsuiteId,
                           description: payoutMappingEditDialog.mapping!.description,
-                          isActive: payoutMappingEditDialog.mapping!.isActive
+                          isActive: payoutMappingEditDialog.mapping!.isActive,
+                          isDefaultDepositAccount: payoutMappingEditDialog.mapping!.isDefaultDepositAccount,
+                          isDefaultFeesAccount: payoutMappingEditDialog.mapping!.isDefaultFeesAccount
                         })
                       } else {
                         handleSavePayoutMapping(payoutMappingEditDialog.mapping!)
@@ -3827,6 +4105,39 @@ export default function Home() {
             </DialogTitle>
           </DialogHeader>
           
+          {/* Actions - Moved to top */}
+          {netsuitePreviewDialog.previewData && !netsuitePreviewDialog.isLoading && (
+            <div className="flex justify-end gap-2 pb-4 border-b">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setNetsuitePreviewDialog({
+                    isOpen: false,
+                    payoutId: null,
+                    previewData: null,
+                    isLoading: false,
+                  })
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleCreateNetSuiteDeposit}
+                disabled={netsuitePreviewDialog.isLoading}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                {netsuitePreviewDialog.isLoading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    Creating...
+                  </>
+                ) : (
+                  'Create Deposit'
+                )}
+              </Button>
+            </div>
+          )}
+          
           {netsuitePreviewDialog.isLoading ? (
             <div className="flex items-center justify-center py-8">
               <Loader />
@@ -3861,45 +4172,23 @@ export default function Home() {
               {/* JSON Body */}
               <div>
                 <h3 className="font-semibold mb-2">JSON Body to be sent to NetSuite</h3>
-                <div className="bg-slate-900 text-slate-100 p-4 rounded-lg overflow-x-auto">
-                  <pre className="text-xs whitespace-pre-wrap break-words">
-                    {JSON.stringify(netsuitePreviewDialog.previewData.depositRequest, null, 2)}
-                  </pre>
+                <div className="bg-white border border-gray-200 p-4 rounded-lg overflow-x-auto">
+                  <JsonView
+                    value={netsuitePreviewDialog.previewData.depositRequest}
+                    style={{
+                      backgroundColor: 'transparent',
+                      fontSize: '12px',
+                    }}
+                    theme="light"
+                    collapsed={false}
+                    displayDataTypes={false}
+                    displayObjectSize={false}
+                    enableClipboard={true}
+                  />
                 </div>
                 <p className="text-xs text-muted-foreground mt-2">
-                  Also logged to browser console for easy copying
+                  Click arrows to expand/collapse sections. Also logged to browser console for easy copying
                 </p>
-              </div>
-
-              {/* Actions */}
-              <div className="flex justify-end gap-2 pt-4 border-t">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setNetsuitePreviewDialog({
-                      isOpen: false,
-                      payoutId: null,
-                      previewData: null,
-                      isLoading: false,
-                    })
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleCreateNetSuiteDeposit}
-                  disabled={netsuitePreviewDialog.isLoading}
-                  className="bg-blue-600 hover:bg-blue-700"
-                >
-                  {netsuitePreviewDialog.isLoading ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                      Creating...
-                    </>
-                  ) : (
-                    'Create Deposit'
-                  )}
-                </Button>
               </div>
             </div>
           ) : null}
@@ -3973,6 +4262,62 @@ export default function Home() {
               </Button>
               <Button variant="destructive" onClick={confirmDelete}>
                 Yes, Delete
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Clear Database Confirmation Dialog */}
+      <Dialog open={clearDbDialog.isOpen} onOpenChange={(open) => {
+        if (!clearDbDialog.isClearing) {
+          setClearDbDialog({ isOpen: open, isClearing: false })
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <Trash2 className="h-5 w-5" />
+              Clear Database
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-slate-700">
+              Are you sure you want to clear the entire database? This will permanently delete:
+            </p>
+            <ul className="list-disc list-inside text-slate-600 space-y-1">
+              <li>All payouts</li>
+              <li>All transactions</li>
+              <li>All order lines</li>
+            </ul>
+            <p className="text-sm font-semibold text-red-600">
+              ⚠️ This action cannot be undone!
+            </p>
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button
+                variant="outline"
+                onClick={() => setClearDbDialog({ isOpen: false, isClearing: false })}
+                disabled={clearDbDialog.isClearing}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleClearDatabase}
+                disabled={clearDbDialog.isClearing}
+                className="flex items-center gap-2"
+              >
+                {clearDbDialog.isClearing ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Clearing...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-4 w-4" />
+                    Clear Database
+                  </>
+                )}
               </Button>
             </div>
           </div>

@@ -8,7 +8,7 @@ export async function PUT(
 ) {
   try {
     const body = await request.json()
-    const { mappingType, netsuiteId, description, isActive } = body
+    const { mappingType, netsuiteId, description, isActive, isDefaultDepositAccount, isDefaultFeesAccount } = body
     const id = parseInt(params.id)
 
     if (isNaN(id)) {
@@ -18,13 +18,38 @@ export async function PUT(
       )
     }
 
-    const mapping = await prisma.payoutMapping.update({
+    // If setting as default, unset all other defaults (regardless of mapping type)
+    if (isDefaultDepositAccount === true) {
+      await (prisma.payoutMapping.updateMany as any)({
+        where: {
+          id: { not: id }
+        },
+        data: {
+          isDefaultDepositAccount: false
+        }
+      })
+    }
+
+    if (isDefaultFeesAccount === true) {
+      await (prisma.payoutMapping.updateMany as any)({
+        where: {
+          id: { not: id }
+        },
+        data: {
+          isDefaultFeesAccount: false
+        }
+      })
+    }
+
+    const mapping = await (prisma.payoutMapping.update as any)({
       where: { id },
       data: {
         ...(mappingType && { mappingType }),
         ...(netsuiteId !== undefined && { netsuiteId }),
         ...(description !== undefined && { description }),
-        ...(isActive !== undefined && { isActive })
+        ...(isActive !== undefined && { isActive }),
+        ...(isDefaultDepositAccount !== undefined && { isDefaultDepositAccount }),
+        ...(isDefaultFeesAccount !== undefined && { isDefaultFeesAccount })
       }
     })
 

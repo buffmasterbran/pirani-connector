@@ -7,11 +7,12 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Trash2, Users, GripVertical, Plus } from "lucide-react"
+import { Trash2, Users, GripVertical, Plus, GitMerge } from "lucide-react"
+import { Checkbox } from "@/components/ui/checkbox"
 import { safeFormatDate } from "@/lib/dateUtils"
 import { useState, type ReactNode, useEffect } from "react"
+import { MergeTransactionsDialog } from "@/components/MergeTransactionsDialog"
 import {
   DndContext,
   DragOverlay,
@@ -54,20 +55,48 @@ interface TransactionsTableProps {
   isLoading?: boolean
   hideSensitiveData?: boolean
   onDeleteNetSuiteId?: (transactionId: string) => void
-  onToggleInclude?: (transactionId: string, include: boolean) => void
   onReassignNetSuite?: (fromTransactionId: string, toTransactionId: string) => Promise<void>
   onAddNetSuite?: (transactionId: string) => void
   onUpdateOtherFeesDescription?: (transactionId: string, description: string | null) => Promise<void>
   onUpdateAmountDescription?: (transactionId: string, description: string | null) => Promise<void>
   onUpdateFeeDescription?: (transactionId: string, description: string | null) => Promise<void>
+  onToggleInclude?: (transactionId: string, include: boolean) => Promise<void>
+  onMergeTransactions?: (sourceTransactionIds: string[], targetTransactionId: string) => Promise<void>
 }
 
 // Helper function to get NetSuite URL based on transaction type
-function getNetSuiteUrl(transactionId: string, transactionType: string): string {
-  const isRefund = transactionType?.toLowerCase() === 'refund'
+function getNetSuiteUrl(transactionId: string, transactionType: string | undefined, netsuiteTransactionName?: string | null): string {
   const baseUrl = 'https://7913744.app.netsuite.com/app/accounting/transactions'
-  const endpoint = isRefund ? 'transaction.nl' : 'cashsale.nl'
-  return `${baseUrl}/${endpoint}?id=${transactionId}`
+  
+  // Prioritize NetSuite transaction name for transaction type detection (more reliable)
+  // Check NetSuite transaction name first - this is the most reliable indicator
+  const netsuiteNameUpper = (netsuiteTransactionName || '').toUpperCase().trim()
+  
+  // Check for refund indicators
+  const isRefundByName = netsuiteNameUpper.startsWith('RFND') || 
+                         netsuiteNameUpper.includes('CASH REFUND') ||
+                         netsuiteNameUpper.includes('REFUND')
+  
+  // Check for payment indicators (common payment transaction IDs/names)
+  const isPaymentByName = netsuiteNameUpper.startsWith('CUSTPYMT') ||
+                         netsuiteNameUpper.startsWith('PYMT') ||
+                         netsuiteNameUpper.includes('CUSTOMER PAYMENT') ||
+                         netsuiteNameUpper.includes('PAYMENT')
+  
+  // Also check transaction type as fallback (handle undefined/empty)
+  const transactionTypeLower = (transactionType || '').toLowerCase().trim()
+  const isRefundByType = transactionTypeLower === 'refund'
+  const isPaymentByType = transactionTypeLower === 'payment' || transactionTypeLower === 'custpymt'
+  
+  // Determine endpoint based on transaction type
+  // Priority: Payment > Refund > Cash Sale (default)
+  if (isPaymentByName || isPaymentByType) {
+    return `${baseUrl}/custpymt.nl?id=${transactionId}`
+  } else if (isRefundByName || isRefundByType) {
+    return `${baseUrl}/cashrfnd.nl?id=${transactionId}`
+  } else {
+    return `${baseUrl}/cashsale.nl?id=${transactionId}`
+  }
 }
 
 // Draggable NetSuite ID component
@@ -99,7 +128,7 @@ function DraggableNetSuiteId({
           <div className="flex items-center gap-2">
             {transaction.netsuiteTransactionName && transaction.netsuiteTransactionId ? (
               <a
-                href={getNetSuiteUrl(transaction.netsuiteTransactionId, transaction.type)}
+                href={getNetSuiteUrl(transaction.netsuiteTransactionId!, transaction.type, transaction.netsuiteTransactionName)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-sm font-medium text-red-600 hover:text-red-800 hover:underline"
@@ -145,7 +174,7 @@ function DraggableNetSuiteId({
           <div className="flex items-center gap-2">
             {transaction.netsuiteTransactionId ? (
               <a
-                href={getNetSuiteUrl(transaction.netsuiteTransactionId, transaction.type)}
+                href={getNetSuiteUrl(transaction.netsuiteTransactionId!, transaction.type, transaction.netsuiteTransactionName || null)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-sm font-medium text-green-600 hover:text-green-800 hover:underline"
@@ -223,20 +252,64 @@ function DroppableRow({
   const isDroppable = isOver && !transaction.netsuiteTransactionId
   const isEvenRow = rowIndex % 2 === 0
 
+  // Check if transaction is missing a cash sale
+  // A transaction is missing a cash sale if it has an order_name but no netsuiteTransactionName
+  // However, if any dropdown is selected OR transaction is ignored, don't highlight it in red as it's being handled/resolved
+  const hasOrderName = transaction.order_name && 
+                      transaction.order_name !== '—' && 
+                      transaction.order_name !== 'N/A'
+  const missingNetSuiteName = !transaction.netsuiteTransactionName || 
+                              transaction.netsuiteTransactionName === null ||
+                              transaction.netsuiteTransactionName === ''
+  
+  // Check if any dropdown has a selection
+  const hasDropdownSelection = !!(transaction.amountDescription || 
+                                  transaction.otherFeesDescription)
+  
+  // Check if transaction is ignored (resolved)
+  const isIgnored = transaction.includeInNetSuite === false
+  
+  // Check if amount mismatch is actually a problem
+  // For payments, recalculate mismatch using net amount instead of amount
+  let isActualMismatch = transaction.amountMismatch === true
+  if (isActualMismatch && transaction.netsuiteTransactionName && transaction.netsuiteAmount !== null && transaction.netsuiteAmount !== undefined) {
+    const netsuiteNameUpper = (transaction.netsuiteTransactionName || '').toUpperCase().trim()
+    const isPayment = netsuiteNameUpper.startsWith('PYMT') ||
+                     netsuiteNameUpper.startsWith('CUSTPYMT') ||
+                     netsuiteNameUpper.includes('PAYMENT')
+    
+    if (isPayment) {
+      // For payments, compare net amount with NetSuite amount
+      const shopifyNet = typeof transaction.net === 'string' ? parseFloat(transaction.net) : (transaction.net || 0)
+      const netsuiteAmount = typeof transaction.netsuiteAmount === 'string' ? parseFloat(transaction.netsuiteAmount) : transaction.netsuiteAmount
+      const actualMismatch = Math.abs(Math.abs(shopifyNet) - Math.abs(netsuiteAmount)) > 0.01
+      // If amounts actually match, don't treat as mismatch
+      if (!actualMismatch) isActualMismatch = false
+    }
+  }
+  
+  // Only show red highlighting if:
+  // - Missing NetSuite name AND no dropdown is selected AND not ignored, OR
+  // - Actual amount mismatch (not false positive for payments)
+  const isMissingCashSale = (hasOrderName && missingNetSuiteName && !hasDropdownSelection && !isIgnored) || 
+                            (isActualMismatch && !hasDropdownSelection && !isIgnored)
+
   return (
     <TableRow
       ref={setNodeRef}
       data-transaction-id={transaction.id} // Add data attribute as backup
       className={`
-        ${transaction.includeInNetSuite === false 
-          ? 'opacity-50 bg-gray-50' 
-          : isEvenRow 
-            ? 'bg-white' 
-            : 'bg-gray-50/50'}
+        ${isMissingCashSale 
+          ? 'bg-red-50 border-l-4 border-red-500' 
+          : transaction.includeInNetSuite === false 
+            ? 'opacity-50 bg-gray-50' 
+            : isEvenRow 
+              ? 'bg-white' 
+              : 'bg-gray-50/50'}
         ${isDroppable ? 'bg-blue-50 border-2 border-blue-400 border-dashed' : ''}
         ${isDraggingOver && !transaction.netsuiteTransactionId ? 'bg-blue-100' : ''}
         transition-colors
-        hover:bg-gray-100
+        ${isMissingCashSale ? 'hover:bg-red-100' : 'hover:bg-gray-100'}
       `}
     >
       {children}
@@ -249,17 +322,20 @@ export function TransactionsTable({
   isLoading, 
   hideSensitiveData = false,
   onDeleteNetSuiteId,
-  onToggleInclude,
   onReassignNetSuite,
   onAddNetSuite,
   onUpdateOtherFeesDescription,
   onUpdateAmountDescription,
-  onUpdateFeeDescription
+  onUpdateFeeDescription,
+  onToggleInclude,
+  onMergeTransactions
 }: TransactionsTableProps) {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [draggedTransactionId, setDraggedTransactionId] = useState<string | null>(null)
   const [feesDescriptionOptions, setFeesDescriptionOptions] = useState<Array<{ id: number; netsuiteId: string; description: string | null }>>([])
   const [loadingFeesOptions, setLoadingFeesOptions] = useState(false)
+  const [selectedTransactionIds, setSelectedTransactionIds] = useState<Set<string>>(new Set())
+  const [showMergeDialog, setShowMergeDialog] = useState(false)
 
   // Fetch fees description options from payout mappings
   useEffect(() => {
@@ -270,6 +346,9 @@ export function TransactionsTable({
         const data = await response.json()
         console.log('Fees description API response:', data)
         if (data.success && data.data) {
+          // API now returns a flat array of mappings
+          const allMappings = Array.isArray(data.data) ? data.data : []
+          
           // Collect all mappings except deposit_account and fees_account
           // This includes fees_description, test mappings, and any other fee-related mappings
           const allFeesOptions: Array<{ id: number; netsuiteId: string; description: string | null }> = []
@@ -277,11 +356,15 @@ export function TransactionsTable({
           // Exclude these account types - they're not for the "Other Fees" dropdown
           const excludedTypes = ['deposit_account', 'fees_account']
           
-          Object.keys(data.data).forEach(key => {
-            const lowerKey = key.toLowerCase()
+          allMappings.forEach((mapping: any) => {
+            const mappingType = (mapping.mappingType || '').toLowerCase()
             // Include all mappings except deposit_account and fees_account
-            if (!excludedTypes.includes(lowerKey) && Array.isArray(data.data[key])) {
-              allFeesOptions.push(...data.data[key])
+            if (!excludedTypes.includes(mappingType)) {
+              allFeesOptions.push({
+                id: mapping.id,
+                netsuiteId: mapping.netsuiteId || '',
+                description: mapping.description || null
+              })
             }
           })
           
@@ -483,13 +566,33 @@ export function TransactionsTable({
       }}
     >
       <div className="rounded-md border">
+        {selectedTransactionIds.size >= 2 && (
+          <div className="p-3 bg-blue-50 border-b border-blue-200">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm text-blue-800">
+                <GitMerge className="h-4 w-4" />
+                <span>
+                  {selectedTransactionIds.size} transaction{selectedTransactionIds.size !== 1 ? 's' : ''} selected
+                </span>
+              </div>
+              <Button
+                onClick={() => setShowMergeDialog(true)}
+                size="sm"
+                className="flex items-center gap-2"
+              >
+                <GitMerge className="h-4 w-4" />
+                Merge Selected
+              </Button>
+            </div>
+          </div>
+        )}
         {multiTransactionOrders.length > 0 && (
           <div className="p-3 bg-yellow-50 border-b border-yellow-200">
             <div className="flex items-center gap-2 text-sm text-yellow-800">
               <Users className="h-4 w-4" />
               <span>
                 {multiTransactionOrders.length} order{multiTransactionOrders.length !== 1 ? 's' : ''} with multiple transactions detected. 
-                Use checkboxes to control which transactions are included in NetSuite matching.
+                Use the "Ignore" option in dropdowns to exclude transactions from NetSuite matching.
               </span>
             </div>
           </div>
@@ -497,7 +600,18 @@ export function TransactionsTable({
         <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="w-12">Include</TableHead>
+            <TableHead className="w-12">
+              <Checkbox
+                checked={selectedTransactionIds.size === transactions.length && transactions.length > 0}
+                onCheckedChange={(checked) => {
+                  if (checked) {
+                    setSelectedTransactionIds(new Set(transactions.map(t => t.id)))
+                  } else {
+                    setSelectedTransactionIds(new Set())
+                  }
+                }}
+              />
+            </TableHead>
             <TableHead>Transaction ID</TableHead>
                 <TableHead>Order ID</TableHead>
             <TableHead>Order Name</TableHead>
@@ -531,16 +645,18 @@ export function TransactionsTable({
                 rowIndex={idx}
               >
                 <TableCell>
-                  {onToggleInclude && (
-                    <Checkbox
-                      checked={transaction.includeInNetSuite !== false}
-                      onCheckedChange={(checked) => {
-                        const newValue = checked === true
-                        onToggleInclude(transaction.id, newValue)
-                      }}
-                      title={transaction.includeInNetSuite === false ? 'Excluded from NetSuite matching' : 'Included in NetSuite matching'}
-                    />
-                  )}
+                  <Checkbox
+                    checked={selectedTransactionIds.has(transaction.id)}
+                    onCheckedChange={(checked) => {
+                      const newSelected = new Set(selectedTransactionIds)
+                      if (checked) {
+                        newSelected.add(transaction.id)
+                      } else {
+                        newSelected.delete(transaction.id)
+                      }
+                      setSelectedTransactionIds(newSelected)
+                    }}
+                  />
                 </TableCell>
                 <TableCell className="font-medium">
                   {transaction.id ? `#${String(transaction.id).slice(-8)}` : 'N/A'}
@@ -597,6 +713,8 @@ export function TransactionsTable({
                       {!isCashSaleRefund && onUpdateAmountDescription && (
                         <Select
                           value={(() => {
+                            // If transaction is ignored, show "Ignore" in dropdown
+                            if (transaction.includeInNetSuite === false) return '__ignore__'
                             if (!transaction.amountDescription) return '__none__'
                             const matchingOption = feesDescriptionOptions.find(
                               opt => opt.netsuiteId === transaction.amountDescription ||
@@ -613,7 +731,19 @@ export function TransactionsTable({
                             return transaction.amountDescription
                           })()}
                           onValueChange={async (value) => {
-                            if (onUpdateAmountDescription) {
+                            if (onUpdateAmountDescription && onToggleInclude) {
+                              // Handle "Ignore" option - ignore transaction and clear dropdown value
+                              if (value === '__ignore__') {
+                                await onToggleInclude(String(transaction.id), false)
+                                await onUpdateAmountDescription(String(transaction.id), null)
+                                return
+                              }
+                              
+                              // If transaction was ignored, un-ignore it first
+                              if (transaction.includeInNetSuite === false) {
+                                await onToggleInclude(String(transaction.id), true)
+                              }
+                              
                               if (value === '__none__') {
                                 await onUpdateAmountDescription(String(transaction.id), null)
                                 return
@@ -641,6 +771,7 @@ export function TransactionsTable({
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="__none__">None</SelectItem>
+                            <SelectItem value="__ignore__">Ignore</SelectItem>
                             {feesDescriptionOptions.length === 0 && !loadingFeesOptions ? (
                               <SelectItem value="__no_options__" disabled>No options available</SelectItem>
                             ) : (
@@ -666,79 +797,9 @@ export function TransactionsTable({
               <TableCell className="text-red-600">
                 {hideSensitiveData ? (
                   <span className="text-gray-500">••••••</span>
-                ) : (() => {
-                  const isCashSaleRefund = isCashSaleOrRefund(transaction)
-                  return (
-                    <div className="flex flex-col gap-1">
-                      <span>-{transaction.currency || 'USD'} {Number(transaction.fee).toFixed(2)}</span>
-                      {!isCashSaleRefund && onUpdateFeeDescription && (
-                        <Select
-                          value={(() => {
-                            if (!transaction.feeDescription) return '__none__'
-                            const matchingOption = feesDescriptionOptions.find(
-                              opt => opt.netsuiteId === transaction.feeDescription ||
-                                     opt.description === transaction.feeDescription ||
-                                     (!opt.netsuiteId && opt.description === transaction.feeDescription)
-                            )
-                            if (matchingOption) {
-                              if (matchingOption.netsuiteId && matchingOption.netsuiteId.trim() !== '') {
-                                return matchingOption.netsuiteId
-                              } else {
-                                return `opt_${matchingOption.id}_${matchingOption.description || 'unknown'}`
-                              }
-                            }
-                            return transaction.feeDescription
-                          })()}
-                          onValueChange={async (value) => {
-                            if (onUpdateFeeDescription) {
-                              if (value === '__none__') {
-                                await onUpdateFeeDescription(String(transaction.id), null)
-                                return
-                              }
-                              const selectedOption = feesDescriptionOptions.find(opt => {
-                                if (opt.netsuiteId && opt.netsuiteId.trim() !== '' && opt.netsuiteId === value) {
-                                  return true
-                                }
-                                const expectedValue = `opt_${opt.id}_${opt.description || 'unknown'}`
-                                if (expectedValue === value) {
-                                  return true
-                                }
-                                return false
-                              })
-                              const valueToStore = selectedOption?.netsuiteId && selectedOption.netsuiteId.trim() !== '' 
-                                ? selectedOption.netsuiteId 
-                                : selectedOption?.description || null
-                              await onUpdateFeeDescription(String(transaction.id), valueToStore)
-                            }
-                          }}
-                          disabled={loadingFeesOptions}
-                        >
-                          <SelectTrigger className="h-7 w-[140px] text-xs border border-gray-300">
-                            <SelectValue placeholder={loadingFeesOptions ? "Loading..." : "Select..."} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__none__">None</SelectItem>
-                            {feesDescriptionOptions.length === 0 && !loadingFeesOptions ? (
-                              <SelectItem value="__no_options__" disabled>No options available</SelectItem>
-                            ) : (
-                              feesDescriptionOptions.map((option) => {
-                                const value = option.netsuiteId && option.netsuiteId.trim() !== '' 
-                                  ? option.netsuiteId 
-                                  : `opt_${option.id}_${option.description || 'unknown'}`
-                                const display = option.description || option.netsuiteId || 'Unknown'
-                                return (
-                                  <SelectItem key={option.id} value={value}>
-                                    {display}
-                                  </SelectItem>
-                                )
-                              })
-                            )}
-                          </SelectContent>
-                        </Select>
-                      )}
-                    </div>
-                  )
-                })()}
+                ) : (
+                  <span>-{transaction.currency || 'USD'} {Number(transaction.fee).toFixed(2)}</span>
+                )}
               </TableCell>
               <TableCell className="font-medium">
                 {hideSensitiveData ? (
@@ -784,7 +845,7 @@ export function TransactionsTable({
                   )}
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground">
-                  {safeFormatDate(transaction.processedAt || undefined, 'MMM dd, yyyy HH:mm')}
+                  {transaction.processedAt ? safeFormatDate(transaction.processedAt, 'MMM dd, yyyy HH:mm') : '—'}
                 </TableCell>
               </DroppableRow>
             )
@@ -804,6 +865,23 @@ export function TransactionsTable({
           </div>
         ) : null}
       </DragOverlay>
+      
+      {onMergeTransactions && (
+        <MergeTransactionsDialog
+          isOpen={showMergeDialog}
+          onClose={() => {
+            setShowMergeDialog(false)
+            setSelectedTransactionIds(new Set())
+          }}
+          transactions={transactions}
+          selectedTransactionIds={Array.from(selectedTransactionIds)}
+          onMerge={async (sourceTransactionIds, targetTransactionId) => {
+            await onMergeTransactions(sourceTransactionIds, targetTransactionId)
+            setSelectedTransactionIds(new Set())
+            setShowMergeDialog(false)
+          }}
+        />
+      )}
     </DndContext>
   )
 }

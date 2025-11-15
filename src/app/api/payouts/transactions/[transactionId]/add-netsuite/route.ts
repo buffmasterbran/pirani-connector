@@ -36,9 +36,24 @@ export async function POST(
     }
 
     // Calculate amount mismatch
-    const shopifyAmount = transaction.amount || transaction.net || 0
+    // For payments, prioritize net amount (after fees) for comparison
+    // Check if this is a payment transaction by name
+    const netsuiteNameUpper = (netsuiteTransactionName || '').toUpperCase().trim()
+    const isPayment = netsuiteNameUpper.startsWith('PYMT') ||
+                      netsuiteNameUpper.startsWith('CUSTPYMT') ||
+                      netsuiteNameUpper.includes('PAYMENT')
+    
+    // For payments, use net amount; for others, prefer amount then net
+    const shopifyAmount = isPayment 
+      ? (transaction.net || transaction.amount || 0)
+      : (transaction.amount || transaction.net || 0)
+    
     const netsuiteAmountNum = typeof netsuiteAmount === 'string' ? parseFloat(netsuiteAmount) : netsuiteAmount
-    const amountMismatch = Math.abs(shopifyAmount - netsuiteAmountNum) > 0.01 // Allow 1 cent tolerance
+    
+    // Compare absolute values for payments (amounts can be negative)
+    const shopifyAmountAbs = Math.abs(shopifyAmount)
+    const netsuiteAmountAbs = Math.abs(netsuiteAmountNum)
+    const amountMismatch = Math.abs(shopifyAmountAbs - netsuiteAmountAbs) > 0.01 // Allow 1 cent tolerance
 
     // Update the transaction
     await prisma.payoutTransaction.update({
