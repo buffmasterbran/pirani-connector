@@ -67,6 +67,14 @@ const FIELD_QUERIES: Record<string, { name: string; query: string }> = {
     name: 'units',
     query: "SELECT id, name, pluralname, abbreviation, isinactive FROM unitstype ORDER BY name"
   },
+  unitsOfMeasure: {
+    name: 'units',
+    query: "SELECT id, name, pluralname, abbreviation, isinactive FROM unitstype ORDER BY name"
+  },
+  purchaseOrderVendor: {
+    name: 'vendors',
+    query: "SELECT v.id, e.entityid, e.altname, e.firstname, e.lastname, e.email, v.isinactive, e.isperson FROM vendor v LEFT JOIN entity e ON e.id = v.id ORDER BY e.entityid"
+  },
 }
 
 /**

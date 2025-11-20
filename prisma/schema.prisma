@@ -160,11 +160,30 @@ model OrderFieldMapping {
   applyToAllAccounts Boolean  @default(true)
   isActive           Boolean  @default(true)
   customFieldId      String? // For custom fields
+  translationDefaultValue String? // Default value for Order Header with Translation when no match found
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
+  translationMappings OrderFieldTranslationMapping[]
+
   @@index([isActive])
   @@index([mappingType])
+}
+
+model OrderFieldTranslationMapping {
+  id                 Int      @id @default(autoincrement())
+  orderFieldMappingId Int     // Reference to OrderFieldMapping
+  shopifyValue       String   // Shopify value (e.g., '55211131032')
+  netsuiteValue      String   // NetSuite value (e.g., '1' or NetSuite ID)
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  orderFieldMapping OrderFieldMapping @relation(fields: [orderFieldMappingId], references: [id], onDelete: Cascade)
+
+  @@unique([orderFieldMappingId, shopifyValue])
+  @@index([orderFieldMappingId])
+  @@index([isActive])
 }
 
 model OrderItemFieldMapping {

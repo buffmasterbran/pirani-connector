@@ -4,29 +4,88 @@ import { prisma } from '@/lib/prisma'
 // GET - Fetch all order field mappings from database
 export async function GET() {
   try {
+    // First, try to fetch mappings without the relation (most reliable)
     const mappings = await prisma.orderFieldMapping.findMany({
       orderBy: {
         id: 'asc',
       },
     })
+    
+    // Try to fetch translation mappings separately if the table exists
+    let translationMappingsMap = new Map<number, any[]>()
+    try {
+      // Use raw query to avoid Prisma client type issues
+      const rawTranslations = await prisma.$queryRaw<Array<{
+        id: number
+        orderFieldMappingId: number
+        shopifyValue: string
+        netsuiteValue: string
+        isActive: number
+      }>>`
+        SELECT id, orderFieldMappingId, shopifyValue, netsuiteValue, isActive
+        FROM OrderFieldTranslationMapping
+        WHERE isActive = 1
+        ORDER BY id ASC
+      `
+      
+      // Group by orderFieldMappingId
+      for (const tm of rawTranslations) {
+        const mappingId = tm.orderFieldMappingId
+        if (!translationMappingsMap.has(mappingId)) {
+          translationMappingsMap.set(mappingId, [])
+        }
+        translationMappingsMap.get(mappingId)!.push({
+          id: tm.id,
+          orderFieldMappingId: tm.orderFieldMappingId,
+          shopifyValue: tm.shopifyValue,
+          netsuiteValue: tm.netsuiteValue,
+          isActive: Boolean(tm.isActive),
+        })
+      }
+    } catch (tmError: any) {
+      // Table doesn't exist or query failed - that's okay, we'll just have empty translations
+      console.warn('Could not fetch translation mappings:', tmError?.message)
+    }
+    
+    // Combine mappings with their translation mappings
+    const mappingsWithTranslations = mappings.map((m) => ({
+      ...m,
+      translationMappings: translationMappingsMap.get(m.id) || [],
+    }))
 
     // Convert to the format expected by the frontend
-    const formattedMappings = mappings.map((m) => ({
-      id: String(m.id),
-      mappingType: m.mappingType,
-      shopifyCode: m.shopifyCode || undefined,
-      shopifyValue: m.shopifyValue || undefined,
-      netsuiteId: m.netsuiteId,
-      applyToAllAccounts: m.applyToAllAccounts,
-      isActive: m.isActive,
-      customFieldId: m.customFieldId || undefined,
-    }))
+    const formattedMappings = mappings.map((m) => {
+      const translations = translationMappingsMap.get(m.id) || []
+      return {
+        id: String(m.id),
+        mappingType: m.mappingType,
+        shopifyCode: m.shopifyCode || undefined,
+        shopifyValue: m.shopifyValue || undefined,
+        netsuiteId: m.netsuiteId,
+        applyToAllAccounts: m.applyToAllAccounts,
+        isActive: m.isActive,
+        customFieldId: m.customFieldId || undefined,
+        translationDefaultValue: m.translationDefaultValue || undefined,
+        translationMappings: translations.map((tm: any) => ({
+          id: String(tm.id),
+          orderFieldMappingId: String(tm.orderFieldMappingId),
+          shopifyValue: tm.shopifyValue,
+          netsuiteValue: tm.netsuiteValue,
+          isActive: tm.isActive,
+        })),
+      }
+    })
 
     return NextResponse.json({ success: true, data: formattedMappings })
   } catch (error) {
     console.error('Error fetching order field mappings:', error)
+    console.error('Error details:', error instanceof Error ? error.message : String(error))
     return NextResponse.json(
-      { success: false, error: 'Failed to fetch order field mappings' },
+      { 
+        success: false, 
+        error: 'Failed to fetch order field mappings',
+        details: error instanceof Error ? error.message : String(error)
+      },
       { status: 500 }
     )
   }
@@ -92,6 +151,19 @@ export async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
     const { mappings } = body
+    
+    // Debug logging
+    console.log(`Processing ${mappings?.length || 0} mappings`)
+    const mappingsWithTranslations = mappings?.filter((m: any) => m.translationMappings && m.translationMappings.length > 0) || []
+    if (mappingsWithTranslations.length > 0) {
+      console.log(`Found ${mappingsWithTranslations.length} mappings with translations:`, 
+        mappingsWithTranslations.map((m: any) => ({
+          id: m.id,
+          netsuiteId: m.netsuiteId,
+          translationCount: m.translationMappings?.length || 0
+        }))
+      )
+    }
 
     if (!Array.isArray(mappings)) {
       return NextResponse.json(
@@ -112,7 +184,9 @@ export async function PUT(request: NextRequest) {
         applyToAllAccounts = true,
         isActive = true,
         customFieldId,
-      } = mapping
+        translationDefaultValue,
+        translationMappings,
+      } = mapping as any
 
       if (!netsuiteId) {
         console.warn(`Skipping mapping with missing netsuiteId:`, mapping)
@@ -131,8 +205,29 @@ export async function PUT(request: NextRequest) {
             applyToAllAccounts,
             isActive,
             customFieldId: customFieldId || null,
+            translationDefaultValue: translationDefaultValue || null,
           },
         })
+        
+        // Create translation mappings if provided
+        if (translationMappings && Array.isArray(translationMappings) && translationMappings.length > 0) {
+          const validTranslations = translationMappings
+            .filter((tm: any) => tm.shopifyValue && tm.netsuiteValue && tm.shopifyValue.trim() && tm.netsuiteValue.trim())
+            .map((tm: any) => ({
+              orderFieldMappingId: newMapping.id,
+              shopifyValue: String(tm.shopifyValue).trim(),
+              netsuiteValue: String(tm.netsuiteValue).trim(),
+              isActive: tm.isActive !== false,
+            }))
+          
+          if (validTranslations.length > 0) {
+            await prisma.orderFieldTranslationMapping.createMany({
+              data: validTranslations,
+            })
+            console.log(`Created ${validTranslations.length} translation mappings for mapping ${newMapping.id}`)
+          }
+        }
+        
         results.push({
           oldId: id,
           newId: String(newMapping.id),
@@ -152,8 +247,37 @@ export async function PUT(request: NextRequest) {
               applyToAllAccounts,
               isActive,
               customFieldId: customFieldId !== undefined ? customFieldId : null,
+              translationDefaultValue: translationDefaultValue !== undefined ? translationDefaultValue : null,
             },
           })
+          
+          // Update translation mappings if provided
+          if (translationMappings && Array.isArray(translationMappings)) {
+            // Delete existing translation mappings
+            await prisma.orderFieldTranslationMapping.deleteMany({
+              where: { orderFieldMappingId: mappingId },
+            })
+            
+            // Create new translation mappings
+            if (translationMappings.length > 0) {
+              const validTranslations = translationMappings
+                .filter((tm: any) => tm.shopifyValue && tm.netsuiteValue && tm.shopifyValue.trim() && tm.netsuiteValue.trim())
+                .map((tm: any) => ({
+                  orderFieldMappingId: mappingId,
+                  shopifyValue: String(tm.shopifyValue).trim(),
+                  netsuiteValue: String(tm.netsuiteValue).trim(),
+                  isActive: tm.isActive !== false,
+                }))
+              
+              if (validTranslations.length > 0) {
+                await prisma.orderFieldTranslationMapping.createMany({
+                  data: validTranslations,
+                })
+                console.log(`Created ${validTranslations.length} translation mappings for mapping ${mappingId}`)
+              }
+            }
+          }
+          
           results.push({
             id: String(mappingId),
             action: 'updated',
@@ -169,8 +293,15 @@ export async function PUT(request: NextRequest) {
     })
   } catch (error) {
     console.error('Error batch saving order field mappings:', error)
+    console.error('Error details:', error instanceof Error ? error.stack : String(error))
+    console.error('Error message:', error instanceof Error ? error.message : String(error))
+    
     return NextResponse.json(
-      { success: false, error: 'Failed to save order field mappings' },
+      { 
+        success: false, 
+        error: 'Failed to save order field mappings',
+        details: error instanceof Error ? error.message : String(error)
+      },
       { status: 500 }
     )
   }

@@ -2,6 +2,28 @@ import { prisma } from './prisma'
 import { findNetSuiteAddressesByCustomerId, matchShopifyAddressToNetSuite } from './netsuite'
 
 /**
+ * Extracts the numeric ID from strings like "Online Sales (IID: 11)" or "11"
+ * Returns just the numeric ID as a string, or the original value if no pattern matches
+ */
+function extractNetSuiteId(value: string): string {
+  if (!value) return value
+  
+  // Pattern: "Something (IID: 123)" -> extract "123"
+  const iidMatch = value.match(/\(IID:\s*(\d+)\)/i)
+  if (iidMatch) {
+    return iidMatch[1]
+  }
+  
+  // If it's already just a number, return it
+  if (/^\d+$/.test(value.trim())) {
+    return value.trim()
+  }
+  
+  // If no pattern matches, return original value (fallback)
+  return value
+}
+
+/**
  * Interface for NetSuite Sales Order payload
  */
 export interface NetSuiteSalesOrderPayload {
@@ -240,6 +262,13 @@ export async function buildNetSuiteSalesOrderPayload(
     where: {
       isActive: true,
     },
+    include: {
+      translationMappings: {
+        where: {
+          isActive: true,
+        },
+      },
+    },
   })
 
   // Fetch Shopify order data if needed for Order Header mappings
@@ -305,11 +334,23 @@ export async function buildNetSuiteSalesOrderPayload(
           return null
         }
 
-        // For Order Header with Translation, apply translation logic (placeholder for future implementation)
-        // For now, just return the value as-is
+        // For Order Header with Translation, apply translation logic
         if (mapping.mappingType === 'Order Header with Translation') {
-          // TODO: Implement translation logic here
-          // For now, use the value directly
+          // Look up translation mapping
+          const translation = mapping.translationMappings?.find(
+            (tm) => tm.shopifyValue === value
+          )
+          
+          if (translation) {
+            // Use translated value
+            return translation.netsuiteValue
+          } else if (mapping.translationDefaultValue) {
+            // Use default value if no translation found
+            return mapping.translationDefaultValue
+          } else {
+            // No translation and no default - return null (field won't be set)
+            return null
+          }
         }
 
         return value
@@ -349,18 +390,19 @@ export async function buildNetSuiteSalesOrderPayload(
     const netsuiteFieldName = mapping.customFieldId || mapping.netsuiteId
 
     // Handle standard NetSuite fields that need special structure
+    // For fields that use { id: value } structure, extract numeric ID from display strings
     if (netsuiteFieldName === 'subsidiary') {
-      payload.subsidiary = { id: value }
+      payload.subsidiary = { id: extractNetSuiteId(value) }
     } else if (netsuiteFieldName === 'class') {
-      payload.class = { id: value }
+      payload.class = { id: extractNetSuiteId(value) }
     } else if (netsuiteFieldName === 'location') {
-      payload.location = { id: value }
+      payload.location = { id: extractNetSuiteId(value) }
     } else if (netsuiteFieldName === 'orderStatus') {
-      payload.orderStatus = { id: value }
+      payload.orderStatus = { id: extractNetSuiteId(value) }
     } else if (netsuiteFieldName === 'currency') {
       payload.currency = { id: value.toUpperCase() }
     } else if (netsuiteFieldName === 'terms') {
-      payload.terms = { id: value }
+      payload.terms = { id: extractNetSuiteId(value) }
     } else if (netsuiteFieldName === 'shipDate') {
       payload.shipDate = value
     } else if (netsuiteFieldName === 'memo') {
@@ -387,7 +429,8 @@ export async function buildNetSuiteSalesOrderPayload(
         // Custom fields typically need { id: value } structure for select fields
         // For text/date fields, they might need direct value assignment
         // We'll use { id: value } structure as default, which works for most custom field types
-        ;(payload as any)[netsuiteFieldName] = { id: value }
+        // Extract numeric ID from display strings like "Online Sales (IID: 11)" -> "11"
+        ;(payload as any)[netsuiteFieldName] = { id: extractNetSuiteId(value) }
       } else {
         // For other fields, try to assign directly
         ;(payload as any)[netsuiteFieldName] = value

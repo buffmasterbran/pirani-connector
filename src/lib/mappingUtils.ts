@@ -35,6 +35,16 @@ export interface OrderFieldMapping {
   applyToAllAccounts: boolean | 'N/A'
   isActive: boolean
   customFieldId?: string // For custom fields
+  translationDefaultValue?: string // Default value for Order Header with Translation when no match found
+  translationMappings?: OrderFieldTranslationMapping[] // Translation mappings for Order Header with Translation
+}
+
+export interface OrderFieldTranslationMapping {
+  id: string
+  orderFieldMappingId: string
+  shopifyValue: string // Shopify value (e.g., '55211131032')
+  netsuiteValue: string // NetSuite value (e.g., '1' or NetSuite ID)
+  isActive: boolean
 }
 
 export interface OrderItemFieldMapping {

@@ -298,6 +298,37 @@ export default function Home() {
   const [netsuiteListItems, setNetsuiteListItems] = useState<Array<{ id: string; name: string; [key: string]: any }>>([])
   const [isLoadingNetSuiteList, setIsLoadingNetSuiteList] = useState(false)
   const [editingMappingIndex, setEditingMappingIndex] = useState<number | null>(null)
+  
+  // Add Order Item NetSuite Mapping Dialog state
+  const [isAddOrderItemNetSuiteMappingDialogOpen, setIsAddOrderItemNetSuiteMappingDialogOpen] = useState(false)
+  const [selectedOrderItemNetSuiteField, setSelectedOrderItemNetSuiteField] = useState<string>('')
+  const [selectedOrderItemNetSuiteValue, setSelectedOrderItemNetSuiteValue] = useState<string>('')
+  const [customOrderItemNetSuiteFieldName, setCustomOrderItemNetSuiteFieldName] = useState<string>('')
+  const [orderItemNetSuiteListItems, setOrderItemNetSuiteListItems] = useState<Array<{ id: string; name: string; [key: string]: any }>>([])
+  const [isLoadingOrderItemNetSuiteList, setIsLoadingOrderItemNetSuiteList] = useState(false)
+  
+  // Fields that require dropdowns for Order Items
+  const orderItemFieldsWithDropdowns = ['class', 'department', 'location', 'priceLevel', 'purchaseOrderVendor', 'unitsOfMeasure']
+  
+  // Custom line item field selector dialog state
+  const [isCustomLineItemFieldDialogOpen, setIsCustomLineItemFieldDialogOpen] = useState(false)
+  const [customLineItemOrderId, setCustomLineItemOrderId] = useState<string>('')
+  const [customLineItemOrderData, setCustomLineItemOrderData] = useState<any>(null)
+  const [isLoadingCustomLineItemOrder, setIsLoadingCustomLineItemOrder] = useState(false)
+  const [editingOrderItemMappingIndex, setEditingOrderItemMappingIndex] = useState<number | null>(null)
+  
+  // Common Order Line fields (matching Shopify line item structure)
+  const commonOrderLineFields = [
+    { value: 'id', label: 'Item ID' },
+    { value: 'line_number', label: 'Line Number' },
+    { value: 'location_id', label: 'Location ID' },
+    { value: 'name', label: 'Name/Description' },
+    { value: 'title', label: 'Title' },
+    { value: 'price', label: 'Price' },
+    { value: 'quantity', label: 'Quantity' },
+    { value: 'sku', label: 'SKU' },
+    { value: 'taxable', label: 'Taxable' },
+  ]
   // Custom field info state
   const [customFieldInfo, setCustomFieldInfo] = useState<{
     fieldType: 'select' | 'text' | 'date' | 'checkbox' | 'integer' | 'currency' | 'percent' | null
@@ -317,6 +348,29 @@ export default function Home() {
   const [customShopifyOrderData, setCustomShopifyOrderData] = useState<any>(null)
   const [isLoadingCustomShopifyOrder, setIsLoadingCustomShopifyOrder] = useState(false)
   const [selectedCustomShopifyField, setSelectedCustomShopifyField] = useState<string>('')
+  
+  // Order Header configuration dialog state
+  const [isOrderHeaderConfigDialogOpen, setIsOrderHeaderConfigDialogOpen] = useState(false)
+  const [editingOrderHeaderIndex, setEditingOrderHeaderIndex] = useState<number | null>(null)
+  const [orderHeaderOrderId, setOrderHeaderOrderId] = useState<string>('')
+  const [orderHeaderOrderData, setOrderHeaderOrderData] = useState<any>(null)
+  const [isLoadingOrderHeaderOrder, setIsLoadingOrderHeaderOrder] = useState(false)
+  
+  // Translation mapping dialog state
+  const [isTranslationDialogOpen, setIsTranslationDialogOpen] = useState(false)
+  const [translationMappingIndex, setTranslationMappingIndex] = useState<number | null>(null)
+  const [translationMappings, setTranslationMappings] = useState<Array<{ id?: string; shopifyValue: string; netsuiteValue: string; isActive: boolean }>>([])
+  const [translationDefaultValue, setTranslationDefaultValue] = useState<string>('')
+  const [availableShopifyValues, setAvailableShopifyValues] = useState<string[]>([])
+  const [isLoadingShopifyValues, setIsLoadingShopifyValues] = useState(false)
+  const [translationOrderId, setTranslationOrderId] = useState<string>('')
+  const [translationOrderData, setTranslationOrderData] = useState<any>(null)
+  const [isLoadingTranslationOrder, setIsLoadingTranslationOrder] = useState(false)
+  // NetSuite field info for translation dialog (to determine if dropdowns should be used)
+  const [translationNetSuiteFieldInfo, setTranslationNetSuiteFieldInfo] = useState<{
+    listItems: Array<{ id: string; name: string }>
+  } | null>(null)
+  const [isLoadingTranslationNetSuiteFieldInfo, setIsLoadingTranslationNetSuiteFieldInfo] = useState(false)
   
   // Store NetSuite list items per field for dropdowns in table rows
   const [netsuiteListCache, setNetsuiteListCache] = useState<Record<string, Array<{ id: string; name: string; [key: string]: any }>>>({})
@@ -340,6 +394,67 @@ export default function Home() {
     }
     return flattened
   }
+  
+  // Helper function to flatten line items for display
+  const flattenLineItems = (orderData: any): Record<string, any> => {
+    const flattened: Record<string, any> = {}
+    if (orderData?.line_items && Array.isArray(orderData.line_items) && orderData.line_items.length > 0) {
+      // Use the first line item as reference
+      const firstLineItem = orderData.line_items[0]
+      
+      console.log('🔍 First line item:', firstLineItem)
+      console.log('🔍 Properties:', firstLineItem.properties)
+      console.log('🔍 Properties type:', typeof firstLineItem.properties, Array.isArray(firstLineItem.properties))
+      
+      // Handle properties array specially - convert to properties.name format
+      if (firstLineItem.properties && Array.isArray(firstLineItem.properties)) {
+        console.log('✅ Processing properties array with', firstLineItem.properties.length, 'items')
+        firstLineItem.properties.forEach((prop: any) => {
+          if (prop.name) {
+            const key = `properties.${prop.name}`
+            flattened[key] = prop.value || ''
+            console.log(`  → Added ${key} = ${prop.value}`)
+          }
+        })
+      } else {
+        console.log('⚠️ Properties is not an array or doesn\'t exist:', firstLineItem.properties)
+      }
+      
+      // Flatten the rest of the line item (excluding properties since we handled it above)
+      const lineItemWithoutProperties = { ...firstLineItem }
+      delete lineItemWithoutProperties.properties
+      Object.assign(flattened, flattenObject(lineItemWithoutProperties, ''))
+      
+      console.log('🔍 Final flattened keys:', Object.keys(flattened).filter(k => k.startsWith('properties')))
+    }
+    return flattened
+  }
+  
+  // Fetch Shopify order for custom line item field selector
+  const handleFetchCustomLineItemOrder = async () => {
+    if (!customLineItemOrderId.trim()) return
+    
+    setIsLoadingCustomLineItemOrder(true)
+    try {
+      // Remove # if present
+      const orderId = customLineItemOrderId.replace(/^#/, '')
+      const response = await fetch(`/api/shopify/orders/by-name/${encodeURIComponent(orderId)}`)
+      const data = await response.json()
+      
+      if (data.order) {
+        setCustomLineItemOrderData(data.order)
+      } else {
+        alert(`Order ${customLineItemOrderId} not found`)
+        setCustomLineItemOrderData(null)
+      }
+    } catch (error) {
+      console.error('Error fetching Shopify order:', error)
+      alert('Failed to fetch order from Shopify')
+      setCustomLineItemOrderData(null)
+    } finally {
+      setIsLoadingCustomLineItemOrder(false)
+    }
+  }
 
   // Fetch Shopify order for custom field selector
   const handleFetchCustomShopifyOrder = async () => {
@@ -362,6 +477,118 @@ export default function Home() {
       alert('Failed to fetch order from Shopify')
     } finally {
       setIsLoadingCustomShopifyOrder(false)
+    }
+  }
+
+  // Fetch Shopify order for Order Header configuration
+  const handleFetchOrderHeaderOrder = async () => {
+    if (!orderHeaderOrderId.trim()) return
+    
+    setIsLoadingOrderHeaderOrder(true)
+    try {
+      // Remove # if present
+      const orderId = orderHeaderOrderId.replace(/^#/, '')
+      const response = await fetch(`/api/shopify/orders/by-name/${encodeURIComponent(orderId)}`)
+      const data = await response.json()
+      
+      if (data.order) {
+        setOrderHeaderOrderData(data.order)
+      } else {
+        alert(`Order ${orderHeaderOrderId} not found`)
+        setOrderHeaderOrderData(null)
+      }
+    } catch (error) {
+      console.error('Error fetching Shopify order:', error)
+      alert('Failed to fetch order from Shopify')
+      setOrderHeaderOrderData(null)
+    } finally {
+      setIsLoadingOrderHeaderOrder(false)
+    }
+  }
+
+  // Fetch Shopify order for Translation configuration
+  const handleFetchTranslationOrder = async () => {
+    if (!translationOrderId.trim()) return
+    
+    setIsLoadingTranslationOrder(true)
+    try {
+      // Remove # if present
+      const orderId = translationOrderId.replace(/^#/, '')
+      const response = await fetch(`/api/shopify/orders/by-name/${encodeURIComponent(orderId)}`)
+      const data = await response.json()
+      
+      if (data.order) {
+        setTranslationOrderData(data.order)
+      } else {
+        alert(`Order ${translationOrderId} not found`)
+        setTranslationOrderData(null)
+      }
+    } catch (error) {
+      console.error('Error fetching Shopify order:', error)
+      alert('Failed to fetch order from Shopify')
+      setTranslationOrderData(null)
+    } finally {
+      setIsLoadingTranslationOrder(false)
+    }
+  }
+
+  // Load available Shopify values for a field
+  const loadAvailableShopifyValues = async (shopifyCode: string) => {
+    if (!shopifyCode) return
+    
+    setIsLoadingShopifyValues(true)
+    try {
+      const response = await fetch(`/api/mappings/order-fields/translation?shopifyCode=${encodeURIComponent(shopifyCode)}`)
+      const data = await response.json()
+      
+      if (data.success && data.data) {
+        setAvailableShopifyValues(data.data)
+      } else {
+        console.error('Error loading Shopify values:', data.error)
+        setAvailableShopifyValues([])
+      }
+    } catch (error) {
+      console.error('Error loading Shopify values:', error)
+      setAvailableShopifyValues([])
+    } finally {
+      setIsLoadingShopifyValues(false)
+    }
+  }
+
+  // Load NetSuite field info for translation dialog (uses same endpoint as Custom mapping)
+  const loadTranslationNetSuiteFieldInfo = async (netsuiteFieldId: string) => {
+    if (!netsuiteFieldId) {
+      setTranslationNetSuiteFieldInfo(null)
+      return
+    }
+    
+    // Check if field requires dropdown lookup (same fields as Custom mapping)
+    if (!fieldsWithDropdowns.includes(netsuiteFieldId)) {
+      setTranslationNetSuiteFieldInfo(null)
+      return
+    }
+    
+    setIsLoadingTranslationNetSuiteFieldInfo(true)
+    try {
+      const response = await fetch(`/api/netsuite/lists?field=${netsuiteFieldId}`)
+      const result = await response.json()
+      
+      if (result.success && result.items) {
+        console.log('✅ Loaded NetSuite list for', netsuiteFieldId, ':', {
+          itemsCount: result.items.length,
+        })
+        setTranslationNetSuiteFieldInfo({
+          listItems: result.items || [],
+        })
+      } else {
+        console.error('❌ Error loading NetSuite list:', result.error)
+        setTranslationNetSuiteFieldInfo(null)
+      }
+    } catch (error) {
+      console.error('Error loading NetSuite list:', error)
+      setTranslationNetSuiteFieldInfo(null)
+    } finally {
+      setIsLoadingTranslationNetSuiteFieldInfo(false)
     }
   }
 
@@ -532,6 +759,37 @@ export default function Home() {
       setNetsuiteListItems([])
     }
   }, [selectedNetSuiteField, isAddNetSuiteMappingDialogOpen])
+
+  // Fetch NetSuite list for Order Item fields when a field requiring dropdown is selected
+  useEffect(() => {
+    if (isAddOrderItemNetSuiteMappingDialogOpen && selectedOrderItemNetSuiteField && orderItemFieldsWithDropdowns.includes(selectedOrderItemNetSuiteField)) {
+      setIsLoadingOrderItemNetSuiteList(true)
+      setSelectedOrderItemNetSuiteValue('')
+      setOrderItemNetSuiteListItems([])
+      
+      fetch(`/api/netsuite/lists?field=${selectedOrderItemNetSuiteField}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && data.items) {
+            setOrderItemNetSuiteListItems(data.items)
+          } else {
+            console.error('Error fetching Order Item NetSuite list:', data.error)
+            setOrderItemNetSuiteListItems([])
+          }
+        })
+        .catch(error => {
+          console.error('Error fetching Order Item NetSuite list:', error)
+          setOrderItemNetSuiteListItems([])
+        })
+        .finally(() => {
+          setIsLoadingOrderItemNetSuiteList(false)
+        })
+    } else if (selectedOrderItemNetSuiteField && !orderItemFieldsWithDropdowns.includes(selectedOrderItemNetSuiteField) && selectedOrderItemNetSuiteField !== 'Custom field') {
+      // Clear the value dropdown if field doesn't need it
+      setSelectedOrderItemNetSuiteValue('')
+      setOrderItemNetSuiteListItems([])
+    }
+  }, [selectedOrderItemNetSuiteField, isAddOrderItemNetSuiteMappingDialogOpen])
 
   // Order filters and single import state
   const [orderFilters, setOrderFilters] = useState({
@@ -4254,23 +4512,81 @@ export default function Home() {
               size="sm"
               onClick={async () => {
                 try {
+                  // Prepare mappings for save - include translation mappings if they exist
+                  const mappingsToSave = orderMappings.map((mapping, index) => {
+                    // First check if mapping already has translation mappings stored
+                    if (mapping.translationMappings && Array.isArray(mapping.translationMappings) && mapping.translationMappings.length > 0) {
+                      // Ensure translation mappings are in the correct format (remove id if present for new mappings)
+                      const formattedTranslations = mapping.translationMappings.map((tm: any) => ({
+                        shopifyValue: tm.shopifyValue,
+                        netsuiteValue: tm.netsuiteValue,
+                        isActive: tm.isActive !== false,
+                      }))
+                      return {
+                        ...mapping,
+                        translationMappings: formattedTranslations,
+                      }
+                    }
+                    
+                    // If this mapping has translation mappings configured in the dialog, include them
+                    // Check by index or by ID (for both temp IDs and real IDs)
+                    if (translationMappingIndex !== null) {
+                      const dialogMapping = orderMappings[translationMappingIndex]
+                      // Match by index or by ID (handles both temp IDs and real IDs)
+                      if ((dialogMapping && (
+                          mapping.id === dialogMapping.id || 
+                          index === translationMappingIndex
+                        )) && translationMappings.length > 0) {
+                        return {
+                          ...mapping,
+                          translationMappings: translationMappings
+                            .filter((tm) => tm.shopifyValue && tm.netsuiteValue)
+                            .map((tm: any) => ({
+                              shopifyValue: tm.shopifyValue,
+                              netsuiteValue: tm.netsuiteValue,
+                              isActive: tm.isActive !== false,
+                            })),
+                          translationDefaultValue: translationDefaultValue || undefined,
+                        }
+                      }
+                    }
+                    return mapping
+                  })
+                  
+                  // Debug logging
+                  const mappingsWithTranslations = mappingsToSave.filter(m => m.translationMappings && m.translationMappings.length > 0)
+                  if (mappingsWithTranslations.length > 0) {
+                    console.log('Saving mappings with translations:', mappingsWithTranslations.map(m => ({
+                      id: m.id,
+                      netsuiteId: m.netsuiteId,
+                      translationCount: m.translationMappings?.length || 0,
+                      translations: m.translationMappings
+                    })))
+                  }
+
                   // Save all mappings to database
                   const response = await fetch('/api/mappings/order-fields', {
                     method: 'PUT',
                     headers: {
                       'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ mappings: orderMappings }),
+                    body: JSON.stringify({ mappings: mappingsToSave }),
                   })
 
                   const result = await response.json()
                   
                   if (result.success) {
                     alert(`✅ Successfully saved ${result.results?.length || orderMappings.length} mapping(s) to database!`)
+                    // Clear translation dialog state if it was open
+                    if (translationMappingIndex !== null) {
+                      setTranslationMappings([])
+                      setTranslationDefaultValue('')
+                      setTranslationMappingIndex(null)
+                    }
                     // Reload mappings from database to get updated IDs
                     await fetchOrderMappings()
                   } else {
-                    alert(`❌ Failed to save mappings: ${result.error || 'Unknown error'}`)
+                    alert(`❌ Failed to save mappings: ${result.error || 'Unknown error'}${result.details ? `\n\nDetails: ${result.details}` : ''}`)
                     console.error('Save error:', result)
                   }
                 } catch (error) {
@@ -4410,47 +4726,79 @@ export default function Home() {
                                <div className="text-slate-700 text-sm p-2 border rounded bg-slate-50 w-full">
                                  {getCustomFieldDisplayText(mapping)}
                                </div>
-                             ) : mapping.mappingType === 'Order Header' || mapping.mappingType === 'Order Header with Translation' ? (
-                               <Select
-                                 value={mapping.shopifyCode || ''}
-                                 onValueChange={(value) => {
-                                   if (value === 'custom') {
-                                     // Open custom Shopify field selector
-                                     setEditingMappingIndex(index)
-                                     setIsCustomShopifyFieldDialogOpen(true)
-                                   } else {
-                                     const updated = [...orderMappings]
-                                     updated[index] = { ...updated[index], shopifyCode: value, shopifyValue: undefined }
-                                     setOrderMappings(updated)
-                                   }
-                                 }}
-                               >
-                                 <SelectTrigger className="w-full">
-                                   <SelectValue placeholder="Select Shopify field..." />
-                                 </SelectTrigger>
-                                 <SelectContent>
-                                   <SelectItem value="id">Order ID</SelectItem>
-                                   <SelectItem value="name">Order Name</SelectItem>
-                                   <SelectItem value="order_number">Order Number</SelectItem>
-                                   <SelectItem value="created_at">Created At</SelectItem>
-                                   <SelectItem value="updated_at">Updated At</SelectItem>
-                                   <SelectItem value="financial_status">Financial Status</SelectItem>
-                                   <SelectItem value="fulfillment_status">Fulfillment Status</SelectItem>
-                                   <SelectItem value="currency">Currency</SelectItem>
-                                   <SelectItem value="total_price">Total Price</SelectItem>
-                                   <SelectItem value="subtotal_price">Subtotal Price</SelectItem>
-                                   <SelectItem value="total_tax">Total Tax</SelectItem>
-                                   <SelectItem value="total_shipping_price_set">Shipping Price</SelectItem>
-                                   <SelectItem value="total_discounts">Total Discounts</SelectItem>
-                                   <SelectItem value="payment_gateway_names">Payment Gateway</SelectItem>
-                                   <SelectItem value="customer.id">Customer ID</SelectItem>
-                                   <SelectItem value="customer.email">Customer Email</SelectItem>
-                                   <SelectItem value="shipping_address.address1">Shipping Address 1</SelectItem>
-                                   <SelectItem value="shipping_address.city">Shipping City</SelectItem>
-                                   <SelectItem value="shipping_address.zip">Shipping Zip</SelectItem>
-                                   <SelectItem value="custom">Custom Field...</SelectItem>
-                                 </SelectContent>
-                               </Select>
+                             ) : mapping.mappingType === 'Order Header' ? (
+                               <div className="w-full">
+                                 <Select
+                                   value={mapping.shopifyCode || ''}
+                                   onValueChange={(value) => {
+                                     if (value === 'custom') {
+                                       // Open custom Shopify field selector
+                                       setEditingMappingIndex(index)
+                                       setIsCustomShopifyFieldDialogOpen(true)
+                                     } else {
+                                       const updated = [...orderMappings]
+                                       updated[index] = { ...updated[index], shopifyCode: value, shopifyValue: undefined }
+                                       setOrderMappings(updated)
+                                     }
+                                   }}
+                                 >
+                                   <SelectTrigger className="w-full">
+                                     <SelectValue placeholder="Select Shopify field..." />
+                                   </SelectTrigger>
+                                   <SelectContent>
+                                     <SelectItem value="id">Order ID</SelectItem>
+                                     <SelectItem value="name">Order Name</SelectItem>
+                                     <SelectItem value="order_number">Order Number</SelectItem>
+                                     <SelectItem value="created_at">Created At</SelectItem>
+                                     <SelectItem value="updated_at">Updated At</SelectItem>
+                                     <SelectItem value="financial_status">Financial Status</SelectItem>
+                                     <SelectItem value="fulfillment_status">Fulfillment Status</SelectItem>
+                                     <SelectItem value="currency">Currency</SelectItem>
+                                     <SelectItem value="total_price">Total Price</SelectItem>
+                                     <SelectItem value="subtotal_price">Subtotal Price</SelectItem>
+                                     <SelectItem value="total_tax">Total Tax</SelectItem>
+                                     <SelectItem value="total_shipping_price_set">Shipping Price</SelectItem>
+                                     <SelectItem value="total_discounts">Total Discounts</SelectItem>
+                                     <SelectItem value="payment_gateway_names">Payment Gateway</SelectItem>
+                                     <SelectItem value="customer.id">Customer ID</SelectItem>
+                                     <SelectItem value="customer.email">Customer Email</SelectItem>
+                                     <SelectItem value="shipping_address.address1">Shipping Address 1</SelectItem>
+                                     <SelectItem value="shipping_address.city">Shipping City</SelectItem>
+                                     <SelectItem value="shipping_address.zip">Shipping Zip</SelectItem>
+                                     <SelectItem value="custom">Custom Field...</SelectItem>
+                                   </SelectContent>
+                                 </Select>
+                               </div>
+                             ) : mapping.mappingType === 'Order Header with Translation' ? (
+                               <div className="w-full">
+                                 {mapping.shopifyCode ? (
+                                   <div className="text-slate-700 text-sm p-2 border rounded bg-slate-50 mb-2">
+                                     {mapping.shopifyCode}
+                                   </div>
+                                 ) : null}
+                                 <Button
+                                   type="button"
+                                   variant="outline"
+                                   size="sm"
+                                  onClick={() => {
+                                    setTranslationMappingIndex(index)
+                                    setTranslationMappings(mapping.translationMappings || [])
+                                    setTranslationDefaultValue(mapping.translationDefaultValue || '')
+                                    setIsTranslationDialogOpen(true)
+                                    // Load available Shopify values if shopifyCode is already set
+                                    if (mapping.shopifyCode) {
+                                      loadAvailableShopifyValues(mapping.shopifyCode)
+                                    }
+                                    // Load NetSuite field info to determine if dropdowns should be used
+                                    if (mapping.netsuiteId) {
+                                      loadTranslationNetSuiteFieldInfo(mapping.netsuiteId)
+                                    }
+                                  }}
+                                   className="w-full"
+                                 >
+                                   Configure
+                                 </Button>
+                               </div>
                              ) : (
                                <Input
                                  placeholder="Enter custom value..."
@@ -4560,15 +4908,142 @@ export default function Home() {
                   </div>
             
                      {orderItemMappings.map((mapping, index) => (
-              <div key={index} className="grid grid-cols-5 gap-4 p-4 border rounded-lg">
+              <div key={mapping.id || index} className="grid grid-cols-5 gap-4 p-4 border rounded-lg">
                 <div className="flex items-center space-x-2">
-                  <input type="checkbox" defaultChecked className="w-4 h-4" />
-                    <div className="w-32 p-2 border rounded bg-gray-50 text-sm text-gray-500">
-                      Select disabled
-                    </div>
+                  <Checkbox
+                    checked={mapping.isActive}
+                    onCheckedChange={(checked) => {
+                      const updated = [...orderItemMappings]
+                      updated[index] = { ...updated[index], isActive: checked === true }
+                      setOrderItemMappings(updated)
+                    }}
+                  />
+                  <Select
+                    value={mapping.mappingType}
+                    onValueChange={(value) => {
+                      const updated = [...orderItemMappings]
+                      updated[index] = { 
+                        ...updated[index], 
+                        mappingType: value as 'Fixed' | 'Order Line' | 'Custom',
+                        shopifyCode: value === 'Order Line' ? undefined : updated[index].shopifyCode,
+                        shopifyValue: value === 'Fixed' ? updated[index].shopifyValue : undefined,
+                      }
+                      setOrderItemMappings(updated)
+                    }}
+                  >
+                    <SelectTrigger className="w-40">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Fixed">Fixed</SelectItem>
+                      <SelectItem value="Order Line">Order Line</SelectItem>
+                      <SelectItem value="Custom">Custom</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-                <div className="text-slate-700 font-mono text-sm">
-                  {mapping.shopifyCode || mapping.shopifyValue}
+                <div className="flex items-center">
+                  {mapping.mappingType === 'Order Line' ? (
+                    <Select
+                      value={mapping.shopifyCode || ''}
+                      onValueChange={(value) => {
+                        if (value === 'custom') {
+                          setEditingOrderItemMappingIndex(index)
+                          setIsCustomLineItemFieldDialogOpen(true)
+                        } else {
+                          const updated = [...orderItemMappings]
+                          updated[index] = { ...updated[index], shopifyCode: value }
+                          setOrderItemMappings(updated)
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select Shopify field..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {commonOrderLineFields.map((field) => (
+                          <SelectItem key={field.value} value={field.value}>
+                            {field.label}
+                          </SelectItem>
+                        ))}
+                        {orderItemMappings
+                          .filter(m => m.shopifyCode && m.shopifyCode.startsWith('Custom:'))
+                          .map((m) => m.shopifyCode!)
+                          .filter((code, idx, arr) => arr.indexOf(code) === idx) // Unique values
+                          .map((code) => (
+                            <SelectItem key={code} value={code}>
+                              {code}
+                            </SelectItem>
+                          ))}
+                        <SelectItem value="custom">Custom...</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  ) : mapping.mappingType === 'Fixed' && orderItemFieldsWithDropdowns.includes(mapping.netsuiteId) ? (
+                    // For Fixed mappings with NetSuite dropdowns, show dropdown
+                    <Select
+                      value={extractIdFromShopifyValue(mapping.shopifyValue) || undefined}
+                      onValueChange={(value) => {
+                        const listItems = netsuiteListCache[mapping.netsuiteId] || []
+                        const selectedItem = listItems.find(item => item.id === value)
+                        if (selectedItem) {
+                          const updated = [...orderItemMappings]
+                          updated[index] = {
+                            ...updated[index],
+                            shopifyValue: `${selectedItem.name} (IID: ${selectedItem.id})`,
+                          }
+                          setOrderItemMappings(updated)
+                        }
+                      }}
+                      onOpenChange={(open) => {
+                        if (open && mapping.netsuiteId && !netsuiteListCache[mapping.netsuiteId]) {
+                          fetchNetSuiteListForField(mapping.netsuiteId)
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder={loadingFields.has(mapping.netsuiteId) ? "Loading..." : "Select value..."}>
+                          {(() => {
+                            if (mapping.shopifyValue) {
+                              const selectedId = extractIdFromShopifyValue(mapping.shopifyValue)
+                              if (selectedId && netsuiteListCache[mapping.netsuiteId]) {
+                                const selectedItem = netsuiteListCache[mapping.netsuiteId].find(item => item.id === selectedId)
+                                return selectedItem ? selectedItem.name : mapping.shopifyValue || "Select value..."
+                              }
+                              return mapping.shopifyValue || "Select value..."
+                            }
+                            return "Select value..."
+                          })()}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {loadingFields.has(mapping.netsuiteId) ? (
+                          <div className="px-2 py-1.5 text-sm text-slate-500">Loading...</div>
+                        ) : netsuiteListCache[mapping.netsuiteId]?.length > 0 ? (
+                          netsuiteListCache[mapping.netsuiteId].map((item) => (
+                            <SelectItem key={item.id} value={item.id}>
+                              {item.name} (IID: {item.id})
+                            </SelectItem>
+                          ))
+                        ) : (
+                          <div className="px-2 py-1.5 text-sm text-slate-500">No items available</div>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  ) : mapping.mappingType === 'Fixed' ? (
+                    <Input
+                      value={mapping.shopifyValue || ''}
+                      onChange={(e) => {
+                        const updated = [...orderItemMappings]
+                        updated[index] = { ...updated[index], shopifyValue: e.target.value }
+                        setOrderItemMappings(updated)
+                      }}
+                      placeholder="Enter fixed value..."
+                      className="w-full"
+                    />
+                  ) : (
+                    <div className="text-slate-400 italic text-sm p-2 w-full">
+                      Custom field
+                    </div>
+                  )}
                 </div>
                 <div className="flex flex-col space-y-2">
                   <div className="flex items-center space-x-2">
@@ -4581,15 +5056,30 @@ export default function Home() {
                       <span className="text-sm text-slate-600">Custom field ID:</span>
                       <Input 
                         placeholder="e.g., custcol_custom_field"
-                        value={customFields[`orderitem-${index}`] || ''}
-                        onChange={(e) => handleCustomFieldChange(`orderitem-${index}`, e.target.value)}
+                        value={mapping.customFieldId || mapping.netsuiteId || ''}
+                        onChange={(e) => {
+                          const updated = [...orderItemMappings]
+                          updated[index] = { 
+                            ...updated[index], 
+                            netsuiteId: e.target.value,
+                            customFieldId: e.target.value,
+                          }
+                          setOrderItemMappings(updated)
+                        }}
                         className="w-full"
                       />
                     </div>
                   )}
                 </div>
                 <div className="flex items-center">
-                  <input type="checkbox" defaultChecked={Boolean(mapping.applyToAllAccounts)} className="w-4 h-4" />
+                  <Checkbox
+                    checked={mapping.applyToAllAccounts === true}
+                    onCheckedChange={(checked) => {
+                      const updated = [...orderItemMappings]
+                      updated[index] = { ...updated[index], applyToAllAccounts: checked === true }
+                      setOrderItemMappings(updated)
+                    }}
+                  />
                 </div>
                 <div className="flex items-center justify-center">
                   <Button variant="ghost" size="sm" onClick={() => openDeleteConfirmDialog('Order Item Mapping', mapping.shopifyCode || mapping.shopifyValue || '', mapping.id.toString())}>
@@ -4601,7 +5091,10 @@ export default function Home() {
           </div>
           <div className="flex justify-between items-center mt-4">
             <a href="#" className="text-sm text-blue-600 hover:underline">Need help?</a>
-            <Button variant="outline">
+            <Button 
+              variant="outline"
+              onClick={() => setIsAddOrderItemNetSuiteMappingDialogOpen(true)}
+            >
               <Database className="h-4 w-4 mr-2" /> Add row
             </Button>
           </div>
@@ -5699,6 +6192,182 @@ export default function Home() {
         </DialogContent>
       </Dialog>
 
+      {/* Add Order Item NetSuite Mapping Dialog */}
+      <Dialog open={isAddOrderItemNetSuiteMappingDialogOpen} onOpenChange={setIsAddOrderItemNetSuiteMappingDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add NetSuite Mapping</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium text-slate-700 mb-2 block">
+                NetSuite Field
+              </label>
+              <Select 
+                value={selectedOrderItemNetSuiteField} 
+                onValueChange={(value) => {
+                  setSelectedOrderItemNetSuiteField(value)
+                  setCustomOrderItemNetSuiteFieldName('')
+                  setSelectedOrderItemNetSuiteValue('')
+                  // Don't auto-close if field has dropdown options - user needs to select a value
+                  if (value && value !== 'Custom field' && !orderItemFieldsWithDropdowns.includes(value)) {
+                    // Only auto-close for fields without dropdowns
+                    const netsuiteId = value
+                    const newMapping: OrderItemFieldMapping = {
+                      id: `temp-${Date.now()}`,
+                      mappingType: 'Fixed',
+                      shopifyValue: '',
+                      netsuiteId: netsuiteId,
+                      applyToAllAccounts: true,
+                      isActive: true,
+                    }
+                    setOrderItemMappings([...orderItemMappings, newMapping])
+                    setIsAddOrderItemNetSuiteMappingDialogOpen(false)
+                    setSelectedOrderItemNetSuiteField('')
+                    setSelectedOrderItemNetSuiteValue('')
+                  }
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a NetSuite field..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Custom field">Custom field</SelectItem>
+                  <SelectItem value="class">Class</SelectItem>
+                  <SelectItem value="department">Department</SelectItem>
+                  <SelectItem value="location">Location</SelectItem>
+                  <SelectItem value="priceLevel">Price Level</SelectItem>
+                  <SelectItem value="purchaseOrderVendor">Purchase Order Vendor</SelectItem>
+                  <SelectItem value="unitsOfMeasure">Units Of Measure</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            
+            {/* Show custom field input when "Custom field" is selected */}
+            {selectedOrderItemNetSuiteField === 'Custom field' && (
+              <div>
+                <label className="text-sm font-medium text-slate-700 mb-2 block">
+                  Custom Field Name
+                </label>
+                <Input
+                  placeholder="e.g., custcol_custom_field"
+                  value={customOrderItemNetSuiteFieldName}
+                  onChange={(e) => setCustomOrderItemNetSuiteFieldName(e.target.value)}
+                />
+              </div>
+            )}
+            
+            {/* Show value dropdown for fields that require lookups */}
+            {selectedOrderItemNetSuiteField && selectedOrderItemNetSuiteField !== 'Custom field' && orderItemFieldsWithDropdowns.includes(selectedOrderItemNetSuiteField) && (
+              <div>
+                <label className="text-sm font-medium text-slate-700 mb-2 block">
+                  {selectedOrderItemNetSuiteField === 'priceLevel' ? 'Price Level' :
+                   selectedOrderItemNetSuiteField === 'purchaseOrderVendor' ? 'Purchase Order Vendor' :
+                   selectedOrderItemNetSuiteField === 'unitsOfMeasure' ? 'Units Of Measure' :
+                   selectedOrderItemNetSuiteField.charAt(0).toUpperCase() + selectedOrderItemNetSuiteField.slice(1)} Value
+                </label>
+                {isLoadingOrderItemNetSuiteList ? (
+                  <div className="p-4 border rounded-lg text-center text-slate-500">
+                    Loading {selectedOrderItemNetSuiteField} options...
+                  </div>
+                ) : orderItemNetSuiteListItems.length > 0 ? (
+                  <Select value={selectedOrderItemNetSuiteValue} onValueChange={setSelectedOrderItemNetSuiteValue}>
+                    <SelectTrigger>
+                      <SelectValue placeholder={`Select a ${selectedOrderItemNetSuiteField}...`} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {orderItemNetSuiteListItems.map((item) => (
+                        <SelectItem key={item.id} value={item.id}>
+                          {item.name} (IID: {item.id})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div className="p-4 border rounded-lg text-center text-slate-500">
+                    No {selectedOrderItemNetSuiteField} options available
+                  </div>
+                )}
+              </div>
+            )}
+            
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsAddOrderItemNetSuiteMappingDialogOpen(false)
+                  setSelectedOrderItemNetSuiteField('')
+                  setCustomOrderItemNetSuiteFieldName('')
+                  setSelectedOrderItemNetSuiteValue('')
+                  setOrderItemNetSuiteListItems([])
+                }}
+              >
+                Cancel
+              </Button>
+              {selectedOrderItemNetSuiteField === 'Custom field' ? (
+                <Button
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                  onClick={() => {
+                    if (!customOrderItemNetSuiteFieldName.trim()) {
+                      alert('Please enter a custom field name')
+                      return
+                    }
+                    
+                    const newMapping: OrderItemFieldMapping = {
+                      id: `temp-${Date.now()}`,
+                      mappingType: 'Custom',
+                      netsuiteId: customOrderItemNetSuiteFieldName.trim(),
+                      applyToAllAccounts: true,
+                      isActive: true,
+                      customFieldId: customOrderItemNetSuiteFieldName.trim(),
+                    }
+                    setOrderItemMappings([...orderItemMappings, newMapping])
+                    setIsAddOrderItemNetSuiteMappingDialogOpen(false)
+                    setSelectedOrderItemNetSuiteField('')
+                    setCustomOrderItemNetSuiteFieldName('')
+                    setSelectedOrderItemNetSuiteValue('')
+                  }}
+                  disabled={!customOrderItemNetSuiteFieldName.trim()}
+                >
+                  Add Mapping
+                </Button>
+              ) : selectedOrderItemNetSuiteField && orderItemFieldsWithDropdowns.includes(selectedOrderItemNetSuiteField) ? (
+                <Button
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                  onClick={() => {
+                    if (!selectedOrderItemNetSuiteValue) {
+                      alert('Please select a value from the dropdown')
+                      return
+                    }
+                    
+                    // Find the selected item to get the display name
+                    const selectedItem = orderItemNetSuiteListItems.find(item => item.id === selectedOrderItemNetSuiteValue)
+                    const displayValue = selectedItem ? `${selectedItem.name} (IID: ${selectedItem.id})` : selectedOrderItemNetSuiteValue
+                    
+                    const newMapping: OrderItemFieldMapping = {
+                      id: `temp-${Date.now()}`,
+                      mappingType: 'Fixed',
+                      shopifyValue: displayValue,
+                      netsuiteId: selectedOrderItemNetSuiteField,
+                      applyToAllAccounts: true,
+                      isActive: true,
+                    }
+                    setOrderItemMappings([...orderItemMappings, newMapping])
+                    setIsAddOrderItemNetSuiteMappingDialogOpen(false)
+                    setSelectedOrderItemNetSuiteField('')
+                    setSelectedOrderItemNetSuiteValue('')
+                    setOrderItemNetSuiteListItems([])
+                  }}
+                  disabled={!selectedOrderItemNetSuiteValue}
+                >
+                  Add Mapping
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Custom Shopify Field Selector Dialog */}
       <Dialog open={isCustomShopifyFieldDialogOpen} onOpenChange={setIsCustomShopifyFieldDialogOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
@@ -5756,10 +6425,20 @@ export default function Home() {
                             shopifyValue: undefined,
                           }
                           setOrderMappings(updated)
+                          
+                          // Check if we came from the translation dialog
+                          const cameFromTranslationDialog = translationMappingIndex !== null && translationMappingIndex === editingMappingIndex
+                          
                           setIsCustomShopifyFieldDialogOpen(false)
                           setCustomShopifyOrderId('')
                           setCustomShopifyOrderData(null)
                           setEditingMappingIndex(null)
+                          
+                          // If we came from translation dialog, reopen it and load available values
+                          if (cameFromTranslationDialog) {
+                            setIsTranslationDialogOpen(true)
+                            loadAvailableShopifyValues(field)
+                          }
                         }
                       }}
                     >
@@ -5782,6 +6461,733 @@ export default function Home() {
                 }}
               >
                 Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Custom Line Item Field Selector Dialog */}
+      <Dialog open={isCustomLineItemFieldDialogOpen} onOpenChange={setIsCustomLineItemFieldDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Map Custom Line Item Field</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="text-sm font-medium text-slate-700 mb-2 block">Order Id</label>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="#42395"
+                    value={customLineItemOrderId}
+                    onChange={(e) => setCustomLineItemOrderId(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && customLineItemOrderId.trim()) {
+                        handleFetchCustomLineItemOrder()
+                      }
+                    }}
+                  />
+                  <Button
+                    onClick={handleFetchCustomLineItemOrder}
+                    disabled={!customLineItemOrderId.trim() || isLoadingCustomLineItemOrder}
+                  >
+                    {isLoadingCustomLineItemOrder ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Load'}
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            <p className="text-sm text-slate-600">
+              Below are the fields from the first line item of this order. Select a field to map it to your NetSuite field.
+            </p>
+
+            {customLineItemOrderData && (
+              <div className="border rounded-lg overflow-hidden">
+                <div className="bg-slate-50 p-2 border-b flex justify-between items-center">
+                  <span className="text-sm font-medium">Field</span>
+                  <span className="text-sm font-medium">Value</span>
+                </div>
+                <div className="max-h-96 overflow-y-auto">
+                  {Object.entries(flattenLineItems(customLineItemOrderData)).map(([field, value]) => (
+                    <div
+                      key={field}
+                      className="grid grid-cols-2 gap-4 p-2 border-b hover:bg-slate-50 cursor-pointer"
+                      onClick={() => {
+                        if (editingOrderItemMappingIndex !== null && editingOrderItemMappingIndex >= 0 && editingOrderItemMappingIndex < orderItemMappings.length) {
+                          const updated = [...orderItemMappings]
+                          updated[editingOrderItemMappingIndex] = {
+                            ...updated[editingOrderItemMappingIndex],
+                            shopifyCode: `Custom: ${field}`,
+                            shopifyValue: undefined,
+                          }
+                          setOrderItemMappings(updated)
+                          setIsCustomLineItemFieldDialogOpen(false)
+                          setCustomLineItemOrderId('')
+                          setCustomLineItemOrderData(null)
+                          setEditingOrderItemMappingIndex(null)
+                        }
+                      }}
+                    >
+                      <div className="font-mono text-sm">Custom: {field}</div>
+                      <div className="text-sm text-slate-600 truncate">{String(value)}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsCustomLineItemFieldDialogOpen(false)
+                  setCustomLineItemOrderId('')
+                  setCustomLineItemOrderData(null)
+                  setEditingOrderItemMappingIndex(null)
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Order Header Configuration Dialog */}
+      <Dialog open={isOrderHeaderConfigDialogOpen} onOpenChange={(open) => {
+        setIsOrderHeaderConfigDialogOpen(open)
+        if (!open) {
+          setEditingOrderHeaderIndex(null)
+          setOrderHeaderOrderId('')
+          setOrderHeaderOrderData(null)
+        }
+      }}>
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Configure Order Header Mapping</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {editingOrderHeaderIndex !== null && orderMappings[editingOrderHeaderIndex] && (
+              <>
+                {/* Optional: Load Order to View JSON */}
+                <div className="border rounded-lg p-4 bg-slate-50">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-medium text-slate-700">
+                      Optional: Load Order to View JSON Structure
+                    </label>
+                  </div>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="#42395 or 42395 (optional)"
+                      value={orderHeaderOrderId}
+                      onChange={(e) => setOrderHeaderOrderId(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && orderHeaderOrderId.trim()) {
+                          handleFetchOrderHeaderOrder()
+                        }
+                      }}
+                    />
+                    <Button
+                      onClick={handleFetchOrderHeaderOrder}
+                      disabled={!orderHeaderOrderId.trim() || isLoadingOrderHeaderOrder}
+                      variant="outline"
+                    >
+                      {isLoadingOrderHeaderOrder ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Load Order'}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Enter an order ID or order number to view its JSON structure and explore available fields
+                  </p>
+                </div>
+
+                {/* JSON Viewer Section */}
+                {orderHeaderOrderData && (
+                  <div className="border rounded-lg overflow-hidden">
+                    <div className="bg-slate-50 p-3 border-b flex justify-between items-center">
+                      <span className="text-sm font-medium text-slate-700">Order JSON</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          navigator.clipboard.writeText(JSON.stringify(orderHeaderOrderData, null, 2))
+                          alert('JSON copied to clipboard!')
+                        }}
+                      >
+                        Copy JSON
+                      </Button>
+                    </div>
+                    <div className="bg-white p-4 overflow-x-auto max-h-96 overflow-y-auto">
+                      <JsonView
+                        value={orderHeaderOrderData}
+                        style={{
+                          backgroundColor: 'transparent',
+                          fontSize: '12px',
+                        }}
+                        theme="light"
+                        collapsed={2}
+                        displayDataTypes={false}
+                        displayObjectSize={false}
+                        enableClipboard={true}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Flattened Fields Table */}
+                {orderHeaderOrderData && (
+                  <div className="border-t pt-4">
+                    <h3 className="text-sm font-medium text-slate-700 mb-2">
+                      Available Fields from Loaded Order (click to select)
+                    </h3>
+                    <div className="border rounded-lg overflow-hidden">
+                      <div className="bg-slate-50 p-2 border-b flex justify-between items-center">
+                        <span className="text-sm font-medium">Field Code</span>
+                        <span className="text-sm font-medium">Value</span>
+                      </div>
+                      <div className="max-h-96 overflow-y-auto">
+                        {Object.entries(flattenObject(orderHeaderOrderData)).map(([field, value]) => (
+                          <div
+                            key={field}
+                            className="grid grid-cols-2 gap-4 p-2 border-b hover:bg-slate-50 cursor-pointer"
+                            onClick={() => {
+                              const updated = [...orderMappings]
+                              updated[editingOrderHeaderIndex] = {
+                                ...updated[editingOrderHeaderIndex],
+                                shopifyCode: field,
+                                shopifyValue: undefined,
+                              }
+                              setOrderMappings(updated)
+                              setIsOrderHeaderConfigDialogOpen(false)
+                              setOrderHeaderOrderId('')
+                              setOrderHeaderOrderData(null)
+                              setEditingOrderHeaderIndex(null)
+                            }}
+                          >
+                            <div className="font-mono text-sm text-blue-600">{field}</div>
+                            <div className="text-sm text-slate-600 truncate">{String(value)}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Field Selector */}
+                <div className="border-t pt-4">
+                  <label className="text-sm font-medium text-slate-700 mb-2 block">
+                    Select Shopify Field
+                  </label>
+                  <Select
+                    value={orderMappings[editingOrderHeaderIndex].shopifyCode || ''}
+                    onValueChange={(value) => {
+                      if (value === 'custom') {
+                        // Open custom Shopify field selector
+                        setEditingMappingIndex(editingOrderHeaderIndex)
+                        setIsCustomShopifyFieldDialogOpen(true)
+                        setIsOrderHeaderConfigDialogOpen(false)
+                      } else {
+                        const updated = [...orderMappings]
+                        updated[editingOrderHeaderIndex] = {
+                          ...updated[editingOrderHeaderIndex],
+                          shopifyCode: value,
+                          shopifyValue: undefined,
+                        }
+                        setOrderMappings(updated)
+                        setIsOrderHeaderConfigDialogOpen(false)
+                        setEditingOrderHeaderIndex(null)
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select Shopify field..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="id">Order ID</SelectItem>
+                      <SelectItem value="name">Order Name</SelectItem>
+                      <SelectItem value="order_number">Order Number</SelectItem>
+                      <SelectItem value="created_at">Created At</SelectItem>
+                      <SelectItem value="updated_at">Updated At</SelectItem>
+                      <SelectItem value="financial_status">Financial Status</SelectItem>
+                      <SelectItem value="fulfillment_status">Fulfillment Status</SelectItem>
+                      <SelectItem value="currency">Currency</SelectItem>
+                      <SelectItem value="total_price">Total Price</SelectItem>
+                      <SelectItem value="subtotal_price">Subtotal Price</SelectItem>
+                      <SelectItem value="total_tax">Total Tax</SelectItem>
+                      <SelectItem value="total_shipping_price_set">Shipping Price</SelectItem>
+                      <SelectItem value="total_discounts">Total Discounts</SelectItem>
+                      <SelectItem value="payment_gateway_names">Payment Gateway</SelectItem>
+                      <SelectItem value="customer.id">Customer ID</SelectItem>
+                      <SelectItem value="customer.email">Customer Email</SelectItem>
+                      <SelectItem value="shipping_address.address1">Shipping Address 1</SelectItem>
+                      <SelectItem value="shipping_address.city">Shipping City</SelectItem>
+                      <SelectItem value="shipping_address.zip">Shipping Zip</SelectItem>
+                      <SelectItem value="custom">Custom Field...</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Current Selection Display */}
+                {orderMappings[editingOrderHeaderIndex].shopifyCode && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                    <p className="text-sm text-blue-800">
+                      <strong>Selected Field:</strong> <span className="font-mono">{orderMappings[editingOrderHeaderIndex].shopifyCode}</span>
+                    </p>
+                  </div>
+                )}
+              </>
+            )}
+
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsOrderHeaderConfigDialogOpen(false)
+                  setEditingOrderHeaderIndex(null)
+                  setOrderHeaderOrderId('')
+                  setOrderHeaderOrderData(null)
+                }}
+              >
+                Close
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Translation Mapping Dialog */}
+      <Dialog open={isTranslationDialogOpen} onOpenChange={(open) => {
+        setIsTranslationDialogOpen(open)
+        if (!open) {
+          setTranslationMappingIndex(null)
+          setTranslationMappings([])
+          setTranslationDefaultValue('')
+          setTranslationOrderId('')
+          setTranslationOrderData(null)
+        }
+      }}>
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Configure Translation Mappings</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {translationMappingIndex !== null && orderMappings[translationMappingIndex] && (
+              <>
+                {/* Shopify Field Selector - First Thing */}
+                <div className="border rounded-lg p-4 bg-slate-50">
+                  <label className="text-sm font-medium text-slate-700 mb-2 block">
+                    Select Shopify Field Code
+                  </label>
+                  <Select
+                    value={orderMappings[translationMappingIndex].shopifyCode || ''}
+                    onValueChange={(value) => {
+                      if (value === 'custom') {
+                        // Open custom Shopify field selector
+                        setEditingMappingIndex(translationMappingIndex)
+                        setIsCustomShopifyFieldDialogOpen(true)
+                        setIsTranslationDialogOpen(false)
+                      } else {
+                        const updated = [...orderMappings]
+                        updated[translationMappingIndex] = {
+                          ...updated[translationMappingIndex],
+                          shopifyCode: value,
+                          shopifyValue: undefined,
+                        }
+                        setOrderMappings(updated)
+                        // Load available Shopify values for the selected field
+                        loadAvailableShopifyValues(value)
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select Shopify field..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="id">Order ID</SelectItem>
+                      <SelectItem value="name">Order Name</SelectItem>
+                      <SelectItem value="order_number">Order Number</SelectItem>
+                      <SelectItem value="created_at">Created At</SelectItem>
+                      <SelectItem value="updated_at">Updated At</SelectItem>
+                      <SelectItem value="financial_status">Financial Status</SelectItem>
+                      <SelectItem value="fulfillment_status">Fulfillment Status</SelectItem>
+                      <SelectItem value="currency">Currency</SelectItem>
+                      <SelectItem value="total_price">Total Price</SelectItem>
+                      <SelectItem value="subtotal_price">Subtotal Price</SelectItem>
+                      <SelectItem value="total_tax">Total Tax</SelectItem>
+                      <SelectItem value="total_shipping_price_set">Shipping Price</SelectItem>
+                      <SelectItem value="total_discounts">Total Discounts</SelectItem>
+                      <SelectItem value="payment_gateway_names">Payment Gateway</SelectItem>
+                      <SelectItem value="customer.id">Customer ID</SelectItem>
+                      <SelectItem value="customer.email">Customer Email</SelectItem>
+                      <SelectItem value="shipping_address.address1">Shipping Address 1</SelectItem>
+                      <SelectItem value="shipping_address.city">Shipping City</SelectItem>
+                      <SelectItem value="shipping_address.zip">Shipping Zip</SelectItem>
+                      <SelectItem value="referring_site">Referring Site</SelectItem>
+                      <SelectItem value="custom">Custom Field...</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {orderMappings[translationMappingIndex].shopifyCode && (
+                    <div className="mt-2 text-sm text-slate-600">
+                      <strong>Selected:</strong> <span className="font-mono">{orderMappings[translationMappingIndex].shopifyCode}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Optional: Load Order to View JSON */}
+                <div className="border rounded-lg p-4 bg-slate-50">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-medium text-slate-700">
+                      Optional: Load Order to View JSON Structure
+                    </label>
+                  </div>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="#42395 or 42395 (optional)"
+                      value={translationOrderId}
+                      onChange={(e) => setTranslationOrderId(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && translationOrderId.trim()) {
+                          handleFetchTranslationOrder()
+                        }
+                      }}
+                    />
+                    <Button
+                      onClick={handleFetchTranslationOrder}
+                      disabled={!translationOrderId.trim() || isLoadingTranslationOrder}
+                      variant="outline"
+                    >
+                      {isLoadingTranslationOrder ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Load Order'}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Enter an order ID or order number to view its JSON structure and explore available fields
+                  </p>
+                </div>
+
+                {/* JSON Viewer Section */}
+                {translationOrderData && (
+                  <div className="border rounded-lg overflow-hidden">
+                    <div className="bg-slate-50 p-3 border-b flex justify-between items-center">
+                      <span className="text-sm font-medium text-slate-700">Order JSON</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          navigator.clipboard.writeText(JSON.stringify(translationOrderData, null, 2))
+                          alert('JSON copied to clipboard!')
+                        }}
+                      >
+                        Copy JSON
+                      </Button>
+                    </div>
+                    <div className="bg-white p-4 overflow-x-auto max-h-96 overflow-y-auto">
+                      <JsonView
+                        value={translationOrderData}
+                        style={{
+                          backgroundColor: 'transparent',
+                          fontSize: '12px',
+                        }}
+                        theme="light"
+                        collapsed={2}
+                        displayDataTypes={false}
+                        displayObjectSize={false}
+                        enableClipboard={true}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Flattened Fields Table */}
+                {translationOrderData && (
+                  <div className="border-t pt-4">
+                    <h3 className="text-sm font-medium text-slate-700 mb-2">
+                      Available Fields from Loaded Order (click to select)
+                    </h3>
+                    <div className="border rounded-lg overflow-hidden">
+                      <div className="bg-slate-50 p-2 border-b flex justify-between items-center">
+                        <span className="text-sm font-medium">Field Code</span>
+                        <span className="text-sm font-medium">Value</span>
+                      </div>
+                      <div className="max-h-96 overflow-y-auto">
+                        {Object.entries(flattenObject(translationOrderData)).map(([field, value]) => (
+                          <div
+                            key={field}
+                            className="grid grid-cols-2 gap-4 p-2 border-b hover:bg-slate-50 cursor-pointer"
+                            onClick={() => {
+                              if (translationMappingIndex !== null) {
+                                const updated = [...orderMappings]
+                                updated[translationMappingIndex] = {
+                                  ...updated[translationMappingIndex],
+                                  shopifyCode: field,
+                                  shopifyValue: undefined,
+                                }
+                                setOrderMappings(updated)
+                                // Reload available Shopify values for the new field
+                                loadAvailableShopifyValues(field)
+                              }
+                            }}
+                          >
+                            <div className="font-mono text-sm text-blue-600">{field}</div>
+                            <div className="text-sm text-slate-600 truncate">{String(value)}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* NetSuite Field Display */}
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <p className="text-sm text-blue-800">
+                    <strong>NetSuite Field:</strong> <span className="font-mono">{orderMappings[translationMappingIndex].netsuiteId}</span>
+                  </p>
+                </div>
+
+                {orderMappings[translationMappingIndex].shopifyCode && (
+                  <div className="text-sm text-slate-600 italic border-t pt-4">
+                    Map Shopify values from <span className="font-mono font-semibold">{orderMappings[translationMappingIndex].shopifyCode}</span> to NetSuite values. Add rows below to create your translation mappings.
+                  </div>
+                )}
+
+                {/* Translation Mappings Table */}
+                <div className="border rounded-lg overflow-hidden">
+                  <div className="bg-slate-50 p-2 border-b grid grid-cols-12 gap-2 text-sm font-medium">
+                    <div className="col-span-1"></div>
+                    <div className="col-span-5">Shopify value</div>
+                    <div className="col-span-1 text-center">→</div>
+                    <div className="col-span-5">NetSuite value</div>
+                    <div className="col-span-1"></div>
+                  </div>
+                  <div className="max-h-96 overflow-y-auto">
+                    {translationMappings.map((tm, idx) => (
+                      <div key={idx} className="grid grid-cols-12 gap-2 p-2 border-b items-center">
+                        <div className="col-span-1 flex items-center justify-center">
+                          <input
+                            type="checkbox"
+                            checked={tm.isActive}
+                            onChange={(e) => {
+                              const updated = [...translationMappings]
+                              updated[idx] = { ...updated[idx], isActive: e.target.checked }
+                              setTranslationMappings(updated)
+                            }}
+                            className="w-4 h-4"
+                          />
+                        </div>
+                        <div className="col-span-5">
+                          <Input
+                            value={tm.shopifyValue}
+                            onChange={(e) => {
+                              const updated = [...translationMappings]
+                              updated[idx] = { ...updated[idx], shopifyValue: e.target.value }
+                              setTranslationMappings(updated)
+                            }}
+                            placeholder="Shopify value"
+                            className="w-full"
+                          />
+                        </div>
+                        <div className="col-span-1 text-center text-slate-400">→</div>
+                        <div className="col-span-5">
+                          {isLoadingTranslationNetSuiteFieldInfo ? (
+                            <div className="p-2 border rounded text-sm text-slate-500 text-center">
+                              Loading options...
+                            </div>
+                          ) : translationNetSuiteFieldInfo && 
+                           translationNetSuiteFieldInfo.listItems && 
+                           translationNetSuiteFieldInfo.listItems.length > 0 ? (
+                            <Select
+                              value={tm.netsuiteValue}
+                              onValueChange={(value) => {
+                                const updated = [...translationMappings]
+                                updated[idx] = { ...updated[idx], netsuiteValue: value }
+                                setTranslationMappings(updated)
+                              }}
+                            >
+                              <SelectTrigger className="w-full">
+                                <SelectValue placeholder="Select NetSuite value..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {translationNetSuiteFieldInfo.listItems.map((item) => (
+                                  <SelectItem key={item.id} value={item.id}>
+                                    {item.name} (IID: {item.id})
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <Input
+                              value={tm.netsuiteValue}
+                              onChange={(e) => {
+                                const updated = [...translationMappings]
+                                updated[idx] = { ...updated[idx], netsuiteValue: e.target.value }
+                                setTranslationMappings(updated)
+                              }}
+                              placeholder="NetSuite value"
+                              className="w-full"
+                            />
+                          )}
+                        </div>
+                        <div className="col-span-1 flex items-center justify-center">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              const updated = translationMappings.filter((_, i) => i !== idx)
+                              setTranslationMappings(updated)
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4 text-red-500" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Add Row Button */}
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setTranslationMappings([
+                      ...translationMappings,
+                      { shopifyValue: '', netsuiteValue: '', isActive: true },
+                    ])
+                  }}
+                  className="w-full"
+                >
+                  Add row
+                </Button>
+
+                {/* Default Value */}
+                <div>
+                  <label className="text-sm font-medium text-slate-700 mb-2 block">
+                    Default value
+                  </label>
+                  {isLoadingTranslationNetSuiteFieldInfo ? (
+                    <div className="p-2 border rounded text-sm text-slate-500 text-center">
+                      Loading options...
+                    </div>
+                  ) : translationNetSuiteFieldInfo && 
+                   translationNetSuiteFieldInfo.listItems && 
+                   translationNetSuiteFieldInfo.listItems.length > 0 ? (
+                    <Select
+                      value={translationDefaultValue}
+                      onValueChange={(value) => setTranslationDefaultValue(value)}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select default NetSuite value..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {translationNetSuiteFieldInfo.listItems.map((item) => (
+                          <SelectItem key={item.id} value={item.id}>
+                            {item.name} (IID: {item.id})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      value={translationDefaultValue}
+                      onChange={(e) => setTranslationDefaultValue(e.target.value)}
+                      placeholder="Default NetSuite value when no match found"
+                      className="w-full"
+                    />
+                  )}
+                </div>
+              </>
+            )}
+
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  // Save translation mappings to the mapping object in state before closing
+                  if (translationMappingIndex !== null) {
+                    const updated = [...orderMappings]
+                    const filteredTranslations = translationMappings.filter(
+                      (tm) => tm.shopifyValue && tm.netsuiteValue
+                    )
+                    updated[translationMappingIndex] = {
+                      ...updated[translationMappingIndex],
+                      translationMappings: filteredTranslations,
+                      translationDefaultValue: translationDefaultValue || undefined,
+                    }
+                    setOrderMappings(updated)
+                  }
+                  
+                  setIsTranslationDialogOpen(false)
+                  setTranslationMappingIndex(null)
+                  setTranslationMappings([])
+                  setTranslationDefaultValue('')
+                  setTranslationOrderId('')
+                  setTranslationOrderData(null)
+                  setTranslationNetSuiteFieldInfo(null)
+                }}
+              >
+                Close
+              </Button>
+              <Button
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+                onClick={async () => {
+                  if (translationMappingIndex === null) return
+
+                  const mapping = orderMappings[translationMappingIndex]
+                  // Check if mapping has a valid database ID (not a temporary ID)
+                  if (!mapping.id || mapping.id.toString().startsWith('temp-')) {
+                    alert('Please save the mapping first before configuring translations. Click "Save" on the main page to save the mapping, then configure translations.')
+                    setIsTranslationDialogOpen(false)
+                    return
+                  }
+
+                  try {
+                    // Save translation mappings
+                    const response = await fetch('/api/mappings/order-fields/translation', {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                      },
+                      body: JSON.stringify({
+                        orderFieldMappingId: mapping.id,
+                        translationMappings: translationMappings.filter(
+                          (tm) => tm.shopifyValue && tm.netsuiteValue
+                        ),
+                        defaultValue: translationDefaultValue || null,
+                      }),
+                    })
+
+                  const result = await response.json()
+                  if (result.success) {
+                    // Update local state - store translations in the mapping object itself
+                    const updated = [...orderMappings]
+                    const filteredTranslations = translationMappings.filter(
+                      (tm) => tm.shopifyValue && tm.netsuiteValue
+                    )
+                    updated[translationMappingIndex] = {
+                      ...updated[translationMappingIndex],
+                      translationMappings: filteredTranslations,
+                      translationDefaultValue: translationDefaultValue || undefined,
+                    }
+                    setOrderMappings(updated)
+
+                    alert('✅ Translation mappings saved successfully!')
+                    setIsTranslationDialogOpen(false)
+                    // Keep the translation data in the mapping, but clear dialog state
+                    setTranslationMappingIndex(null)
+                    setTranslationMappings([])
+                    setTranslationDefaultValue('')
+                    setTranslationOrderId('')
+                    setTranslationOrderData(null)
+                  } else {
+                    console.error('Translation save error:', result)
+                    alert(`❌ Failed to save translations: ${result.error || 'Unknown error'}. Please check the console for details.`)
+                  }
+                } catch (error) {
+                  console.error('Error saving translation mappings:', error)
+                  alert(`❌ Error saving translations: ${error instanceof Error ? error.message : 'Unknown error'}`)
+                    alert(`❌ Error saving translations: ${error instanceof Error ? error.message : 'Unknown error'}`)
+                  }
+                }}
+              >
+                Save
               </Button>
             </div>
           </div>
