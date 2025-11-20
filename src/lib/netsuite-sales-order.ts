@@ -216,7 +216,106 @@ export async function buildNetSuiteSalesOrderPayload(
     }
   }
 
-  // Build items array using refName (SKU or item name)
+  // Fetch PaymentMethodMapping for payment method
+  const paymentMethodMappings = await prisma.paymentMethodMapping.findMany({
+    where: {
+      isActive: true,
+    },
+  })
+
+  // Fetch default payment method setting
+  let defaultPaymentMethod: string | null = null
+  try {
+    const defaultSetting = await prisma.mappingDefaults.findUnique({
+      where: { settingKey: 'default_payment_method' },
+    })
+    if (defaultSetting && defaultSetting.isActive) {
+      defaultPaymentMethod = defaultSetting.settingValue
+    }
+  } catch (error) {
+    console.warn('Could not fetch default payment method setting:', error)
+  }
+
+  // Fetch OrderItemFieldMapping for line item fields
+  const orderItemMappings = await prisma.orderItemFieldMapping.findMany({
+    where: {
+      isActive: true,
+    },
+  })
+
+  // Fetch Shopify order data if needed for Order Line mappings
+  let shopifyOrderDataForLineItems: any = null
+  const needsShopifyOrderDataForLineItems = orderItemMappings.some(
+    (m) => m.mappingType === 'Order Line'
+  )
+  
+  if (needsShopifyOrderDataForLineItems) {
+    try {
+      const { getOrderByNameFromShopify } = await import('./shopify')
+      shopifyOrderDataForLineItems = await getOrderByNameFromShopify(firstLine.shopifyOrderName)
+      if (!shopifyOrderDataForLineItems) {
+        console.warn(`⚠️ Could not fetch Shopify order data for line item mappings`)
+        errors.push(`Could not fetch Shopify order data for Order Line mappings`)
+      }
+    } catch (error) {
+      console.warn(`⚠️ Error fetching Shopify order data for line items:`, error)
+      errors.push(`Error fetching Shopify order data for line items: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
+  // Helper function to get nested value from Shopify line item using dot notation
+  const getLineItemValue = (shopifyLineItem: any, path: string): any => {
+    if (!shopifyLineItem) return null
+    
+    // Special handling for properties array (e.g., "properties.__pca_barcode")
+    if (path.startsWith('properties.')) {
+      const propName = path.substring('properties.'.length)
+      if (shopifyLineItem.properties && Array.isArray(shopifyLineItem.properties)) {
+        const property = shopifyLineItem.properties.find((p: any) => p.name === propName)
+        return property?.value || null
+      }
+      return null
+    }
+    
+    // Standard dot notation traversal for other fields
+    const keys = path.split('.')
+    let current = shopifyLineItem
+    for (const key of keys) {
+      if (current == null || typeof current !== 'object') {
+        return null
+      }
+      current = current[key]
+    }
+    return current
+  }
+
+  // Helper function to get order item mapping value
+  const getOrderItemMappingValue = (mapping: typeof orderItemMappings[0], shopifyLineItem: any): string | null => {
+    switch (mapping.mappingType) {
+      case 'Fixed':
+        // For Fixed mappings, use shopifyValue (the fixed NetSuite ID/value)
+        return mapping.shopifyValue || mapping.netsuiteId
+
+      case 'Custom':
+        // For Custom mappings, use shopifyValue (the value selected/entered when creating the mapping)
+        return mapping.shopifyValue || null
+
+      case 'Order Line':
+        // For Order Line mappings, extract value from Shopify line item using shopifyCode
+        if (!mapping.shopifyCode || !shopifyLineItem) {
+          return null
+        }
+        // Remove "Custom: " prefix if present
+        const fieldPath = mapping.shopifyCode.replace(/^Custom: /, '')
+        const value = getLineItemValue(shopifyLineItem, fieldPath)
+        return value != null ? String(value) : null
+
+      default:
+        return null
+    }
+  }
+
+  // Build items array using refName (SKU or item name) and apply order item mappings
   const items = orderLines
     .filter((line) => {
       // Filter out lines without SKU or name
@@ -226,7 +325,7 @@ export async function buildNetSuiteSalesOrderPayload(
       }
       return true
     })
-    .map((line) => {
+    .map((line, lineIndex) => {
       const itemObj: { refName?: string; itemid?: string } = {}
       
       // Prefer refName (SKU), fallback to item name if SKU not available
@@ -241,12 +340,47 @@ export async function buildNetSuiteSalesOrderPayload(
         itemObj.itemid = line.lineItemSku
       }
       
-      return {
+      // Build the base line item
+      const lineItem: any = {
         item: itemObj,
         quantity: line.lineItemQuantity || 1,
-        rate: line.lineItemPrice || undefined, // Make rate optional as in user's example
+        rate: line.lineItemPrice || undefined,
         description: line.lineItemName || undefined,
       }
+
+      // Find the corresponding Shopify line item for this order line
+      let shopifyLineItem: any = null
+      if (shopifyOrderDataForLineItems?.line_items && Array.isArray(shopifyOrderDataForLineItems.line_items)) {
+        // Try to match by line item ID or by index
+        shopifyLineItem = shopifyOrderDataForLineItems.line_items.find(
+          (li: any) => String(li.id) === String(line.lineItemId)
+        ) || shopifyOrderDataForLineItems.line_items[lineIndex]
+      }
+
+      // Apply order item mappings to this line item
+      for (const mapping of orderItemMappings) {
+        const mappingValue = getOrderItemMappingValue(mapping, shopifyLineItem)
+        if (mappingValue !== null) {
+          // Extract numeric ID if needed (for fields like class, location, etc.)
+          const finalValue = extractNetSuiteId(mappingValue)
+          
+          // Handle custom fields (custcol_)
+          if (mapping.netsuiteId.startsWith('custcol_')) {
+            lineItem[mapping.netsuiteId] = finalValue
+          } else {
+            // Handle standard NetSuite fields
+            // For fields that need object format (like class, location), wrap in object
+            const fieldsNeedingObjectFormat = ['class', 'location', 'department', 'priceLevel', 'purchaseOrderVendor', 'unitsOfMeasure']
+            if (fieldsNeedingObjectFormat.includes(mapping.netsuiteId)) {
+              lineItem[mapping.netsuiteId] = { id: finalValue }
+            } else {
+              lineItem[mapping.netsuiteId] = finalValue
+            }
+          }
+        }
+      }
+
+      return lineItem
     })
 
   if (items.length === 0) {
@@ -466,6 +600,49 @@ export async function buildNetSuiteSalesOrderPayload(
   if (firstLine.currency) {
     payload.currency = {
       id: firstLine.currency.toUpperCase(), // NetSuite expects uppercase (e.g., "USD")
+    }
+  }
+
+  // Add payment method if available
+  if (firstLine.paymentGatewayNames) {
+    try {
+      // Parse payment gateway names (stored as JSON string)
+      const paymentGateways = JSON.parse(firstLine.paymentGatewayNames) as string[]
+      const paymentMethod = paymentGateways?.[0] || 'unknown'
+      
+      // Find mapping for this payment method
+      const paymentMapping = paymentMethodMappings.find(
+        (m) => m.shopifyCode === paymentMethod && m.isActive
+      )
+      
+      if (paymentMapping) {
+        // Use mapped payment method
+        payload.paymentMethod = {
+          id: paymentMapping.netsuiteId,
+        }
+      } else if (defaultPaymentMethod) {
+        // Use default payment method if no mapping found
+        payload.paymentMethod = {
+          id: defaultPaymentMethod,
+        }
+        errors.push(`Payment method "${paymentMethod}" not mapped, using default payment method`)
+      } else {
+        // No mapping and no default - this is an error
+        errors.push(`Payment method "${paymentMethod}" is not mapped and no default payment method is set. Order cannot be created without payment mapping.`)
+      }
+    } catch (error) {
+      console.warn('Could not parse payment gateway names:', error)
+      errors.push(`Could not parse payment gateway names: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  } else {
+    // No payment method in order - use default if available
+    if (defaultPaymentMethod) {
+      payload.paymentMethod = {
+        id: defaultPaymentMethod,
+      }
+      errors.push('No payment method found in order, using default payment method')
+    } else {
+      errors.push('No payment method found in order and no default payment method is set. Order cannot be created without payment mapping.')
     }
   }
 

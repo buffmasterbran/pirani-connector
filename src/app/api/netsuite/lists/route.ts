@@ -75,6 +75,10 @@ const FIELD_QUERIES: Record<string, { name: string; query: string }> = {
     name: 'vendors',
     query: "SELECT v.id, e.entityid, e.altname, e.firstname, e.lastname, e.email, v.isinactive, e.isperson FROM vendor v LEFT JOIN entity e ON e.id = v.id ORDER BY e.entityid"
   },
+  paymentMethod: {
+    name: 'paymentmethods',
+    query: "SELECT id, name, isinactive FROM paymentmethod ORDER BY name"
+  },
 }
 
 /**

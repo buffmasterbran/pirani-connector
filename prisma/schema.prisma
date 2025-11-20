@@ -218,6 +218,34 @@ model CustomerFieldMapping {
   @@index([mappingType])
 }
 
+model Product {
+  id                        String    @id // NetSuite Internal ID
+  sku                       String?   // NetSuite itemid (SKU)
+  name                      String?   // NetSuite displayname
+  isInactive                Boolean   @default(false)
+  category                  String?   // Category/sync type (e.g., 'ShopifyPriceQty')
+  createdDate               DateTime?
+  lastLoadedFromNetSuite    DateTime?
+  lastModifiedInConnector   DateTime?
+  lastPushedTo              DateTime?
+  lastSourceChange          DateTime?
+  isFulfillable             Boolean?
+  isOnline                  Boolean?
+  itemType                  String?
+  saleUnitName              String?
+  unitsTypeName             String?
+  shopifyInventoryItemId    String?   // Shopify Inventory Item ID (default)
+  shopifyProductId          String?   // Shopify Product ID (default)
+  shopifyVariantId           String?   // Shopify Variant ID (default)
+  rawData                   String?   // JSON string of full product data from NetSuite
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
+
+  @@index([sku])
+  @@index([category])
+  @@index([isInactive])
+}
+
 model ProductMapping {
   id               Int      @id @default(autoincrement())
   shopifySku       String? // Shopify SKU

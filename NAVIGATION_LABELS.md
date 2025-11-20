@@ -11,6 +11,7 @@ Use these labels to easily reference navigation locations in the app. All labels
 
 ## Mappings Sub-Navigation (under `nav-mappings`)
 - **`nav-mappings-orders`** - Mappings > Orders subsection
+- **`nav-mappings-customers`** - Mappings > Customers subsection
 - **`nav-mappings-products`** - Mappings > Products subsection
 - **`nav-mappings-fulfillments`** - Mappings > Fulfillments subsection
 - **`nav-mappings-other`** - Mappings > Other transactions subsection
@@ -21,7 +22,6 @@ Use these labels to easily reference navigation locations in the app. All labels
 - **`nav-mappings-orders-tab-shipment`** - Mappings > Orders > Shipment tab
 - **`nav-mappings-orders-tab-order`** - Mappings > Orders > Order tab
 - **`nav-mappings-orders-tab-order-item`** - Mappings > Orders > Order Item tab
-- **`nav-mappings-orders-tab-customer`** - Mappings > Orders > Customer tab
 
 ## Example Usage
 - "Add a button to `nav-mappings-orders-tab-payment`" = Add button to Mappings > Orders > Payment tab

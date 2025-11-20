@@ -4,7 +4,7 @@ import { findNetSuiteCustomerByEmail, findNetSuiteAddressesByCustomerId, matchSh
 
 const SHOPIFY_STORE_URL = process.env.SHOPIFY_STORE_URL
 const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN
-const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || '2024-07'
+const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || '2025-10'
 
 if (!SHOPIFY_STORE_URL || !SHOPIFY_ACCESS_TOKEN) {
   console.warn('SHOPIFY credentials are not fully configured. Import routes will use mock responses.')
@@ -709,40 +709,92 @@ export async function getOrderByNameFromShopify(orderName: string) {
     // Try searching by order_number first (more reliable)
     const queryByNumber = new URLSearchParams({ 
       order_number: orderNumber,
-      limit: '1'
+      limit: '10' // Get more results to find the exact match
     })
     
     try {
       const dataByNumber = await shopifyFetch<{ orders: any[] }>(`/orders.json?${queryByNumber.toString()}`)
+      console.log(`🔍 Search by order_number=${orderNumber} returned ${dataByNumber.orders?.length || 0} orders`)
       if (dataByNumber.orders && dataByNumber.orders.length > 0) {
-        foundOrder = dataByNumber.orders[0]
+        // Find the exact match by order_number
+        const exactMatch = dataByNumber.orders.find((o: any) => 
+          String(o.order_number) === String(orderNumber) || 
+          o.name === `#${orderNumber}` ||
+          o.name === orderNumber
+        )
+        if (exactMatch) {
+          console.log(`✅ Found exact match: ID=${exactMatch.id}, Name=${exactMatch.name}, Order Number=${exactMatch.order_number}`)
+          foundOrder = exactMatch
+        } else {
+          // Log what we found
+          console.log(`⚠️ No exact match found. Found orders:`, dataByNumber.orders.map((o: any) => ({
+            id: o.id,
+            name: o.name,
+            order_number: o.order_number
+          })))
+        }
       }
     } catch (error) {
       // If order_number doesn't work, try name parameter
-      console.log('Search by order_number failed, trying name parameter...')
+      console.log('Search by order_number failed, trying name parameter...', error)
     }
     
     // Fallback: Try searching by name parameter
     if (!foundOrder) {
-    const queryByName = new URLSearchParams({ 
-      name: `#${orderNumber}`, // Include # in the search
-      limit: '1'
-    })
-    
-    const dataByName = await shopifyFetch<{ orders: any[] }>(`/orders.json?${queryByName.toString()}`)
-    
-    if (dataByName.orders && dataByName.orders.length > 0) {
-        foundOrder = dataByName.orders[0]
+      const queryByName = new URLSearchParams({ 
+        name: `#${orderNumber}`, // Include # in the search
+        limit: '10'
+      })
+      
+      const dataByName = await shopifyFetch<{ orders: any[] }>(`/orders.json?${queryByName.toString()}`)
+      console.log(`🔍 Search by name=#${orderNumber} returned ${dataByName.orders?.length || 0} orders`)
+      
+      if (dataByName.orders && dataByName.orders.length > 0) {
+        // Find the exact match
+        const exactMatch = dataByName.orders.find((o: any) => 
+          String(o.order_number) === String(orderNumber) || 
+          o.name === `#${orderNumber}` ||
+          o.name === orderNumber
+        )
+        if (exactMatch) {
+          console.log(`✅ Found exact match by name: ID=${exactMatch.id}, Name=${exactMatch.name}, Order Number=${exactMatch.order_number}`)
+          foundOrder = exactMatch
+        } else {
+          console.log(`⚠️ No exact match found by name. Found orders:`, dataByName.orders.map((o: any) => ({
+            id: o.id,
+            name: o.name,
+            order_number: o.order_number
+          })))
+        }
+      }
     }
-    }
     
-    // If we found an order, fetch the full order details by ID to ensure we have all fields including addresses
+    // If we found an order, fetch the full order details by ID to ensure we have all fields including addresses and line item properties
     if (foundOrder && foundOrder.id) {
-      console.log(`📥 Fetching full order details for ID ${foundOrder.id} to ensure addresses are included...`)
+      console.log(`📥 Found order by search: ID=${foundOrder.id}, Name=${foundOrder.name}, Order Number=${foundOrder.order_number}`)
+      console.log(`📥 Fetching full order details for ID ${foundOrder.id} to ensure all fields (including line item properties) are included...`)
       try {
         const fullOrderData = await shopifyFetch<{ order: any }>(`/orders/${foundOrder.id}.json`)
         if (fullOrderData.order) {
-          console.log(`✅ Retrieved full order details with addresses`)
+          // Log line item properties for debugging
+          if (fullOrderData.order.line_items && fullOrderData.order.line_items.length > 0) {
+            console.log(`✅ Retrieved full order details for order ${foundOrder.id}`)
+            console.log(`   Line items count: ${fullOrderData.order.line_items.length}`)
+            fullOrderData.order.line_items.forEach((item: any, idx: number) => {
+              console.log(`   Line item ${idx} (${item.name || item.title}):`)
+              console.log(`     - Has properties field: ${!!item.properties}`)
+              console.log(`     - Properties type: ${typeof item.properties}`)
+              console.log(`     - Is array: ${Array.isArray(item.properties)}`)
+              console.log(`     - Properties length: ${item.properties?.length || 0}`)
+              if (item.properties && Array.isArray(item.properties) && item.properties.length > 0) {
+                console.log(`     - Properties:`, JSON.stringify(item.properties, null, 2))
+              } else {
+                console.log(`     - Properties value:`, item.properties)
+              }
+              // Log ALL keys to see if properties are under a different name
+              console.log(`     - All keys:`, Object.keys(item))
+            })
+          }
           return fullOrderData.order
         }
       } catch (error) {
