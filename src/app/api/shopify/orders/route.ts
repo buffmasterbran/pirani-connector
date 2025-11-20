@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { fetchShopifyOrdersPaginated, flattenShopifyOrder } from '@/lib/shopify'
+import { fetchShopifyOrdersPaginated, flattenShopifyOrder, saveCustomerAndAddresses } from '@/lib/shopify'
 
 const MAX_ORDERS = 4000
 
@@ -41,6 +41,14 @@ export async function POST(request: NextRequest) {
     let updated = 0
 
     for (const order of orders) {
+      // Save customer and addresses first
+      try {
+        await saveCustomerAndAddresses(order)
+      } catch (error) {
+        console.warn(`⚠️ Error saving customer/addresses for order ${order.id}:`, error)
+        // Continue with order import even if customer save fails
+      }
+
       const flattenedLines = flattenShopifyOrder(order)
 
       for (const line of flattenedLines) {

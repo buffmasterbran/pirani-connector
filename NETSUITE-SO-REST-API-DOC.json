@@ -1,0 +1,321 @@
+accountingBookDetail: salesOrder-accountingBookDetailCollection
+alaConfiguration: nsResource
+altHandlingCost Handling Cost: number (double)
+The handling cost automatically calculates depending on the shipping method you select in the Ship Via field. To change the cost of handling, go to Lists > Shipping Items and select the shipping method with the handling cost you want to change.
+
+altSalesTotal Alt. Sales Total: number (double)
+The alternate sales amount total is shown here.
+
+altShippingCost Shipping Cost: number (double)
+The shipping cost automatically calculates depending on the shipping method you select in the Ship Via field above. To change the cost of a shipping method, go to Lists > Shipping Items and select the shipping method you want to change. If you use UPS Real-Time rates, shipments over 150lbs are broken up into shipments less than or equal to 150lbs for charging.
+
+amountAuthorized Amount Authorized: number (double)
+amountCovered Amount Covered: number (double)
+amountDeposited Amount Deposited: number (double)
+amountNotCovered Amount Not Covered: number (double)
+amountPendingAuthorization Amount Pending Authorization: number (double)
+amountPendingDeposit Amount Pending Deposit: number (double)
+amountPotentiallyCovered Amount Potentially Covered: number (double)
+amountRequiringCoverage Amount Requiring Coverage: number (double)
+appliedRules: salesOrder-appliedRulesCollection
+billAddr1 Billing Address Line 1: string
+billAddr2 Billing Address Line 2: string
+billAddr3 Billing Address Line 3: string
+billAddress Bill To: string
+The default billing address autofills this field from the customer's record. To enter a different address: * Select another address in the Bill To Select field. * Select New in the Bill To Select field to enter a new billing address to be used for this transaction and saved with the associated entity record. * Select Custom in the Bill To Select field to enter a new billing address to be used for this transaction only (and not saved with the associated entity record). * Click the Edit icon for the Bill To Select field to modify an existing billing address.
+
+billAddressList: nsResource
+billAddressee Billing Addressee: string
+billAttention Billing Attention: string
+billCity Billing Address City: string
+billCountry: object
+id Internal identifier: string  PR , PS , PT , PW , PY , QA , AD , AE , AF , AG ,  
+refName Reference Name: string
+billOverride Override: string
+billPhone Billing Phone: string
+billState Billing Address State: string
+billZip Billing Address Zip Code: string
+billingAddress: salesOrder-billingAddress
+billingAddress_text Billing Address: string
+billingSchedule: billingSchedule
+canBeUnapproved Can Be Unapproved: boolean
+canHaveStackable Can Stack Promotions: boolean
+cardSwipe Card Swipe: string
+cardholderAuthentication: nsResource
+checkNumber Check #: string
+class: classification
+contribPct Contribution Percentage: string
+couponCode: couponCode
+createdDate Date Created: string (date-time)
+createdFrom: nsResource
+currency: currency
+customForm: object
+id Internal identifier: string  88 , 89 , 68 , -9914 , 110 , 100 , 102 , 103 , 106 , 107 ,  
+refName Reference Name: string
+customerPaymentAuthorization: nsResource
+debitKsn Debit KSN: string
+debitPinBlock Debit Pin Block: string
+defaultILBAShipAddrVal: string
+defaultILBAShippingAddressKey: string
+defaultILShipMethKey Default Shipping Method Key: integer (int64)
+deferredRevenue Deferred Revenue: number (double)
+Deferred Revenue: amount of revenue deferred on this transaction
+
+department: department
+discountAmount Discount Amount: number (double)
+discountDate Discount Date: string (date)
+discountItem: discountItem
+discountRate Rate: number (double)
+NetSuite enters the rate for the discount item you selected. You can change the discount rate for this transaction. To have the discount subtracted from your total, enter a negative currency amount (for example -10.00) or a negative percentage (for example -10%).
+
+discountTotal Discount Total: number (double)
+NetSuite enters the amount discounted on this sales order. If this discount item is taxable, the discount is applied before taxes. If it is not taxable, the discount is applied after taxes.
+
+drAccount: account
+dueDate Due Date: string (date)
+dynamicDescriptor Soft Descriptor: string
+email Email: string
+endDate End Date: string (date)
+If this order has an end date, enter or pick it here. If a sales order includes a Start Date and End Date, those dates autofill on the invoice or cash sale when the order is billed.
+
+entity: one of: [ customer, partner, vendor, nsResource, employee, contact ]
+entityTaxRegNum Customer Tax Reg. Number: string
+Select the customer's tax registration number associated with this sales order.
+
+estGrossProfit Est. Gross Profit: number (double)
+Estimated Gross Profit: Read-only field that equals the revenue amount minus the Est. Cost. At the transaction level, it equals the gross profit of all lines, factoring transaction-level discounts and markups.
+
+estGrossProfitPercent Est. Gross Profit Percent: number (double)
+Estimated Gross Profit Margin, as a percentage: Read-only field that equals the Est. Gross Profit divided by revenue, expressed as a percentage. At the transaction level, it equals the gross profit percent of all lines, factoring transaction-level discounts and markups.
+
+estimate Estimate: integer (int64)
+exchangeRate Exchange Rate: number (double)
+The currency's exchange rate is shown in this field. You can edit the exchange rate for this transaction only, or you can update the currency record with the exchange rate you enter here.
+
+excludeCommission Exclude Commissions: boolean
+Check this option to exclude this transaction and its subordinate transactions from inclusion in all commission calculations.
+
+externalId External ID: string
+fob FOB: string
+Enter the location where the customers technically acquire ownership. For example, if your customers own goods as soon as they ship and pay the shipping costs from your location to theirs, you might enter Our warehouse.
+
+forInvoiceGrouping For Invoice Grouping: boolean
+fxAccount: account
+fxAltSalesTotal Foreign Alt. Sales Total: number (double)
+fxNetAltSalesTotal Foreign Net Alt. Sales Total: number (double)
+giftCertApplied Gift Certificate: number (double)
+giftCertRedemption: salesOrder-giftCertRedemptionCollection
+groupedTo: nsResource
+handlingCost Handling Cost: number (double)
+The handling costs displayed in this field are calculated by applying the values pre-defined in the selected Shipping Method. For example you may have a flat rate handling charge for all items sent by US Mail of $1.50. To change handling rates, go to Shipping > Lists > Shipping Items, and select the required shipping method. Click on the Handling Rate subtab.
+
+handlingMode: object
+id Internal identifier: string  MIMIC , PROCESS , SAVE_ONLY 
+refName Reference Name: string
+handlingTaxAmount Handling Tax Amount: number (double)
+This field displays the handling tax amount for this sales order.
+
+id Internal ID: string
+inputReferenceCode Input P/N Ref.: string
+integrationId: string
+intercoStatus: object
+id Internal identifier: string  1 , 2 , 3 
+refName Reference Name: string
+intercoTransaction: nsResource
+isCrossSubTransaction Allow Cross-Subsidiary Fulfillment: boolean
+isDefaultShippingRequest Is Default Shipping Request: boolean
+isMultiShipTo Enable Item Line Shipping: boolean
+Check this box to enter multiple shipping routes on this order. In the Ship To field, select a shipping address for the customer. The Default Billing address, from the customer record, is automatically displayed in the field. You can add a New address which is saved to the customer record, or enter a Custom address, which only stays on the transaction, and is not saved to the customer record. In the Ship Via field, select the shipping method you want to use for that address.
+
+item: salesOrder-itemCollection
+job: one of: [ customer, partner, vendor, nsResource, employee, contact ]
+lastModifiedDate Date Last Modified: string (date-time)
+leadSource: nsResource
+linkedTrackingNumbers Linked Tracking Numbers: string
+links Links: nsLink 
+nsLink
+location: location
+memo Memo: string
+If you wish, enter a memo to describe this sales order. It will appear on reports such as the 2-line Sales Orders register.
+
+message Customer Message: string
+The text of the customer message you select in the Select Message field appears here. You can edit the message or enter a new customer message for only this transaction.
+
+messageSel: customerMessage
+muccPromoCodeInstance Promo Code: string
+needsPick Needs Pick: boolean
+needsRevCommitment: boolean
+netAltSalesTotal Net Alt. Sales Total: number (double)
+nextBill Next Bill Date: string (date)
+nexus: nexus
+oneTime One Time: number (double)
+oppcreatedfrom: string
+oppcreatedfromtitle: string
+opportunity: opportunity
+ordRevCommitted: boolean
+orderStatus: object
+id Internal identifier: string  A , B 
+refName Reference Name: string
+orderType: nsResource
+originator Originator: string
+otherRefNum PO/Check Number: string
+If your customer is paying by check, enter the number here. If your customer is issuing a purchase order, enter the PO number here.
+
+outputAuthCode Auth. Code: string
+outputReferenceCode P/N Ref.: string
+overrideShippingCost Override Shipping Cost: number (float)
+partner: partner
+partners: salesOrder-partnersCollection
+payPalAuthId Authorization ID: string
+Authorization identification number. Populated from the PayPal response.
+
+payPalTranId PayPal Tran. ID: string
+Unique transaction identification number of the payment. Populated from the PayPal response.
+
+paymentCardCsc CSC: string
+paymentDeviceId Payment Device ID: string
+paymentInstrumentLimit Payment Instrument Limit: number (double)
+paymentOperation: object
+id Internal identifier: string  SALE , VOID , AUTHORIZATION 
+refName Reference Name: string
+paymentOption: nsResource
+paymentProcessingProfile: nsResource
+paymentsDue Payments Due: number (double)
+prevDate Previous Effective Date: string (date)
+prevPartner Previous Partner: integer (int64)
+prevRep Previous Representative: integer (int64)
+previousOpportunity Previous Opportunity: string
+promoCode: promotionCode
+promoCodePluginImpl Promo Code: string
+recognizedRevenue Recognized Revenue: number (double)
+Recognized Revenue: cumulative amount of revenue recognized for this transaction
+
+recurAnnually Annually: number (double)
+recurMonthly Monthly: number (double)
+recurQuarterly Quarterly: number (double)
+recurWeekly Weekly: number (double)
+refName Reference Name: string
+refreshFromSubscription: string
+requiredDepositAmount Required Deposit Amount: number (double)
+requiredDepositDue Required Deposit Due: number (double)
+requiredDepositPercentage Required Deposit Percentage: number (double)
+revCommitStatus Revenue Commitment Status: string
+This field provides information about Revenue Commitment(s) in the case of a Sales Order or Revenue Commitment Reversal(s) in the case of a Return Authorization. If you uncheck the Rev Rec on Rev Commit. Field, the Rev. Commit. Status field displays information about the related Invoice(s) or Credit Memo(s). The possible values for this field and definitions are as follows: 1. Pending Commitment - No related revenue transactions have been created. 2. Partially Committed - Some related revenue transactions have been created. 3. Committed - All related revenue transactions have been created.
+
+revCommitStatusDescr Revenue Commitment Status: string
+revRecOnRevCommitment Rev Rec on Rev Commit.: boolean
+Check this check box to create a Revenue Commitment or Revenue Commitment Reversal. * On a Sales Order, the Revenue Commitment replaces an invoice * On a Return Authorization, the Revenue Commitment Reversal replaces a credit memo. NetSuite creates all applicable Revenue Recognition schedules the Revenue Commitment or Revenue Commitment Reversal.
+
+revenueStatus Revenue Status: string
+The possible values for this field are: 1. Pending: indicates that no recognition has occurred. All revenue is still deferred. 2. In Progress: indicates that some recognition has occurred. 3. Completed: indicates that all recognition has occurred. No deferred revenue remains.
+
+revenueStatusDescr Revenue Status: string
+salesChannel: nsResource
+salesEffectiveDate Sales Effective Date: string (date)
+You can change the sales effective date for this transaction. The sales effective date determines which commission plan and historical sales team this transaction applies to.
+
+salesGroup: nsResource
+salesRep: one of: [ customer, partner, vendor, nsResource, employee, contact ]
+salesTeam: salesOrder-salesTeamCollection
+saleschannelorderpriority: string
+shipAddress Ship To: string
+The default shipping address autofills this field from the customer's record. To enter a different address: * Select another address in the Ship To Select field. * Select New in the Ship To Select field to enter a new shipping address to be used for this transaction and saved with the associated entity record. * Select Custom in the Ship To Select field to enter a new shipping address to be used for this transaction only (and not saved with the associated entity record). * Click the Edit icon for the Ship To Select field to edit an existing shipping address.
+
+shipAddressList: nsResource
+shipComplete Ship Complete: boolean
+Check this box if you want to ship this order only when complete. This will prevent multiple shipments of part-orders. When fulfilling orders in bulk, you can filter the list to include those orders marked Ship Complete that can be completely fulfilled by selecting Respect Ship Complete in the Filter By field.
+
+shipDate Ship Date: string (date)
+Type or pick a shipping date for this order.
+
+shipGroup: salesOrder-shipGroupCollection
+shipIsResidential Shipping address is residential: boolean
+shipMethod: shipItem
+shipOverride Override: boolean
+shippingAddress: salesOrder-shippingAddress
+shippingAddress_text Shipping Address: string
+shippingCost Shipping Cost: number (double)
+This field displays the shipping costs associated with the transaction. If you have set up your account to automatically calculate shipping, shipping costs are calculated according to the shipping method selected in the Shipping Method field. To automatically charge for shipping, go to Setup > Accounting > Shipping. Check the Charge for Shipping box. In addition, you need to set up charge details for your shipping items. Go to Lists > Accounting > Shipping Items. UPS Real-Time rates If you use this service and a package is over 150lbs, the package is charged as multiple packages equal to or less than 150lbs.
+
+shippingCostOverridden Shipping Cost Overridden: boolean
+shippingTaxAmount Shipping Tax Amount: number (double)
+This field displays the shipping tax amount for this sales order.
+
+source: object
+id Internal identifier: string  SuitePhone , smbXML , CSV , ADP , QIF , QB , PERQUEST , Yahoo , PaymentLink , customerCenter ,  
+refName Reference Name: string
+sourceWebSite: webSite
+startDate Start Date: string (date)
+If you use the Advanced Billing feature, enter the date for the first invoice to be created. If a sales order includes a Start Date and End Date, those dates autofill on the invoice or cash sale when the order is billed.
+
+status: object
+id Internal identifier: string  A , B , C , D , E , F , G , H 
+refName Reference Name: string
+storeOrder: string
+subsidiary: subsidiary
+subsidiaryTaxRegNum Subsidiary Tax Reg. Number: string
+This field shows the tax registration number of the transaction nexus. NetSuite automatically populates this field based on the nexus lookup logic. You can override the transaction nexus and tax registration number that NetSuite automatically selects by checking the Nexus Override box. When you select a different tax registration number in the dropdown list, the corresponding nexus is automatically selected in the Nexus field.
+
+subtotal Subtotal: number (double)
+This field shows the total of the items on this sales order. This is the total before any discounts, shipping cost, handling cost or tax is added to the order.
+
+suppressUserEventsAndEmails: string
+syncPartnerTeams Update Customer: boolean
+Check this box if you want to update the sales team on the customer's record with changes you make here.
+
+syncSalesTeams Update Customer: boolean
+Check this box if you want to update the sales team on the customer's record with changes you make here.
+
+taxDetails: salesOrder-taxDetailsCollection
+taxDetailsOverride Tax Details Override: boolean
+Check this box to override the tax information on the Tax Details subtab of the transaction. Only roles with at least the Edit level of the Tax Details Tab permission can override the tax details.
+
+taxPointDate Tax Point Date: string (date)
+Tax point date is a legal requirement in many countries. It is the date of transaction that determines the taxability. It may be different from the transaction date that determines the GL impact. Specific rules then consider the reporting of transactions based on tax point date and other factors.
+
+taxPointDateOverride Tax Point Date Override: boolean
+Check this box to override the tax point date.
+
+taxRegOverride Tax Registration Override: boolean
+Check this box to override the values in the Nexus and Subsidiary Tax Reg. Number fields. Only roles with at least the Edit level of the Tax Details Tab permission can override the values that NetSuite automatically selects in these fields.
+
+taxTotal Tax: number (double)
+NetSuite multiplies the tax rate by the taxable total of line items and enters it here.
+
+terms: term
+thirdPartyAcct 3rd Party Account: string
+toBeEmailed To Be Emailed: boolean
+Check this box if you want to email this sales order. Then enter the email address in the space to the right of the check box. You can enter multiple email addresses by separating them with a semicolon. It is important to separate the addresses with only a semicolon and do not include any spaces.
+
+toBeFaxed To Be Faxed: boolean
+Check this box if you want to fax this transaction. Enter the fax number in the space to the right of the check box if it doesn't already appear. To fax NetSuite forms, an administrator must first set up fax service at Setup > Company > Printing, Fax and Email Preferences.
+
+toBePrinted To Be Printed: boolean
+Check this box if you want to save this in a queue of sales orders and picking tickets you can later chose to print. On new individual sales orders, you can click Save and Print to submit and print the sales order at once. On existing individual sales orders, you can click Print to submit and print the sales order at once.
+
+total Total: number (double)
+NetSuite computes the total of line items, tax and shipping costs, and then enters it here.
+
+totalAfterTaxes Total After Taxes: number (double)
+totalCostEstimate Est. Cost: number (double)
+Estimated Cost: Estimated cost of the specific number of items; estimated rate x quantity = estimated cost.
+
+tranDate Date: string (date)
+NetSuite inserts today's date for the posting date of this sales order. You can type or pick another date. What you enter here determines the date range in which this transaction appears on the Sales Order Register. You can select or enter custom date ranges on registers.
+
+tranId Order #: string
+NetSuite increases the largest sales order number by one. If you wish, you can type another number. The next order number will revert to the standard pattern. Note: The maximum number of characters you can enter in this field is 45.
+
+tranIsVsoeBundle Transaction Is VSOE Bundle: boolean
+Check this box to include all items on this transaction as a VSOE bundle. Note: If Rev Rec Dates Specified on Sales Order is the Revenue Recognition Template term source used to allocate revenue, then NetSuite uses the Start and End Dates from the sales order to calculate the Revenue Recognition Schedule.
+
+transactionNumber Transaction Number: string
+This field displays the system-generated number for the transaction.
+
+transactionToRefund: nsResource
+updateDropshipOrderQty: string
+vsoeAutoCalc Auto Calculate VSOE Allocation: boolean
+Check this box to automatically calculate allocation amounts when you save the transaction. Allocation determines the revenue amount for individual transaction lines.
+
+webSite: string
+webStore Web Store: string

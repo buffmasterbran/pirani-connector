@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Loader } from '@/components/Loader'
 import { Package, User, MapPin, CreditCard, Calendar } from 'lucide-react'
 import { safeToLocaleDateString } from '@/lib/dateUtils'
+import JsonView from '@uiw/react-json-view'
 
 interface OrderInfoDialogProps {
   isOpen: boolean
@@ -241,6 +242,25 @@ export function OrderInfoDialog({
                       )}
                     </p>
                   </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Raw JSON */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Raw JSON Response</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="bg-white border border-gray-200 rounded-lg p-4 overflow-auto max-h-[400px]">
+                  <JsonView
+                    value={order}
+                    style={{ backgroundColor: 'transparent', fontSize: '12px' }}
+                    collapsed={false}
+                    displayDataTypes={false}
+                    displayObjectSize={false}
+                    enableClipboard={true}
+                  />
                 </div>
               </CardContent>
             </Card>

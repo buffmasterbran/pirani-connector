@@ -88,6 +88,7 @@ export async function GET() {
         total_tax: line.orderTax ?? 0,
         shipping_cost: line.orderShipping ?? 0,
         discount_amount: line.orderDiscount ?? 0,
+        inDatabase: true, // Orders from database are always in database
         original: {},
         line_items: [] as Array<{ title: string; sku?: string; quantity: number; price: number }>,
       }

@@ -12,7 +12,9 @@ import {
   MapPin,
   ChevronDown,
   ChevronUp,
-  HelpCircle
+  HelpCircle,
+  Users,
+  MapPin as MapPinIcon
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -41,6 +43,18 @@ export function Sidebar({ activeSection, onSectionChange }: SidebarProps) {
       name: 'Payouts',
       icon: CreditCard,
       color: 'text-emerald-600'
+    },
+    {
+      id: 'customers',
+      name: 'Customers',
+      icon: Users,
+      color: 'text-indigo-600'
+    },
+    {
+      id: 'addresses',
+      name: 'Addresses',
+      icon: MapPinIcon,
+      color: 'text-pink-600'
     },
     {
       id: 'mappings',

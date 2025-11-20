@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { flattenShopifyOrder } from '@/lib/shopify'
+import { flattenShopifyOrder, saveCustomerAndAddresses } from '@/lib/shopify'
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,6 +15,20 @@ export async function POST(request: NextRequest) {
     let updated = 0
 
     for (const rawOrder of orders) {
+      // Save customer and addresses first
+      try {
+        console.log(`💾 Saving customer/addresses for order ${rawOrder.id}...`)
+        await saveCustomerAndAddresses(rawOrder)
+        console.log(`✅ Successfully saved customer/addresses for order ${rawOrder.id}`)
+      } catch (error) {
+        console.error(`❌ Error saving customer/addresses for order ${rawOrder.id}:`, error)
+        if (error instanceof Error) {
+          console.error(`Error details: ${error.message}`)
+          console.error(`Stack: ${error.stack}`)
+        }
+        // Continue with order import even if customer save fails
+      }
+
       const flattened = flattenShopifyOrder(rawOrder)
       const shopifyOrderId = flattened[0]?.shopifyOrderId
       let firstOrderLineId: number | null = null

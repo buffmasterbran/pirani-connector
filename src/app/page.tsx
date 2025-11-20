@@ -8,12 +8,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Checkbox } from '@/components/ui/checkbox'
 import { PayoutCard } from '@/components/PayoutCard'
 import { TransactionsDialog } from '@/components/TransactionsDialog'
 import { OrderInfoDialog } from '@/components/OrderInfoDialog'
 import { Sidebar } from '@/components/Sidebar'
 import { Loader, LoaderWithText } from '@/components/Loader'
-import { Download, Database, ArrowUpRight, Settings, Eye, EyeOff, Filter, Trash2, ChevronDown, Loader2, X, HelpCircle, ChevronRight } from 'lucide-react'
+import { Download, Database, ArrowUpRight, Settings, Eye, EyeOff, Filter, Trash2, ChevronDown, ChevronUp, Loader2, X, HelpCircle, ChevronRight } from 'lucide-react'
 import JsonView from '@uiw/react-json-view'
 import { 
   validateOrderMappings, 
@@ -137,6 +138,18 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false)
   const [isLoadingTransactions, setIsLoadingTransactions] = useState(false)
   const [isLoadingSaved, setIsLoadingSaved] = useState(false)
+  
+  // Customers and Addresses state
+  const [customers, setCustomers] = useState<any[]>([])
+  const [isLoadingCustomers, setIsLoadingCustomers] = useState(false)
+  const [customerSearchTerm, setCustomerSearchTerm] = useState('')
+  const [expandedCustomerId, setExpandedCustomerId] = useState<number | null>(null)
+  
+  const [addresses, setAddresses] = useState<any[]>([])
+  const [isLoadingAddresses, setIsLoadingAddresses] = useState(false)
+  const [addressSearchTerm, setAddressSearchTerm] = useState('')
+  const [addressTypeFilter, setAddressTypeFilter] = useState<string>('all')
+  const [hasNetSuiteIdFilter, setHasNetSuiteIdFilter] = useState<string>('all')
   const [selectedPayoutId, setSelectedPayoutId] = useState<string | null>(null)
   const [payoutIdInput, setPayoutIdInput] = useState('')
   const [hideSensitiveData, setHideSensitiveData] = useState(false)
@@ -200,22 +213,7 @@ export default function Home() {
     { id: '9', shopifyCode: 'economy_international', netsuiteId: '1036', isActive: true }
   ])
 
-  const [orderMappings, setOrderMappings] = useState<OrderFieldMapping[]>([
-    { id: '1', mappingType: 'Fixed', shopifyValue: 'Online Sales', netsuiteId: '11', applyToAllAccounts: true, isActive: true },
-    { id: '2', mappingType: 'Fixed', shopifyValue: 'Unchecked', netsuiteId: 'false', applyToAllAccounts: true, isActive: true },
-    { id: '3', mappingType: 'Fixed', shopifyValue: 'Default Location', netsuiteId: '1', applyToAllAccounts: true, isActive: true },
-    { id: '4', mappingType: 'Order Header', shopifyCode: 'order_id', netsuiteId: 'otherRefNum', applyToAllAccounts: false, isActive: true },
-    { id: '5', mappingType: 'Fixed', shopifyValue: 'Checked', netsuiteId: 'true', applyToAllAccounts: true, isActive: true },
-    { id: '6', mappingType: 'Fixed', shopifyValue: 'Pending Fulfillment', netsuiteId: '_pendingFulfillment', applyToAllAccounts: true, isActive: true },
-    { id: '7', mappingType: 'Fixed', shopifyValue: 'Direct to Consumer', netsuiteId: '1833', applyToAllAccounts: true, isActive: true },
-    { id: '8', mappingType: 'Fixed', shopifyValue: 'Pirani Website', netsuiteId: '12', applyToAllAccounts: true, isActive: true },
-    { id: '9', mappingType: 'Fixed', shopifyValue: 'Urgent', netsuiteId: '1', applyToAllAccounts: true, isActive: true },
-    { id: '10', mappingType: 'Order Header', shopifyCode: 'created_at', netsuiteId: 'custbody_pir_shop_order_date', applyToAllAccounts: true, isActive: true },
-    { id: '11', mappingType: 'Fixed', shopifyValue: 'Sales Channel', netsuiteId: '1', applyToAllAccounts: true, isActive: true },
-    { id: '12', mappingType: 'Fixed', shopifyValue: 'SO Category', netsuiteId: '28', applyToAllAccounts: true, isActive: true },
-    { id: '13', mappingType: 'Order Header', shopifyCode: 'id', netsuiteId: 'custbody_shopify_source_order_id', applyToAllAccounts: true, isActive: true },
-    { id: '14', mappingType: 'Order Header', shopifyCode: 'name', netsuiteId: 'custbody_fa_channel_order', applyToAllAccounts: true, isActive: true }
-  ])
+  const [orderMappings, setOrderMappings] = useState<OrderFieldMapping[]>([])
 
   const [orderItemMappings, setOrderItemMappings] = useState<OrderItemFieldMapping[]>([
     { id: '1', mappingType: 'Fixed', shopifyValue: 'Base Rate (MSRP)', netsuiteId: '1', applyToAllAccounts: false, isActive: true },
@@ -274,8 +272,266 @@ export default function Home() {
   
   // Manual NetSuite ID state
   const [isNetSuiteIdDialogOpen, setIsNetSuiteIdDialogOpen] = useState(false)
+  const [netsuitePayloadDialog, setNetsuitePayloadDialog] = useState<{
+    isOpen: boolean
+    orderId: string | null
+    payload: any | null
+    customerInfo: any | null
+    addressInfo: any | null
+    isLoading: boolean
+  }>({
+    isOpen: false,
+    orderId: null,
+    payload: null,
+    customerInfo: null,
+    addressInfo: null,
+    isLoading: false,
+  })
   const [selectedOrderForNetSuite, setSelectedOrderForNetSuite] = useState<Order | null>(null)
   const [netSuiteIdInput, setNetSuiteIdInput] = useState('')
+
+  // Add NetSuite Mapping Dialog state
+  const [isAddNetSuiteMappingDialogOpen, setIsAddNetSuiteMappingDialogOpen] = useState(false)
+  const [selectedNetSuiteField, setSelectedNetSuiteField] = useState<string>('')
+  const [selectedNetSuiteValue, setSelectedNetSuiteValue] = useState<string>('')
+  const [customNetSuiteFieldName, setCustomNetSuiteFieldName] = useState<string>('')
+  const [netsuiteListItems, setNetsuiteListItems] = useState<Array<{ id: string; name: string; [key: string]: any }>>([])
+  const [isLoadingNetSuiteList, setIsLoadingNetSuiteList] = useState(false)
+  const [editingMappingIndex, setEditingMappingIndex] = useState<number | null>(null)
+  // Custom field info state
+  const [customFieldInfo, setCustomFieldInfo] = useState<{
+    fieldType: 'select' | 'text' | 'date' | 'checkbox' | 'integer' | 'currency' | 'percent' | null
+    listItems: Array<{ value: string; text: string }>
+  } | null>(null)
+  const [isLoadingCustomFieldInfo, setIsLoadingCustomFieldInfo] = useState(false)
+  const [customFieldValue, setCustomFieldValue] = useState<string>('')
+  // Cache for custom field info by field ID (for displaying labels)
+  const [customFieldInfoCache, setCustomFieldInfoCache] = useState<Record<string, {
+    fieldType: string
+    listItems: Array<{ value: string; text: string }>
+  }>>({})
+  
+  // Custom Shopify field selector dialog state
+  const [isCustomShopifyFieldDialogOpen, setIsCustomShopifyFieldDialogOpen] = useState(false)
+  const [customShopifyOrderId, setCustomShopifyOrderId] = useState<string>('')
+  const [customShopifyOrderData, setCustomShopifyOrderData] = useState<any>(null)
+  const [isLoadingCustomShopifyOrder, setIsLoadingCustomShopifyOrder] = useState(false)
+  const [selectedCustomShopifyField, setSelectedCustomShopifyField] = useState<string>('')
+  
+  // Store NetSuite list items per field for dropdowns in table rows
+  const [netsuiteListCache, setNetsuiteListCache] = useState<Record<string, Array<{ id: string; name: string; [key: string]: any }>>>({})
+  const [loadingFields, setLoadingFields] = useState<Set<string>>(new Set())
+  
+  // Fields that require dropdown lookups
+  const fieldsWithDropdowns = ['class', 'location', 'partner', 'subsidiary', 'currency', 'terms', 'department', 'account', 'shipMethod', 'taxCode', 'priceLevel', 'units']
+  
+  // Helper function to flatten nested objects for display
+  const flattenObject = (obj: any, prefix = ''): Record<string, any> => {
+    const flattened: Record<string, any> = {}
+    for (const key in obj) {
+      if (obj.hasOwnProperty(key)) {
+        const newKey = prefix ? `${prefix}.${key}` : key
+        if (typeof obj[key] === 'object' && obj[key] !== null && !Array.isArray(obj[key])) {
+          Object.assign(flattened, flattenObject(obj[key], newKey))
+        } else {
+          flattened[newKey] = obj[key]
+        }
+      }
+    }
+    return flattened
+  }
+
+  // Fetch Shopify order for custom field selector
+  const handleFetchCustomShopifyOrder = async () => {
+    if (!customShopifyOrderId.trim()) return
+    
+    setIsLoadingCustomShopifyOrder(true)
+    try {
+      // Remove # if present
+      const orderId = customShopifyOrderId.replace(/^#/, '')
+      const response = await fetch(`/api/shopify/orders/by-name/${encodeURIComponent(orderId)}`)
+      const data = await response.json()
+      
+      if (data.order) {
+        setCustomShopifyOrderData(data.order)
+      } else {
+        alert(`Order ${customShopifyOrderId} not found`)
+      }
+    } catch (error) {
+      console.error('Error fetching Shopify order:', error)
+      alert('Failed to fetch order from Shopify')
+    } finally {
+      setIsLoadingCustomShopifyOrder(false)
+    }
+  }
+
+  // Fetch NetSuite custom field information
+  const handleFetchCustomFieldInfo = async () => {
+    if (!customNetSuiteFieldName.trim()) {
+      setCustomFieldInfo(null)
+      return
+    }
+
+    setIsLoadingCustomFieldInfo(true)
+    setCustomFieldInfo(null)
+    setCustomFieldValue('')
+
+    try {
+      const response = await fetch('/api/netsuite/field-info', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          recordType: 'salesorder',
+          fieldId: customNetSuiteFieldName.trim(),
+        }),
+      })
+
+      const result = await response.json()
+
+      if (result.success && result.data) {
+        const fieldInfo = {
+          fieldType: result.data.fieldType,
+          listItems: result.data.listItems || [],
+        }
+        setCustomFieldInfo(fieldInfo)
+        // Cache the field info for later use when displaying mappings
+        if (customNetSuiteFieldName.trim()) {
+          setCustomFieldInfoCache(prev => ({
+            ...prev,
+            [customNetSuiteFieldName.trim()]: fieldInfo
+          }))
+        }
+      } else {
+        alert(result.error || 'Failed to fetch field information')
+        setCustomFieldInfo(null)
+      }
+    } catch (error) {
+      console.error('Error fetching custom field info:', error)
+      alert('Error fetching field information from NetSuite')
+      setCustomFieldInfo(null)
+    } finally {
+      setIsLoadingCustomFieldInfo(false)
+    }
+  }
+  
+  // Extract ID from shopifyValue format "Name (IID: id)"
+  const extractIdFromShopifyValue = (shopifyValue?: string): string => {
+    if (!shopifyValue) return ''
+    const match = shopifyValue.match(/\(IID:\s*(\d+)\)/)
+    return match ? match[1] : ''
+  }
+
+  // Get display text for a custom field value (looks up label from cached field info)
+  const getCustomFieldDisplayText = (mapping: OrderFieldMapping): string => {
+    if (mapping.mappingType !== 'Custom' || !mapping.shopifyValue) {
+      return mapping.shopifyValue || mapping.shopifyCode || ''
+    }
+
+    const fieldId = mapping.customFieldId || mapping.netsuiteId
+    const fieldInfo = customFieldInfoCache[fieldId]
+    
+    if (fieldInfo && fieldInfo.listItems && fieldInfo.listItems.length > 0) {
+      // Look up the label for this value
+      const item = fieldInfo.listItems.find(item => item.value === mapping.shopifyValue)
+      if (item) {
+        return `${item.text} (${mapping.shopifyValue})`
+      }
+    }
+
+    // Fallback: just return the value
+    return mapping.shopifyValue
+  }
+
+  // Fetch field info for a custom field if not cached (for displaying existing mappings)
+  const ensureCustomFieldInfoLoaded = async (fieldId: string) => {
+    if (customFieldInfoCache[fieldId]) {
+      return // Already cached
+    }
+
+    try {
+      const response = await fetch('/api/netsuite/field-info', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          recordType: 'salesorder',
+          fieldId: fieldId,
+        }),
+      })
+
+      const result = await response.json()
+      if (result.success && result.data) {
+        setCustomFieldInfoCache(prev => ({
+          ...prev,
+          [fieldId]: {
+            fieldType: result.data.fieldType,
+            listItems: result.data.listItems || [],
+          }
+        }))
+      }
+    } catch (error) {
+      console.error('Error fetching field info for display:', error)
+      // Silently fail - we'll just show the value without label
+    }
+  }
+  
+  // Fetch NetSuite list for a field and cache it
+  const fetchNetSuiteListForField = async (field: string) => {
+    if (!fieldsWithDropdowns.includes(field) || netsuiteListCache[field]) {
+      return // Already cached or doesn't need lookup
+    }
+    
+    setLoadingFields(prev => new Set(prev).add(field))
+    try {
+      const response = await fetch(`/api/netsuite/lists?field=${field}`)
+      const data = await response.json()
+      if (data.success && data.items) {
+        setNetsuiteListCache(prev => ({ ...prev, [field]: data.items }))
+      }
+    } catch (error) {
+      console.error(`Error fetching NetSuite list for ${field}:`, error)
+    } finally {
+      setLoadingFields(prev => {
+        const next = new Set(prev)
+        next.delete(field)
+        return next
+      })
+    }
+  }
+
+  // Fetch NetSuite list when a field requiring dropdown is selected
+  useEffect(() => {
+    if (isAddNetSuiteMappingDialogOpen && selectedNetSuiteField && fieldsWithDropdowns.includes(selectedNetSuiteField)) {
+      setIsLoadingNetSuiteList(true)
+      setSelectedNetSuiteValue('')
+      setNetsuiteListItems([])
+      
+      fetch(`/api/netsuite/lists?field=${selectedNetSuiteField}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && data.items) {
+            setNetsuiteListItems(data.items)
+          } else {
+            console.error('Error fetching NetSuite list:', data.error)
+            setNetsuiteListItems([])
+          }
+        })
+        .catch(error => {
+          console.error('Error fetching NetSuite list:', error)
+          setNetsuiteListItems([])
+        })
+        .finally(() => {
+          setIsLoadingNetSuiteList(false)
+        })
+    } else if (selectedNetSuiteField && !fieldsWithDropdowns.includes(selectedNetSuiteField)) {
+      // Clear the value dropdown if field doesn't need it
+      setSelectedNetSuiteValue('')
+      setNetsuiteListItems([])
+    }
+  }, [selectedNetSuiteField, isAddNetSuiteMappingDialogOpen])
 
   // Order filters and single import state
   const [orderFilters, setOrderFilters] = useState({
@@ -305,6 +561,50 @@ export default function Home() {
   const [orderRangeEnd, setOrderRangeEnd] = useState('')
   const [payoutRangeStart, setPayoutRangeStart] = useState('')
   const [payoutRangeEnd, setPayoutRangeEnd] = useState('')
+
+  const fetchCustomers = async () => {
+    setIsLoadingCustomers(true)
+    try {
+      const response = await fetch('/api/customers?includeAddresses=true')
+      const data = await response.json()
+      if (response.ok && data.success) {
+        setCustomers(data.customers || [])
+        console.log(`✅ Loaded ${data.customers?.length || 0} customers from database`)
+      } else {
+        console.error('Error fetching customers:', data.error)
+      }
+    } catch (error) {
+      console.error('Error fetching customers:', error)
+    } finally {
+      setIsLoadingCustomers(false)
+    }
+  }
+
+  const fetchAddresses = async () => {
+    setIsLoadingAddresses(true)
+    try {
+      const params = new URLSearchParams()
+      if (addressTypeFilter !== 'all') {
+        params.append('addressType', addressTypeFilter)
+      }
+      if (hasNetSuiteIdFilter !== 'all') {
+        params.append('hasNetSuiteId', hasNetSuiteIdFilter)
+      }
+      
+      const response = await fetch(`/api/addresses?${params.toString()}`)
+      const data = await response.json()
+      if (response.ok && data.success) {
+        setAddresses(data.addresses || [])
+        console.log(`✅ Loaded ${data.addresses?.length || 0} addresses from database`)
+      } else {
+        console.error('Error fetching addresses:', data.error)
+      }
+    } catch (error) {
+      console.error('Error fetching addresses:', error)
+    } finally {
+      setIsLoadingAddresses(false)
+    }
+  }
 
   const fetchSavedPayouts = async () => {
     setIsLoadingSaved(true)
@@ -1010,9 +1310,94 @@ export default function Home() {
   }
 
   const pushOrderToNetSuite = async (orderId: string) => {
-    alert(`Push Order to NetSuite functionality coming soon! Order ID: ${orderId}`)
-    // TODO: Implement actual NetSuite integration for orders
-    // This would be similar to the payout push but for individual orders
+    // First, fetch the preview payload
+    setNetsuitePayloadDialog({
+      isOpen: true,
+      orderId,
+      payload: null,
+      isLoading: true,
+    })
+
+    try {
+      // Fetch preview payload
+      const previewResponse = await fetch(`/api/netsuite/push-order?shopifyOrderId=${orderId}`)
+      const previewData = await previewResponse.json()
+
+      if (previewResponse.ok && previewData.success) {
+        setNetsuitePayloadDialog({
+          isOpen: true,
+          orderId,
+          payload: previewData.payload,
+          customerInfo: previewData.customerInfo || null,
+          addressInfo: previewData.addressInfo || null,
+          isLoading: false,
+        })
+      } else {
+        alert(`❌ Failed to generate payload:\n\n${previewData.error || 'Unknown error'}`)
+        setNetsuitePayloadDialog({
+          isOpen: false,
+          orderId: null,
+          payload: null,
+          customerInfo: null,
+          addressInfo: null,
+          isLoading: false,
+        })
+      }
+    } catch (error) {
+      console.error('Error fetching payload preview:', error)
+      alert(`❌ Error fetching payload preview: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      setNetsuitePayloadDialog({
+        isOpen: false,
+        orderId: null,
+        payload: null,
+        isLoading: false,
+      })
+    }
+  }
+
+  const confirmPushToNetSuite = async () => {
+    if (!netsuitePayloadDialog.orderId) return
+
+    try {
+      const response = await fetch('/api/netsuite/push-order', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ shopifyOrderId: netsuitePayloadDialog.orderId }),
+      })
+
+      const data = await response.json()
+
+      // Close dialog
+      setNetsuitePayloadDialog({
+        isOpen: false,
+        orderId: null,
+        payload: null,
+        isLoading: false,
+      })
+
+      if (response.ok && data.success) {
+        alert(`✅ Successfully pushed order to NetSuite!\n\nSales Order ID: ${data.salesOrderId || 'N/A'}\nSales Order Name: ${data.salesOrderName || 'N/A'}${data.warnings && data.warnings.length > 0 ? `\n\nWarnings:\n${data.warnings.join('\n')}` : ''}`)
+        
+        // Refresh orders to show updated NetSuite IDs
+        await fetchOrders()
+      } else {
+        const errorMsg = data.error || 'Unknown error occurred'
+        const warnings = data.warnings && data.warnings.length > 0 ? `\n\nWarnings:\n${data.warnings.join('\n')}` : ''
+        alert(`❌ Failed to push order to NetSuite:\n\n${errorMsg}${warnings}`)
+        console.error('NetSuite push error:', data)
+      }
+    } catch (error) {
+      console.error('Error pushing order to NetSuite:', error)
+      alert(`❌ Error pushing order to NetSuite: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      setNetsuitePayloadDialog({
+        isOpen: false,
+        orderId: null,
+        payload: null,
+        isLoading: false,
+      })
+    }
   }
 
   const deleteOrder = async (orderId: string) => {
@@ -1237,6 +1622,15 @@ export default function Home() {
       const result = await response.json()
       if (result.success) {
         setOrderMappings(result.data)
+        // Pre-load field info for Custom mappings to show labels
+        for (const mapping of result.data) {
+          if (mapping.mappingType === 'Custom' && mapping.shopifyValue) {
+            const fieldId = mapping.customFieldId || mapping.netsuiteId
+            if (fieldId && !customFieldInfoCache[fieldId]) {
+              ensureCustomFieldInfoLoaded(fieldId)
+            }
+          }
+        }
       }
     } catch (error) {
       console.error('Error fetching order mappings:', error)
@@ -1437,7 +1831,15 @@ export default function Home() {
         // Refresh all data
         fetchSavedPayouts()
         setClearDbDialog({ isOpen: false, isClearing: false })
-        alert(`Database cleared successfully!\n\nDeleted:\n- ${data.stats.transactions} transactions\n- ${data.stats.payouts} payouts\n- ${data.stats.orderLines} order lines`)
+        const stats = data.stats || {}
+        alert(`Database cleared successfully!\n\nDeleted:\n- ${stats.transactions || 0} transactions\n- ${stats.payouts || 0} payouts\n- ${stats.orderLines || 0} order lines\n- ${stats.orders || 0} orders\n- ${stats.customerAddresses || 0} customer addresses\n- ${stats.customers || 0} customers`)
+        
+        // Refresh data if on relevant tabs
+        if (activeSection === 'customers') {
+          fetchCustomers()
+        } else if (activeSection === 'addresses') {
+          fetchAddresses()
+        }
       } else {
         console.error('Error clearing database:', data.error)
         alert(`Error clearing database: ${data.error || 'Unknown error'}`)
@@ -1493,6 +1895,19 @@ export default function Home() {
     fetchCustomerMappings()
     fetchPayoutMappings()
   }, [])
+
+  // Load customers and addresses when their sections are active
+  useEffect(() => {
+    if (activeSection === 'customers') {
+      fetchCustomers()
+    }
+  }, [activeSection])
+
+  useEffect(() => {
+    if (activeSection === 'addresses') {
+      fetchAddresses()
+    }
+  }, [activeSection, addressTypeFilter, hasNetSuiteIdFilter])
 
   // Detect missing mappings when orders are loaded
   useEffect(() => {
@@ -1684,8 +2099,9 @@ export default function Home() {
                     <Button 
                       onClick={() => fetchOrders(false)} 
                       disabled={true}
-                      className="flex items-center gap-2 h-9"
+                      className="flex items-center gap-2 h-9 opacity-50 cursor-not-allowed"
                       size="sm"
+                      title="Import Orders is currently disabled"
                     >
                       {isLoadingOrders ? <LoaderWithText text="Loading..." /> : (
                         <>
@@ -2639,6 +3055,12 @@ export default function Home() {
       case 'payouts':
         return renderPayoutsContent()
         
+      case 'customers':
+        return renderCustomersContent()
+        
+      case 'addresses':
+        return renderAddressesContent()
+        
       case 'mappings-orders':
         return renderMappingsOrdersContent()
         
@@ -2657,6 +3079,263 @@ export default function Home() {
       default:
         return renderPayoutsContent()
     }
+  }
+
+  const renderCustomersContent = () => {
+    const filteredCustomers = customers.filter((customer) => {
+      if (!customerSearchTerm) return true
+      const search = customerSearchTerm.toLowerCase()
+      return (
+        customer.email?.toLowerCase().includes(search) ||
+        customer.firstName?.toLowerCase().includes(search) ||
+        customer.lastName?.toLowerCase().includes(search) ||
+        customer.shopifyCustomerId?.toLowerCase().includes(search) ||
+        customer.netsuiteCustomerId?.toLowerCase().includes(search)
+      )
+    })
+
+    return (
+      <div className="space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Customers</CardTitle>
+            <p className="text-sm text-muted-foreground">View customer data synced from Shopify and NetSuite.</p>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-4 mb-6">
+              <Input
+                placeholder="Search by email, name, Shopify ID, or NetSuite ID..."
+                value={customerSearchTerm}
+                onChange={(e) => setCustomerSearchTerm(e.target.value)}
+                className="flex-1"
+              />
+              <Button onClick={fetchCustomers} disabled={isLoadingCustomers} variant="outline">
+                {isLoadingCustomers ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Refresh'}
+              </Button>
+            </div>
+
+            <div className="text-sm text-muted-foreground mb-4">
+              {filteredCustomers.length} of {customers.length} customers
+            </div>
+
+            {isLoadingCustomers ? (
+              <div className="text-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
+              </div>
+            ) : filteredCustomers.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                No customers found. Customers will appear here after importing orders.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredCustomers.map((customer) => (
+                  <Card key={customer.id} className="hover:shadow-md transition-shadow">
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <h4 className="font-semibold">
+                              {customer.firstName || customer.lastName
+                                ? `${customer.firstName || ''} ${customer.lastName || ''}`.trim()
+                                : 'Unknown Customer'}
+                            </h4>
+                            {customer.netsuiteCustomerId && (
+                              <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded">
+                                NS: {customer.netsuiteCustomerId}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm text-muted-foreground mb-2">{customer.email}</p>
+                          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                            <span>{customer.addressCount || 0} Address{customer.addressCount !== 1 ? 'es' : ''}</span>
+                            <span>{customer.orderCount || 0} Order{customer.orderCount !== 1 ? 's' : ''}</span>
+                            {customer.phone && <span>{customer.phone}</span>}
+                          </div>
+                          {expandedCustomerId === customer.id && customer.addresses && customer.addresses.length > 0 && (
+                            <div className="mt-4 pt-4 border-t">
+                              <p className="text-xs font-medium mb-2">Addresses:</p>
+                              <div className="space-y-2">
+                                {customer.addresses.map((addr: any) => (
+                                  <div key={addr.id} className="text-xs bg-slate-50 p-2 rounded">
+                                    <div className="flex items-center gap-3 mb-1 flex-wrap">
+                                      <div className="flex items-center gap-2">
+                                        <Checkbox checked={addr.isDefaultBilling} disabled className="h-3 w-3" />
+                                        <span className="text-xs">Billing</span>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <Checkbox checked={addr.isDefaultShipping} disabled className="h-3 w-3" />
+                                        <span className="text-xs">Shipping</span>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <Checkbox checked={addr.isSavedAddress} disabled className="h-3 w-3" />
+                                        <span className="text-xs">Saved</span>
+                                      </div>
+                                      {addr.netsuiteAddressId && (
+                                        <span className="text-indigo-600">NS: {addr.netsuiteAddressId}</span>
+                                      )}
+                                    </div>
+                                    <div className="text-muted-foreground">
+                                      {[addr.address1, addr.address2, addr.city, addr.province, addr.zip, addr.country]
+                                        .filter(Boolean)
+                                        .join(', ')}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            setExpandedCustomerId(expandedCustomerId === customer.id ? null : customer.id)
+                          }
+                        >
+                          {expandedCustomerId === customer.id ? <ChevronUp /> : <ChevronDown />}
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  const renderAddressesContent = () => {
+    const filteredAddresses = addresses.filter((address) => {
+      if (!addressSearchTerm) return true
+      const search = addressSearchTerm.toLowerCase()
+      return (
+        address.address1?.toLowerCase().includes(search) ||
+        address.city?.toLowerCase().includes(search) ||
+        address.zip?.toLowerCase().includes(search) ||
+        address.customer?.email?.toLowerCase().includes(search) ||
+        address.netsuiteAddressId?.toLowerCase().includes(search)
+      )
+    })
+
+    return (
+      <div className="space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Addresses</CardTitle>
+            <p className="text-sm text-muted-foreground">View customer addresses synced from Shopify and NetSuite.</p>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap items-center gap-4 mb-6">
+              <Input
+                placeholder="Search by address, city, zip, or customer email..."
+                value={addressSearchTerm}
+                onChange={(e) => setAddressSearchTerm(e.target.value)}
+                className="flex-1 min-w-[300px]"
+              />
+              <Select value={addressTypeFilter} onValueChange={setAddressTypeFilter}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Address Type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  <SelectItem value="billing">Billing</SelectItem>
+                  <SelectItem value="shipping">Shipping</SelectItem>
+                  <SelectItem value="saved">Saved</SelectItem>
+                  <SelectItem value="default">Default</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={hasNetSuiteIdFilter} onValueChange={setHasNetSuiteIdFilter}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="NetSuite ID" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="true">Has NS ID</SelectItem>
+                  <SelectItem value="false">Missing NS ID</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button onClick={fetchAddresses} disabled={isLoadingAddresses} variant="outline">
+                {isLoadingAddresses ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Refresh'}
+              </Button>
+            </div>
+
+            <div className="text-sm text-muted-foreground mb-4">
+              {filteredAddresses.length} of {addresses.length} addresses
+            </div>
+
+            {isLoadingAddresses ? (
+              <div className="text-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
+              </div>
+            ) : filteredAddresses.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                No addresses found. Addresses will appear here after importing orders.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredAddresses.map((address) => (
+                  <Card key={address.id} className="hover:shadow-md transition-shadow">
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-4 mb-2 flex-wrap">
+                            <div className="flex items-center gap-2">
+                              <Checkbox checked={address.isDefaultBilling} disabled className="h-4 w-4" />
+                              <span className="text-xs font-medium">Default Billing</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Checkbox checked={address.isDefaultShipping} disabled className="h-4 w-4" />
+                              <span className="text-xs font-medium">Default Shipping</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Checkbox checked={address.isSavedAddress} disabled className="h-4 w-4" />
+                              <span className="text-xs font-medium">Saved Address</span>
+                            </div>
+                            {address.netsuiteAddressId && (
+                              <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded">
+                                NS: {address.netsuiteAddressId}
+                              </span>
+                            )}
+                            {!address.netsuiteAddressId && (
+                              <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded">
+                                No NS ID
+                              </span>
+                            )}
+                          </div>
+                          <div className="mb-2">
+                            <p className="font-medium">
+                              {address.firstName || address.lastName
+                                ? `${address.firstName || ''} ${address.lastName || ''}`.trim()
+                                : address.name || 'Unknown'}
+                            </p>
+                            <p className="text-sm text-muted-foreground">
+                              {[address.address1, address.address2, address.city, address.province, address.zip, address.country]
+                                .filter(Boolean)
+                                .join(', ')}
+                            </p>
+                            {address.phone && <p className="text-xs text-muted-foreground mt-1">{address.phone}</p>}
+                          </div>
+                          {address.customer && (
+                            <div className="text-xs text-muted-foreground mt-2 pt-2 border-t">
+                              Customer: {address.customer.email || `${address.customer.firstName || ''} ${address.customer.lastName || ''}`.trim()}
+                              {address.customer.netsuiteCustomerId && (
+                                <span className="ml-2">(NS: {address.customer.netsuiteCustomerId})</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   const renderPayoutsContent = () => (
@@ -3560,43 +4239,245 @@ export default function Home() {
             <Button variant="outline" size="sm">
               <Database className="h-4 w-4 mr-2" /> Test mappings
             </Button>
-            <Button variant="outline" size="sm">Cancel</Button>
-            <Button className="bg-blue-600 hover:bg-blue-700 text-white" size="sm">Save</Button>
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => {
+                // Reset to saved state - reload from database
+                fetchOrderMappings()
+              }}
+            >
+              Cancel
+            </Button>
+            <Button 
+              className="bg-blue-600 hover:bg-blue-700 text-white" 
+              size="sm"
+              onClick={async () => {
+                try {
+                  // Save all mappings to database
+                  const response = await fetch('/api/mappings/order-fields', {
+                    method: 'PUT',
+                    headers: {
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ mappings: orderMappings }),
+                  })
+
+                  const result = await response.json()
+                  
+                  if (result.success) {
+                    alert(`✅ Successfully saved ${result.results?.length || orderMappings.length} mapping(s) to database!`)
+                    // Reload mappings from database to get updated IDs
+                    await fetchOrderMappings()
+                  } else {
+                    alert(`❌ Failed to save mappings: ${result.error || 'Unknown error'}`)
+                    console.error('Save error:', result)
+                  }
+                } catch (error) {
+                  console.error('Error saving mappings:', error)
+                  alert(`❌ Error saving mappings: ${error instanceof Error ? error.message : 'Unknown error'}`)
+                }
+              }}
+            >
+              Save
+            </Button>
           </div>
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-                  <div className="grid grid-cols-5 gap-4 p-4 bg-slate-50 rounded-lg text-sm font-medium text-slate-700">
+                  <div className="grid grid-cols-4 gap-4 p-4 bg-slate-50 rounded-lg text-sm font-medium text-slate-700">
               <div className="flex items-center space-x-2">
                 <span>Mapping type</span>
               </div>
               <div className="flex items-center space-x-2">
                 <Database className="h-4 w-4" />
-                <span>Shopify field / fixed value</span>
+                <span>Shopify field</span>
               </div>
               <div className="flex items-center space-x-2">
                 <Database className="h-4 w-4" />
                 <span>NetSuite field</span>
               </div>
-                    <div>Apply to all accounts</div>
                     <div>Delete</div>
                   </div>
             
                        {orderMappings.map((mapping, index) => (
-                         <div key={index} className="grid grid-cols-5 gap-4 p-4 border rounded-lg">
+                         <div key={mapping.id || index} className="grid grid-cols-4 gap-4 p-4 border rounded-lg">
                            <div className="flex items-center space-x-2">
-                             <input type="checkbox" defaultChecked className="w-4 h-4" />
-                             <div className="w-32 p-2 border rounded bg-gray-50 text-sm text-gray-500">
-                               Select disabled
+                             <input 
+                               type="checkbox" 
+                               checked={mapping.isActive} 
+                               onChange={(e) => {
+                                 const updated = [...orderMappings]
+                                 updated[index] = { ...updated[index], isActive: e.target.checked }
+                                 setOrderMappings(updated)
+                               }}
+                               className="w-4 h-4" 
+                             />
+                             <Select
+                               value={mapping.mappingType}
+                               onValueChange={(value) => {
+                                 const updated = [...orderMappings]
+                                 updated[index] = { 
+                                   ...updated[index], 
+                                   mappingType: value as 'Fixed' | 'Order Header' | 'Order Header with Translation' | 'Custom',
+                                   // Clear shopifyCode/shopifyValue when changing type
+                                   shopifyCode: undefined,
+                                   shopifyValue: undefined,
+                                 }
+                                 setOrderMappings(updated)
+                               }}
+                             >
+                               <SelectTrigger className="w-32">
+                                 <SelectValue />
+                               </SelectTrigger>
+                               <SelectContent>
+                                 <SelectItem value="Fixed">Fixed</SelectItem>
+                                 <SelectItem value="Order Header">Order Header</SelectItem>
+                                 <SelectItem value="Order Header with Translation">Order Header with Translation</SelectItem>
+                                 <SelectItem value="Custom">Custom</SelectItem>
+                               </SelectContent>
+                             </Select>
                              </div>
-                           </div>
-                           <div className="text-slate-700 font-mono text-sm">
-                             {mapping.shopifyCode || mapping.shopifyValue}
+                           <div className="flex items-center">
+                             {mapping.mappingType === 'Fixed' && fieldsWithDropdowns.includes(mapping.netsuiteId) ? (
+                               // For Fixed mappings with NetSuite dropdowns, show dropdown in Shopify column
+                               <Select
+                                 value={extractIdFromShopifyValue(mapping.shopifyValue) || undefined}
+                                 onValueChange={(value) => {
+                                   const listItems = netsuiteListCache[mapping.netsuiteId] || []
+                                   const selectedItem = listItems.find(item => item.id === value)
+                                   if (selectedItem) {
+                                     const updated = [...orderMappings]
+                                     updated[index] = {
+                                       ...updated[index],
+                                       shopifyValue: `${selectedItem.name} (IID: ${selectedItem.id})`,
+                                     }
+                                     setOrderMappings(updated)
+                                   }
+                                 }}
+                                 onOpenChange={(open) => {
+                                   if (open && mapping.netsuiteId && !netsuiteListCache[mapping.netsuiteId]) {
+                                     fetchNetSuiteListForField(mapping.netsuiteId)
+                                   }
+                                 }}
+                               >
+                                 <SelectTrigger className="w-full">
+                                   <SelectValue placeholder={loadingFields.has(mapping.netsuiteId) ? "Loading..." : "Select value..."}>
+                                     {(() => {
+                                       const selectedId = extractIdFromShopifyValue(mapping.shopifyValue)
+                                       if (selectedId && netsuiteListCache[mapping.netsuiteId]) {
+                                         const selectedItem = netsuiteListCache[mapping.netsuiteId].find(item => item.id === selectedId)
+                                         return selectedItem ? selectedItem.name : mapping.shopifyValue || "Select value..."
+                                       }
+                                       return mapping.shopifyValue || "Select value..."
+                                     })()}
+                                   </SelectValue>
+                                 </SelectTrigger>
+                                 <SelectContent>
+                                   {loadingFields.has(mapping.netsuiteId) ? (
+                                     <div className="px-2 py-1.5 text-sm text-slate-500">Loading...</div>
+                                   ) : netsuiteListCache[mapping.netsuiteId]?.length > 0 ? (
+                                     netsuiteListCache[mapping.netsuiteId].map((item) => (
+                                       <SelectItem key={item.id} value={item.id}>
+                                         {item.name} (IID: {item.id})
+                                       </SelectItem>
+                                     ))
+                                   ) : (
+                                     <div className="px-2 py-1.5 text-sm text-slate-500">No items available</div>
+                                   )}
+                                 </SelectContent>
+                               </Select>
+                             ) : mapping.mappingType === 'Fixed' ? (
+                               // If NetSuite field has a list, show dropdown; otherwise show text input
+                               fieldsWithDropdowns.includes(mapping.netsuiteId) ? (
+                                 <div className="text-slate-400 italic text-sm p-2 w-full">
+                                   Select value from NetSuite list above
+                                 </div>
+                               ) : (
+                                 <Input
+                                   placeholder="Enter fixed value..."
+                                   value={mapping.shopifyValue || ''}
+                                   onChange={(e) => {
+                                     const updated = [...orderMappings]
+                                     updated[index] = { ...updated[index], shopifyValue: e.target.value, shopifyCode: undefined }
+                                     setOrderMappings(updated)
+                                   }}
+                                   className="w-full"
+                                 />
+                               )
+                             ) : mapping.mappingType === 'Custom' ? (
+                               // For Custom mappings, show label with value if available
+                               <div className="text-slate-700 text-sm p-2 border rounded bg-slate-50 w-full">
+                                 {getCustomFieldDisplayText(mapping)}
+                               </div>
+                             ) : mapping.mappingType === 'Order Header' || mapping.mappingType === 'Order Header with Translation' ? (
+                               <Select
+                                 value={mapping.shopifyCode || ''}
+                                 onValueChange={(value) => {
+                                   if (value === 'custom') {
+                                     // Open custom Shopify field selector
+                                     setEditingMappingIndex(index)
+                                     setIsCustomShopifyFieldDialogOpen(true)
+                                   } else {
+                                     const updated = [...orderMappings]
+                                     updated[index] = { ...updated[index], shopifyCode: value, shopifyValue: undefined }
+                                     setOrderMappings(updated)
+                                   }
+                                 }}
+                               >
+                                 <SelectTrigger className="w-full">
+                                   <SelectValue placeholder="Select Shopify field..." />
+                                 </SelectTrigger>
+                                 <SelectContent>
+                                   <SelectItem value="id">Order ID</SelectItem>
+                                   <SelectItem value="name">Order Name</SelectItem>
+                                   <SelectItem value="order_number">Order Number</SelectItem>
+                                   <SelectItem value="created_at">Created At</SelectItem>
+                                   <SelectItem value="updated_at">Updated At</SelectItem>
+                                   <SelectItem value="financial_status">Financial Status</SelectItem>
+                                   <SelectItem value="fulfillment_status">Fulfillment Status</SelectItem>
+                                   <SelectItem value="currency">Currency</SelectItem>
+                                   <SelectItem value="total_price">Total Price</SelectItem>
+                                   <SelectItem value="subtotal_price">Subtotal Price</SelectItem>
+                                   <SelectItem value="total_tax">Total Tax</SelectItem>
+                                   <SelectItem value="total_shipping_price_set">Shipping Price</SelectItem>
+                                   <SelectItem value="total_discounts">Total Discounts</SelectItem>
+                                   <SelectItem value="payment_gateway_names">Payment Gateway</SelectItem>
+                                   <SelectItem value="customer.id">Customer ID</SelectItem>
+                                   <SelectItem value="customer.email">Customer Email</SelectItem>
+                                   <SelectItem value="shipping_address.address1">Shipping Address 1</SelectItem>
+                                   <SelectItem value="shipping_address.city">Shipping City</SelectItem>
+                                   <SelectItem value="shipping_address.zip">Shipping Zip</SelectItem>
+                                   <SelectItem value="custom">Custom Field...</SelectItem>
+                                 </SelectContent>
+                               </Select>
+                             ) : (
+                               <Input
+                                 placeholder="Enter custom value..."
+                                 value={mapping.shopifyValue || mapping.shopifyCode || ''}
+                                 onChange={(e) => {
+                                   const updated = [...orderMappings]
+                                   updated[index] = { ...updated[index], shopifyValue: e.target.value, shopifyCode: undefined }
+                                   setOrderMappings(updated)
+                                 }}
+                                 className="w-full"
+                               />
+                             )}
                            </div>
                            <div className="flex flex-col space-y-2">
                              <div className="flex items-center space-x-2">
                                <span className="text-slate-400">→</span>
-                               <span className="text-slate-600 font-mono text-sm">{mapping.netsuiteId}</span>
+                               <div className="flex items-center space-x-2 w-full">
+                                 {mapping.netsuiteId ? (
+                                   <div className="text-slate-700 font-mono text-sm p-2 border rounded bg-slate-50 w-full">
+                                     {mapping.netsuiteId}
+                                   </div>
+                                 ) : (
+                                   <div className="text-slate-400 italic text-sm p-2 w-full">
+                                     Click "Add row" to set NetSuite field
+                                   </div>
+                                 )}
+                               </div>
                              </div>
                              {/* Show custom field input when "Custom" is selected */}
                              {mapping.mappingType === 'Custom' && (
@@ -3604,18 +4485,16 @@ export default function Home() {
                                  <span className="text-sm text-slate-600">Custom field ID:</span>
                                  <Input 
                                    placeholder="e.g., custbody_custom_field"
-                                   value={customFields[`order-${index}`] || ''}
-                                   onChange={(e) => handleCustomFieldChange(`order-${index}`, e.target.value)}
+                                   value={customFields[`order-${index}`] || mapping.customFieldId || ''}
+                                   onChange={(e) => {
+                                     handleCustomFieldChange(`order-${index}`, e.target.value)
+                                     const updated = [...orderMappings]
+                                     updated[index] = { ...updated[index], customFieldId: e.target.value }
+                                     setOrderMappings(updated)
+                                   }}
                                    className="w-full"
                                  />
                                </div>
-                             )}
-                           </div>
-                           <div className="flex items-center">
-                             {mapping.applyToAllAccounts === 'N/A' ? (
-                               <span className="text-slate-500 text-sm">N/A</span>
-                             ) : (
-                               <input type="checkbox" defaultChecked={Boolean(mapping.applyToAllAccounts)} className="w-4 h-4" />
                              )}
                            </div>
                            <div className="flex items-center justify-center">
@@ -3628,7 +4507,16 @@ export default function Home() {
           </div>
           <div className="flex justify-between items-center mt-4">
             <a href="#" className="text-sm text-blue-600 hover:underline">Need help?</a>
-            <Button variant="outline">
+            <Button 
+              variant="outline"
+              onClick={() => {
+                setIsAddNetSuiteMappingDialogOpen(true)
+                setSelectedNetSuiteField('')
+                setCustomNetSuiteFieldName('')
+                setSelectedNetSuiteValue('')
+                setNetsuiteListItems([])
+              }}
+            >
               <Database className="h-4 w-4 mr-2" /> Add row
             </Button>
           </div>
@@ -4247,6 +5135,180 @@ export default function Home() {
         </DialogContent>
       </Dialog>
 
+      {/* NetSuite Payload Preview Dialog */}
+      <Dialog open={netsuitePayloadDialog.isOpen} onOpenChange={(open) => {
+        if (!open) {
+          setNetsuitePayloadDialog({
+            isOpen: false,
+            orderId: null,
+            payload: null,
+            isLoading: false,
+          })
+        }
+      }}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>NetSuite Sales Order Payload Preview</DialogTitle>
+          </DialogHeader>
+          {netsuitePayloadDialog.isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader />
+              <span className="ml-2">Generating payload...</span>
+            </div>
+          ) : netsuitePayloadDialog.payload ? (
+            <div className="space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <p className="text-sm text-blue-800">
+                  <strong>Order ID:</strong> {netsuitePayloadDialog.orderId}
+                </p>
+                <p className="text-xs text-blue-600 mt-1">
+                  Review the JSON payload below. Click "Push to NetSuite" to send this order.
+                </p>
+              </div>
+
+              {/* Customer Info */}
+              {netsuitePayloadDialog.customerInfo && (
+                <div>
+                  <h3 className="font-semibold mb-2">Customer Information</h3>
+                  <div className="bg-gray-50 border border-gray-200 p-4 rounded-lg">
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className="text-muted-foreground">Name:</span>{' '}
+                        <strong>{netsuitePayloadDialog.customerInfo.firstName} {netsuitePayloadDialog.customerInfo.lastName}</strong>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Email:</span>{' '}
+                        <strong>{netsuitePayloadDialog.customerInfo.email}</strong>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Shopify Customer ID:</span>{' '}
+                        <strong>{netsuitePayloadDialog.customerInfo.shopifyCustomerId}</strong>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">NetSuite Customer ID:</span>{' '}
+                        <strong className={netsuitePayloadDialog.customerInfo.netsuiteCustomerId ? 'text-green-600' : 'text-red-600'}>
+                          {netsuitePayloadDialog.customerInfo.netsuiteCustomerId || 'Not Found'}
+                        </strong>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Address Info */}
+              {netsuitePayloadDialog.addressInfo && (
+                <div>
+                  <h3 className="font-semibold mb-2">Address Information</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {netsuitePayloadDialog.addressInfo.billing && (
+                      <div className="bg-gray-50 border border-gray-200 p-4 rounded-lg">
+                        <h4 className="font-medium mb-2 text-sm">Billing Address</h4>
+                        <div className="text-xs space-y-1">
+                          <div>
+                            <span className="text-muted-foreground">NetSuite Address ID:</span>{' '}
+                            <strong className={netsuitePayloadDialog.addressInfo.billing.netsuiteAddressId ? 'text-green-600' : 'text-orange-600'}>
+                              {netsuitePayloadDialog.addressInfo.billing.netsuiteAddressId || 'Not Found (will use customer default)'}
+                            </strong>
+                          </div>
+                          <div>
+                            <strong>{netsuitePayloadDialog.addressInfo.billing.firstName} {netsuitePayloadDialog.addressInfo.billing.lastName}</strong>
+                          </div>
+                          <div>{netsuitePayloadDialog.addressInfo.billing.address1}</div>
+                          {netsuitePayloadDialog.addressInfo.billing.address2 && (
+                            <div>{netsuitePayloadDialog.addressInfo.billing.address2}</div>
+                          )}
+                          <div>
+                            {netsuitePayloadDialog.addressInfo.billing.city}, {netsuitePayloadDialog.addressInfo.billing.province} {netsuitePayloadDialog.addressInfo.billing.zip}
+                          </div>
+                          <div>{netsuitePayloadDialog.addressInfo.billing.country}</div>
+                          {netsuitePayloadDialog.addressInfo.billing.phone && (
+                            <div>Phone: {netsuitePayloadDialog.addressInfo.billing.phone}</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    {netsuitePayloadDialog.addressInfo.shipping && (
+                      <div className="bg-gray-50 border border-gray-200 p-4 rounded-lg">
+                        <h4 className="font-medium mb-2 text-sm">Shipping Address</h4>
+                        <div className="text-xs space-y-1">
+                          <div>
+                            <span className="text-muted-foreground">NetSuite Address ID:</span>{' '}
+                            <strong className={netsuitePayloadDialog.addressInfo.shipping.netsuiteAddressId ? 'text-green-600' : 'text-orange-600'}>
+                              {netsuitePayloadDialog.addressInfo.shipping.netsuiteAddressId || 'Not Found (will use customer default)'}
+                            </strong>
+                          </div>
+                          <div>
+                            <strong>{netsuitePayloadDialog.addressInfo.shipping.firstName} {netsuitePayloadDialog.addressInfo.shipping.lastName}</strong>
+                          </div>
+                          <div>{netsuitePayloadDialog.addressInfo.shipping.address1}</div>
+                          {netsuitePayloadDialog.addressInfo.shipping.address2 && (
+                            <div>{netsuitePayloadDialog.addressInfo.shipping.address2}</div>
+                          )}
+                          <div>
+                            {netsuitePayloadDialog.addressInfo.shipping.city}, {netsuitePayloadDialog.addressInfo.shipping.province} {netsuitePayloadDialog.addressInfo.shipping.zip}
+                          </div>
+                          <div>{netsuitePayloadDialog.addressInfo.shipping.country}</div>
+                          {netsuitePayloadDialog.addressInfo.shipping.phone && (
+                            <div>Phone: {netsuitePayloadDialog.addressInfo.shipping.phone}</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <h3 className="font-semibold mb-2">NetSuite JSON Payload</h3>
+                <div className="bg-white border border-gray-200 p-4 rounded-lg overflow-x-auto">
+                  <JsonView
+                    value={netsuitePayloadDialog.payload}
+                    style={{
+                      backgroundColor: 'transparent',
+                      fontSize: '12px',
+                    }}
+                    theme="light"
+                    collapsed={false}
+                    displayDataTypes={false}
+                    displayObjectSize={false}
+                    enableClipboard={true}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Click arrows to expand/collapse sections. Use the copy button to copy the JSON.
+                </p>
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-4">
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    setNetsuitePayloadDialog({
+                      isOpen: false,
+                      orderId: null,
+                      payload: null,
+                      isLoading: false,
+                    })
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  onClick={confirmPushToNetSuite}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  Push to NetSuite
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              No payload data available
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* Delete Confirmation Dialog */}
       <Dialog open={deleteConfirmDialog.isOpen} onOpenChange={closeDeleteConfirmDialog}>
         <DialogContent>
@@ -4286,9 +5348,9 @@ export default function Home() {
               Are you sure you want to clear the entire database? This will permanently delete:
             </p>
             <ul className="list-disc list-inside text-slate-600 space-y-1">
-              <li>All payouts</li>
-              <li>All transactions</li>
-              <li>All order lines</li>
+              <li>All payouts and transactions</li>
+              <li>All orders and order lines</li>
+              <li>All customers and customer addresses</li>
             </ul>
             <p className="text-sm font-semibold text-red-600">
               ⚠️ This action cannot be undone!
@@ -4323,9 +5385,410 @@ export default function Home() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Add NetSuite Mapping Dialog */}
+      <Dialog open={isAddNetSuiteMappingDialogOpen} onOpenChange={setIsAddNetSuiteMappingDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add NetSuite Mapping</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium text-slate-700 mb-2 block">
+                NetSuite Field
+              </label>
+              <Select 
+                value={selectedNetSuiteField} 
+                onValueChange={(value) => {
+                  setSelectedNetSuiteField(value)
+                  setCustomNetSuiteFieldName('')
+                  // If not custom, auto-close and create mapping
+                  if (value && value !== 'Custom field') {
+                    const netsuiteId = value
+                    const newMapping: OrderFieldMapping = {
+                      id: `temp-${Date.now()}`,
+                      mappingType: 'Fixed',
+                      shopifyValue: '',
+                      netsuiteId: netsuiteId,
+                      applyToAllAccounts: true,
+                      isActive: true,
+                    }
+                    setOrderMappings([...orderMappings, newMapping])
+                    setIsAddNetSuiteMappingDialogOpen(false)
+                    setSelectedNetSuiteField('')
+                    setSelectedNetSuiteValue('')
+                    setNetsuiteListItems([])
+                  }
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a NetSuite field..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Custom field">Custom field</SelectItem>
+                  <SelectItem value="account">Account (Only for CashSale/Invoice)</SelectItem>
+                  <SelectItem value="authCode">Auth. Code</SelectItem>
+                  <SelectItem value="billingSchedule">Billing Schedule</SelectItem>
+                  <SelectItem value="ccType">CC Type</SelectItem>
+                  <SelectItem value="class">Class</SelectItem>
+                  <SelectItem value="creditCardProcessingProfile">Credit Card Processing Profile</SelectItem>
+                  <SelectItem value="currency">Currency</SelectItem>
+                  <SelectItem value="customForm">Custom Form</SelectItem>
+                  <SelectItem value="date">Date</SelectItem>
+                  <SelectItem value="department">Department</SelectItem>
+                  <SelectItem value="discountItem">Discount Item</SelectItem>
+                  <SelectItem value="drAccount">Undeposited Funds (Only for CashSale/Invoice)</SelectItem>
+                  <SelectItem value="email">Email</SelectItem>
+                  <SelectItem value="endDate">End Date</SelectItem>
+                  <SelectItem value="excludeCommission">Exclude Commissions</SelectItem>
+                  <SelectItem value="getAuthorization">Get Authorization</SelectItem>
+                  <SelectItem value="handlingMode">Handling Mode</SelectItem>
+                  <SelectItem value="isResidential">Is Residential</SelectItem>
+                  <SelectItem value="leadSource">Lead Source</SelectItem>
+                  <SelectItem value="location">Location</SelectItem>
+                  <SelectItem value="memo">Memo</SelectItem>
+                  <SelectItem value="opportunity">Opportunity</SelectItem>
+                  <SelectItem value="orderStatus">Order Status</SelectItem>
+                  <SelectItem value="orderType">Record Type</SelectItem>
+                  <SelectItem value="otherRefNum">PO #</SelectItem>
+                  <SelectItem value="partner">Partner</SelectItem>
+                  <SelectItem value="payPalAuthId">PayPal Authorization ID</SelectItem>
+                  <SelectItem value="payPalTranId">PayPal Transaction ID</SelectItem>
+                  <SelectItem value="paymentOperation">Payment Operation</SelectItem>
+                  <SelectItem value="paymentOption">Payment Option</SelectItem>
+                  <SelectItem value="salesRep">Sales Rep</SelectItem>
+                  <SelectItem value="shipComplete">Ship Complete</SelectItem>
+                  <SelectItem value="shipDate">Ship Date</SelectItem>
+                  <SelectItem value="shippingCost">Shipping Cost</SelectItem>
+                  <SelectItem value="startDate">Start Date</SelectItem>
+                  <SelectItem value="status">Status</SelectItem>
+                  <SelectItem value="subsidiary">Subsidiary</SelectItem>
+                  <SelectItem value="terms">Terms</SelectItem>
+                  <SelectItem value="toBeEmailed">To Be Emailed</SelectItem>
+                  <SelectItem value="toBeFaxed">To Be Faxed</SelectItem>
+                  <SelectItem value="toBePrinted">To Be Printed</SelectItem>
+                  <SelectItem value="tranDate">Transaction Date</SelectItem>
+                  <SelectItem value="tranId">Order #</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            
+            {/* Show custom field input when "Custom field" is selected */}
+            {selectedNetSuiteField === 'Custom field' && (
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-slate-700 mb-2 block">
+                    Custom Field Name
+                  </label>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="e.g., custbody_sales_order_urgency"
+                      value={customNetSuiteFieldName}
+                      onChange={(e) => {
+                        setCustomNetSuiteFieldName(e.target.value)
+                        setCustomFieldInfo(null)
+                        setCustomFieldValue('')
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && customNetSuiteFieldName.trim()) {
+                          handleFetchCustomFieldInfo()
+                        }
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      onClick={handleFetchCustomFieldInfo}
+                      disabled={!customNetSuiteFieldName.trim() || isLoadingCustomFieldInfo}
+                    >
+                      {isLoadingCustomFieldInfo ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        'Query'
+                      )}
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Show field info and appropriate input based on field type */}
+                {isLoadingCustomFieldInfo && (
+                  <div className="p-4 border rounded-lg text-center text-slate-500">
+                    <Loader2 className="h-4 w-4 animate-spin inline-block mr-2" />
+                    Querying NetSuite...
+                  </div>
+                )}
+
+                {customFieldInfo && (
+                  <div className="space-y-4">
+                    <div className="text-sm text-slate-600">
+                      Field Type: <span className="font-medium">{customFieldInfo.fieldType}</span>
+                    </div>
+
+                    {/* Select dropdown */}
+                    {customFieldInfo.fieldType === 'select' && customFieldInfo.listItems.length > 0 && (
+                      <div>
+                        <label className="text-sm font-medium text-slate-700 mb-2 block">
+                          Select Value
+                        </label>
+                        <Select value={customFieldValue} onValueChange={setCustomFieldValue}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select a value..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {customFieldInfo.listItems.map((item) => (
+                              <SelectItem key={item.value} value={item.value}>
+                                {item.text}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+
+                    {/* Date input */}
+                    {customFieldInfo.fieldType === 'date' && (
+                      <div>
+                        <label className="text-sm font-medium text-slate-700 mb-2 block">
+                          Date Value
+                        </label>
+                        <Input
+                          type="date"
+                          value={customFieldValue}
+                          onChange={(e) => setCustomFieldValue(e.target.value)}
+                        />
+                      </div>
+                    )}
+
+                    {/* Text input */}
+                    {(customFieldInfo.fieldType === 'text' || 
+                      customFieldInfo.fieldType === 'integer' || 
+                      customFieldInfo.fieldType === 'currency' || 
+                      customFieldInfo.fieldType === 'percent') && (
+                      <div>
+                        <label className="text-sm font-medium text-slate-700 mb-2 block">
+                          {customFieldInfo.fieldType === 'integer' ? 'Integer Value' :
+                           customFieldInfo.fieldType === 'currency' ? 'Currency Value' :
+                           customFieldInfo.fieldType === 'percent' ? 'Percent Value' :
+                           'Text Value'}
+                        </label>
+                        <Input
+                          type={customFieldInfo.fieldType === 'integer' ? 'number' : 'text'}
+                          placeholder={`Enter ${customFieldInfo.fieldType} value...`}
+                          value={customFieldValue}
+                          onChange={(e) => setCustomFieldValue(e.target.value)}
+                        />
+                      </div>
+                    )}
+
+                    {/* Checkbox */}
+                    {customFieldInfo.fieldType === 'checkbox' && (
+                      <div>
+                        <label className="text-sm font-medium text-slate-700 mb-2 block">
+                          Checkbox Value
+                        </label>
+                        <div className="flex items-center space-x-2">
+                          <Checkbox
+                            checked={customFieldValue === 'true'}
+                            onCheckedChange={(checked) => setCustomFieldValue(checked ? 'true' : 'false')}
+                          />
+                          <span className="text-sm text-slate-600">Checked</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* No options available for select */}
+                    {customFieldInfo.fieldType === 'select' && customFieldInfo.listItems.length === 0 && (
+                      <div className="p-4 border rounded-lg text-center text-slate-500">
+                        No options available for this select field
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {/* Show value dropdown for fields that require lookups */}
+            {selectedNetSuiteField && selectedNetSuiteField !== 'Custom field' && fieldsWithDropdowns.includes(selectedNetSuiteField) && (
+              <div>
+                <label className="text-sm font-medium text-slate-700 mb-2 block">
+                  {selectedNetSuiteField.charAt(0).toUpperCase() + selectedNetSuiteField.slice(1)} Value
+                </label>
+                {isLoadingNetSuiteList ? (
+                  <div className="p-4 border rounded-lg text-center text-slate-500">
+                    Loading {selectedNetSuiteField} options...
+                  </div>
+                ) : netsuiteListItems.length > 0 ? (
+                  <Select value={selectedNetSuiteValue} onValueChange={setSelectedNetSuiteValue}>
+                    <SelectTrigger>
+                      <SelectValue placeholder={`Select a ${selectedNetSuiteField}...`} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {netsuiteListItems.map((item) => (
+                        <SelectItem key={item.id} value={item.id}>
+                          {item.name} (IID: {item.id})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div className="p-4 border rounded-lg text-center text-slate-500">
+                    No {selectedNetSuiteField} options available
+                  </div>
+                )}
+              </div>
+            )}
+            
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsAddNetSuiteMappingDialogOpen(false)
+                  setSelectedNetSuiteField('')
+                  setCustomNetSuiteFieldName('')
+                  setSelectedNetSuiteValue('')
+                  setNetsuiteListItems([])
+                  setEditingMappingIndex(null)
+                  setCustomFieldInfo(null)
+                  setCustomFieldValue('')
+                }}
+              >
+                Cancel
+              </Button>
+              {selectedNetSuiteField === 'Custom field' && (
+                <Button
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                  onClick={() => {
+                    if (!customNetSuiteFieldName.trim()) {
+                      alert('Please enter a custom field name')
+                      return
+                    }
+
+                    // For select fields, require a value to be selected
+                    if (customFieldInfo?.fieldType === 'select' && !customFieldValue) {
+                      alert('Please select a value from the dropdown')
+                      return
+                    }
+
+                    // For other field types, use the entered value or empty string
+                    const netsuiteValue = customFieldValue || ''
+                    
+                    const newMapping: OrderFieldMapping = {
+                      id: `temp-${Date.now()}`,
+                      mappingType: 'Custom',
+                      shopifyValue: netsuiteValue, // Store the selected/entered value
+                      netsuiteId: customNetSuiteFieldName.trim(),
+                      applyToAllAccounts: true,
+                      isActive: true,
+                      customFieldId: customNetSuiteFieldName.trim(),
+                    }
+                    setOrderMappings([...orderMappings, newMapping])
+                    setIsAddNetSuiteMappingDialogOpen(false)
+                    setSelectedNetSuiteField('')
+                    setCustomNetSuiteFieldName('')
+                    setSelectedNetSuiteValue('')
+                    setNetsuiteListItems([])
+                    setCustomFieldInfo(null)
+                    setCustomFieldValue('')
+                  }}
+                  disabled={!customNetSuiteFieldName.trim() || (customFieldInfo?.fieldType === 'select' && !customFieldValue)}
+                >
+                  Add Mapping
+                </Button>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Custom Shopify Field Selector Dialog */}
+      <Dialog open={isCustomShopifyFieldDialogOpen} onOpenChange={setIsCustomShopifyFieldDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Map Custom Order Field</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="text-sm font-medium text-slate-700 mb-2 block">Order Id</label>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="#42395"
+                    value={customShopifyOrderId}
+                    onChange={(e) => setCustomShopifyOrderId(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && customShopifyOrderId.trim()) {
+                        handleFetchCustomShopifyOrder()
+                      }
+                    }}
+                  />
+                  <Button
+                    onClick={handleFetchCustomShopifyOrder}
+                    disabled={!customShopifyOrderId.trim() || isLoadingCustomShopifyOrder}
+                  >
+                    {isLoadingCustomShopifyOrder ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Load'}
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            <p className="text-sm text-slate-600">
+              Below is the field data for this order. Any mapping you add will only apply to orders imported after the mapping is saved. 
+              Note that this tool is in beta; please report any issues you encounter using it. 
+              If you're mapping an order line field, please be aware that only the first item's data from the order is shown for simplicity.
+            </p>
+
+            {customShopifyOrderData && (
+              <div className="border rounded-lg overflow-hidden">
+                <div className="bg-slate-50 p-2 border-b flex justify-between items-center">
+                  <span className="text-sm font-medium">Field</span>
+                  <span className="text-sm font-medium">Value</span>
+                </div>
+                <div className="max-h-96 overflow-y-auto">
+                  {Object.entries(flattenObject(customShopifyOrderData)).map(([field, value]) => (
+                    <div
+                      key={field}
+                      className="grid grid-cols-2 gap-4 p-2 border-b hover:bg-slate-50 cursor-pointer"
+                      onClick={() => {
+                        if (editingMappingIndex !== null && editingMappingIndex >= 0 && editingMappingIndex < orderMappings.length) {
+                          const updated = [...orderMappings]
+                          updated[editingMappingIndex] = {
+                            ...updated[editingMappingIndex],
+                            shopifyCode: field,
+                            shopifyValue: undefined,
+                          }
+                          setOrderMappings(updated)
+                          setIsCustomShopifyFieldDialogOpen(false)
+                          setCustomShopifyOrderId('')
+                          setCustomShopifyOrderData(null)
+                          setEditingMappingIndex(null)
+                        }
+                      }}
+                    >
+                      <div className="font-mono text-sm">{field}</div>
+                      <div className="text-sm text-slate-600 truncate">{String(value)}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsCustomShopifyFieldDialogOpen(false)
+                  setCustomShopifyOrderId('')
+                  setCustomShopifyOrderData(null)
+                  setEditingMappingIndex(null)
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
-
 }
 
 

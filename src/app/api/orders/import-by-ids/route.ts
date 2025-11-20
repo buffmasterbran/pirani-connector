@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { flattenShopifyOrder } from '@/lib/shopify'
+import { flattenShopifyOrder, saveCustomerAndAddresses } from '@/lib/shopify'
 
 const SHOPIFY_STORE_URL = process.env.SHOPIFY_STORE_URL || 'https://pirani-life.myshopify.com'
 const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || ''
@@ -48,6 +48,14 @@ export async function POST(request: NextRequest) {
         if (!rawOrder) {
           errors.push(`Order ${orderId}: Order not found in response`)
           continue
+        }
+
+        // Save customer and addresses first
+        try {
+          await saveCustomerAndAddresses(rawOrder)
+        } catch (error) {
+          console.warn(`⚠️ Error saving customer/addresses for order ${orderId}:`, error)
+          // Continue with order import even if customer save fails
         }
 
         // Save order using existing logic

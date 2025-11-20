@@ -55,6 +55,36 @@ export interface NetSuiteTransactionRequest {
   payments?: string[] // Array of order names for payments
 }
 
+export interface NetSuiteCustomer {
+  id: string // NetSuite Internal ID
+  email: string
+  custentity_customer_category?: string
+  [key: string]: any // Allow additional fields
+}
+
+export interface NetSuiteAddress {
+  id: string // NetSuite Internal ID (addressbookaddress)
+  entity: string // Customer Internal ID
+  address1?: string
+  address2?: string
+  city?: string
+  state?: string
+  zip?: string
+  country?: string
+  defaultbilling?: boolean
+  defaultshipping?: boolean
+  [key: string]: any // Allow additional fields
+}
+
+export interface NetSuiteSuiteQLResponse<T = any> {
+  links: Array<{ rel: string; href: string }>
+  count: number
+  hasMore: boolean
+  items: T[]
+  offset: number
+  totalResults: number
+}
+
 /**
  * Percent-encodes a string according to RFC 3986
  */
@@ -254,5 +284,264 @@ export function matchNetSuiteTransactions(
   }
 
   return matches
+}
+
+/**
+ * Queries NetSuite SuiteQL API to find a customer by email
+ * NetSuite customers are identified by email addresses
+ */
+export async function findNetSuiteCustomerByEmail(email: string): Promise<NetSuiteCustomer | null> {
+  if (!NETSUITE_CONSUMER_KEY || !NETSUITE_CONSUMER_SECRET || !NETSUITE_TOKEN_ID || !NETSUITE_TOKEN_SECRET) {
+    throw new Error(
+      'NetSuite OAuth credentials not fully configured. Please set NETSUITE_CONSUMER_KEY, NETSUITE_CONSUMER_SECRET, NETSUITE_TOKEN_ID, and NETSUITE_TOKEN_SECRET'
+    )
+  }
+
+  if (!email || !email.trim()) {
+    return null
+  }
+
+  // Escape single quotes in email for SQL query
+  const escapedEmail = email.replace(/'/g, "''")
+  
+  // Build SuiteQL query
+  const query = `SELECT id, email, custentity_customer_category FROM customer WHERE email = '${escapedEmail}'`
+  
+  // SuiteQL API endpoint
+  const suiteqlUrl = `https://${NETSUITE_ACCOUNT_ID}.suitetalk.api.netsuite.com/services/rest/query/v1/suiteql`
+  
+  // Generate OAuth header
+  const authorization = generateOAuthHeader('POST', suiteqlUrl)
+
+  try {
+    const response = await fetch(suiteqlUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Prefer': 'transient',
+        'Authorization': authorization,
+        'Accept': '*/*',
+      },
+      body: JSON.stringify({ q: query }),
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`NetSuite SuiteQL API error ${response.status}: ${errorText}`)
+    }
+
+    const data = (await response.json()) as NetSuiteSuiteQLResponse<NetSuiteCustomer>
+
+    // Return the first customer found, or null if none
+    if (data.items && data.items.length > 0) {
+      return data.items[0]
+    }
+
+    return null
+  } catch (error) {
+    console.error('Error querying NetSuite customer by email:', error)
+    throw error
+  }
+}
+
+/**
+ * Queries NetSuite SuiteQL API to find addresses for a customer by NetSuite customer ID
+ * Returns all addresses associated with the customer
+ */
+export async function findNetSuiteAddressesByCustomerId(netsuiteCustomerId: string): Promise<NetSuiteAddress[]> {
+  if (!NETSUITE_CONSUMER_KEY || !NETSUITE_CONSUMER_SECRET || !NETSUITE_TOKEN_ID || !NETSUITE_TOKEN_SECRET) {
+    throw new Error(
+      'NetSuite OAuth credentials not fully configured. Please set NETSUITE_CONSUMER_KEY, NETSUITE_CONSUMER_SECRET, NETSUITE_TOKEN_ID, and NETSUITE_TOKEN_SECRET'
+    )
+  }
+
+  if (!netsuiteCustomerId || !netsuiteCustomerId.trim()) {
+    return []
+  }
+
+  // Escape single quotes in customer ID for SQL query
+  const escapedCustomerId = netsuiteCustomerId.replace(/'/g, "''")
+  
+  // Build SuiteQL query to get addresses for the customer
+  // NetSuite stores addresses in entityaddressbook joined with entityaddress
+  const query = `SELECT eab.addressbookaddress AS id, eab.entity, ea.addr1 AS address1, ea.addr2 AS address2, ea.city, ea.state, ea.zip, ea.country, eab.defaultbilling, eab.defaultshipping FROM entityaddressbook eab JOIN entityaddress ea ON ea.nkey = eab.addressbookaddress WHERE eab.entity = '${escapedCustomerId}'`
+  
+  // SuiteQL API endpoint
+  const suiteqlUrl = `https://${NETSUITE_ACCOUNT_ID}.suitetalk.api.netsuite.com/services/rest/query/v1/suiteql`
+  
+  // Generate OAuth header
+  const authorization = generateOAuthHeader('POST', suiteqlUrl)
+
+  try {
+    const response = await fetch(suiteqlUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Prefer': 'transient',
+        'Authorization': authorization,
+        'Accept': '*/*',
+      },
+      body: JSON.stringify({ q: query }),
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`NetSuite SuiteQL API error ${response.status}: ${errorText}`)
+    }
+
+    const data = (await response.json()) as NetSuiteSuiteQLResponse<NetSuiteAddress>
+
+    // Return all addresses found
+    if (data.items && data.items.length > 0) {
+      return data.items
+    }
+
+    return []
+  } catch (error) {
+    console.error(`Error querying NetSuite addresses for customer ${netsuiteCustomerId}:`, error)
+    throw error
+  }
+}
+
+/**
+ * Fetches a NetSuite list using SuiteQL
+ * Used for populating dropdowns (classes, locations, partners, etc.)
+ */
+export async function fetchNetSuiteList(queryName: string, query: string): Promise<Array<{ id: string; name: string; [key: string]: any }>> {
+  if (!NETSUITE_CONSUMER_KEY || !NETSUITE_CONSUMER_SECRET || !NETSUITE_TOKEN_ID || !NETSUITE_TOKEN_SECRET) {
+    throw new Error(
+      'NetSuite OAuth credentials not fully configured. Please set NETSUITE_CONSUMER_KEY, NETSUITE_CONSUMER_SECRET, NETSUITE_TOKEN_ID, and NETSUITE_TOKEN_SECRET'
+    )
+  }
+
+  // SuiteQL API endpoint
+  const suiteqlUrl = `https://${NETSUITE_ACCOUNT_ID}.suitetalk.api.netsuite.com/services/rest/query/v1/suiteql`
+  
+  // Generate OAuth header
+  const authorization = generateOAuthHeader('POST', suiteqlUrl)
+
+  try {
+    const response = await fetch(suiteqlUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Prefer': 'transient',
+        'Authorization': authorization,
+        'Accept': '*/*',
+      },
+      body: JSON.stringify({ q: query }),
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`NetSuite SuiteQL API error ${response.status}: ${errorText}`)
+    }
+
+    const data = (await response.json()) as NetSuiteSuiteQLResponse<any>
+
+    // Return items, filtering out inactive ones if isinactive field exists
+    if (data.items && data.items.length > 0) {
+      return data.items
+        .filter((item: any) => item.isinactive !== 'T' && item.isinactive !== true)
+        .map((item: any) => {
+          // Determine the display name based on available fields
+          // For partners, use altname; for accounts, prefer acctname; otherwise use name
+          let displayName = ''
+          if (item.altname) {
+            displayName = item.altname // Partners (from entity table)
+          } else if (item.acctname) {
+            displayName = item.acctname // Accounts
+          } else {
+            displayName = item.name || item.entityid || item.companyname || item.symbol || item.pluralname || item.ScriptID || ''
+          }
+          
+          return {
+            id: String(item.id),
+            name: displayName,
+            ...item,
+          }
+        })
+    }
+
+    return []
+  } catch (error) {
+    console.error(`Error querying NetSuite list ${queryName}:`, error)
+    throw error
+  }
+}
+
+/**
+ * Matches a Shopify address to a NetSuite address by comparing address fields
+ * Returns the NetSuite address ID if a match is found, null otherwise
+ */
+export function matchShopifyAddressToNetSuite(
+  shopifyAddress: {
+    address1?: string | null
+    city?: string | null
+    zip?: string | null
+    province?: string | null
+    country?: string | null
+  },
+  netsuiteAddresses: NetSuiteAddress[]
+): string | null {
+  if (!shopifyAddress.address1 && !shopifyAddress.city) {
+    return null // Can't match without at least address1 or city
+  }
+
+  // Normalize strings for comparison (trim, lowercase, remove extra spaces)
+  const normalize = (str: string | null | undefined): string => {
+    if (!str) return ''
+    return str.trim().toLowerCase().replace(/\s+/g, ' ')
+  }
+
+  const shopifyAddress1 = normalize(shopifyAddress.address1)
+  const shopifyCity = normalize(shopifyAddress.city)
+  const shopifyZip = normalize(shopifyAddress.zip)
+  const shopifyProvince = normalize(shopifyAddress.province)
+  const shopifyCountry = normalize(shopifyAddress.country)
+
+  // Try to find a match
+  for (const nsAddress of netsuiteAddresses) {
+    const nsAddress1 = normalize(nsAddress.address1)
+    const nsCity = normalize(nsAddress.city)
+    const nsZip = normalize(nsAddress.zip)
+    const nsState = normalize(nsAddress.state)
+    const nsCountry = normalize(nsAddress.country)
+
+    // Match criteria (in order of reliability):
+    // 1. Exact match on address1 + city + zip (most reliable)
+    if (shopifyAddress1 && shopifyCity && shopifyZip) {
+      if (
+        shopifyAddress1 === nsAddress1 &&
+        shopifyCity === nsCity &&
+        shopifyZip === nsZip
+      ) {
+        return nsAddress.id
+      }
+    }
+
+    // 2. Match on address1 + city (if zip not available)
+    if (shopifyAddress1 && shopifyCity && !shopifyZip) {
+      if (shopifyAddress1 === nsAddress1 && shopifyCity === nsCity) {
+        return nsAddress.id
+      }
+    }
+
+    // 3. Match on city + zip (if address1 not available)
+    if (shopifyCity && shopifyZip && !shopifyAddress1) {
+      if (shopifyCity === nsCity && shopifyZip === nsZip) {
+        return nsAddress.id
+      }
+    }
+
+    // 4. Match on address1 only (last resort, less reliable)
+    if (shopifyAddress1 && !shopifyCity && !shopifyZip) {
+      if (shopifyAddress1 === nsAddress1) {
+        return nsAddress.id
+      }
+    }
+  }
+
+  return null // No match found
 }
 
