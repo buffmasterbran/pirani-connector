@@ -27,6 +27,7 @@ export async function POST(request: NextRequest) {
         name: product.name || null,
         isInactive: product.isinactive === 'T' || product.isinactive === true,
         category: 'ShopifyPriceQty', // Default category
+        quantityAvailable: product.quantityavailable !== undefined && product.quantityavailable !== null ? parseFloat(String(product.quantityavailable)) : null,
         createdDate: product.createdDate ? new Date(product.createdDate) : null,
         lastLoadedFromNetSuite: now,
         isFulfillable: product.isFulfillable === true || product.isFulfillable === 'T',

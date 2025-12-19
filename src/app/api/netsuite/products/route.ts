@@ -13,17 +13,21 @@ export async function GET(request: NextRequest) {
     const offset = parseInt(searchParams.get('offset') || '0')
 
     // Build SuiteQL query to fetch items/products
-    // NetSuite stores items in the 'item' table
-    // We'll get basic item info: id, itemid (SKU), displayname (name), isinactive
+    // NetSuite stores items in the 'item' table, but quantity available is in AggregateItemLocation
+    // We'll get basic item info and aggregate quantity available across all locations
+    // Reference: https://timdietrich.me/blog/netsuite-suiteql-item-quantity-available-changes/
     // Note: SuiteQL doesn't support LIMIT/OFFSET in the query - pagination is handled by the API
     let query = `
       SELECT 
-        id,
-        itemid AS sku,
-        displayname AS name,
-        isinactive
-      FROM item
-      WHERE isinactive = 'F'
+        i.id,
+        i.itemid AS sku,
+        i.displayname AS name,
+        i.isinactive,
+        COALESCE(SUM(ail.quantityavailable), 0) AS quantityavailable
+      FROM item i
+      LEFT JOIN AggregateItemLocation ail ON ail.item = i.id
+      WHERE i.isinactive = 'F'
+      GROUP BY i.id, i.itemid, i.displayname, i.isinactive
     `
 
     // Add search filter if provided

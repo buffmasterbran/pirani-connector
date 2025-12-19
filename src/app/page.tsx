@@ -169,7 +169,7 @@ export default function Home() {
   })
   const [productPagination, setProductPagination] = useState({
     page: 1,
-    limit: 500,
+    limit: 50,
     total: 0,
     totalPages: 0,
   })
@@ -3984,6 +3984,7 @@ export default function Home() {
                         <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">SKU</th>
                         <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">Shopify</th>
                         <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">default</th>
+                        <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">Quantity Available</th>
                         <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">Status</th>
                         <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">
                           <div className="flex items-center gap-2">
@@ -3991,6 +3992,7 @@ export default function Home() {
                             <Pencil className="h-3 w-3 text-slate-400" />
                           </div>
                         </th>
+                        <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200">
@@ -4012,6 +4014,11 @@ export default function Home() {
                             <td className="px-4 py-3 text-sm font-mono text-slate-700">{product.sku || product.id}</td>
                             <td className="px-4 py-3 text-sm text-slate-700">Shopify</td>
                             <td className="px-4 py-3 text-sm text-slate-700">default</td>
+                            <td className="px-4 py-3 text-sm text-slate-700">
+                              {product.quantityAvailable !== null && product.quantityAvailable !== undefined 
+                                ? product.quantityAvailable.toLocaleString() 
+                                : 'N/A'}
+                            </td>
                             <td className="px-4 py-3 text-sm">
                               {hasError ? (
                                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 border border-red-200">
@@ -4074,6 +4081,69 @@ export default function Home() {
                                 </Button>
                               </div>
                             )}
+                          </td>
+                          <td className="px-4 py-3">
+                            <DropdownMenu open={productActionMenuOpen === product.id} onOpenChange={(open) => setProductActionMenuOpen(open ? product.id : null)}>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => {
+                                  setProductActionMenuOpen(null)
+                                  setProductDetailsDialog({ isOpen: true, product })
+                                }}>
+                                  View details
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => {
+                                  setProductActionMenuOpen(null)
+                                  // TODO: Implement show product mapping
+                                  alert(`Show product mapping for: ${product.sku || product.name}`)
+                                }}>
+                                  Show Product Mapping
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => {
+                                  setProductActionMenuOpen(null)
+                                  // TODO: Implement show NetSuite system notes
+                                  alert(`Show NetSuite System Notes for: ${product.sku || product.name}`)
+                                }}>
+                                  Show NetSuite System Notes
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => {
+                                  setProductActionMenuOpen(null)
+                                  // TODO: Implement reload from NetSuite
+                                  alert(`Reload from NetSuite: ${product.sku || product.name}`)
+                                }}>
+                                  Reload from NetSuite
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => {
+                                  setProductActionMenuOpen(null)
+                                  // TODO: Implement update inventory and price
+                                  alert(`Update Inventory and Price on Shopify for: ${product.sku || product.name}`)
+                                }}>
+                                  Update Inventory and Price on Shopify
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => {
+                                  setProductActionMenuOpen(null)
+                                  // TODO: Implement delete from Shopify
+                                  if (confirm(`Delete ${product.sku || product.name} from Shopify?`)) {
+                                    alert(`Delete from Shopify: ${product.sku || product.name}`)
+                                  }
+                                }}>
+                                  Delete from Shopify
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => {
+                                  setProductActionMenuOpen(null)
+                                  // TODO: Implement delete from NetSuite Connector
+                                  if (confirm(`Delete ${product.sku || product.name} from NetSuite Connector?`)) {
+                                    alert(`Delete from NetSuite Connector: ${product.sku || product.name}`)
+                                  }
+                                }}>
+                                  Delete from NetSuite Connector
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </td>
                         </tr>
                       )

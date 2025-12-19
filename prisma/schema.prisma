@@ -224,6 +224,7 @@ model Product {
   name                      String?   // NetSuite displayname
   isInactive                Boolean   @default(false)
   category                  String?   // Category/sync type (e.g., 'ShopifyPriceQty')
+  quantityAvailable         Float?    // NetSuite quantityavailable
   createdDate               DateTime?
   lastLoadedFromNetSuite    DateTime?
   lastModifiedInConnector   DateTime?
