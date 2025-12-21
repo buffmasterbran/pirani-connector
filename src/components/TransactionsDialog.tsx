@@ -54,6 +54,31 @@ export function TransactionsDialog({
   hideSensitiveData = false,
   onRefreshTransactions
 }: TransactionsDialogProps) {
+  const [orderSourceMappings, setOrderSourceMappings] = useState<Array<{
+    id: number
+    appId: number | null
+    sourceName: string | null
+    friendlyName: string
+    isActive: boolean
+  }>>([])
+
+  // Fetch order source mappings when dialog opens
+  useEffect(() => {
+    if (isOpen) {
+      const fetchMappings = async () => {
+        try {
+          const response = await fetch('/api/mappings/order-source-mappings')
+          const result = await response.json()
+          if (result.success && result.data) {
+            setOrderSourceMappings(result.data)
+          }
+        } catch (error) {
+          console.error('Error fetching order source mappings:', error)
+        }
+      }
+      fetchMappings()
+    }
+  }, [isOpen])
   const [isImporting, setIsImporting] = useState(false)
   const [importProgress, setImportProgress] = useState<{ imported: number; total: number } | null>(null)
   const [isFetchingNS, setIsFetchingNS] = useState(false)
@@ -1142,6 +1167,7 @@ export function TransactionsDialog({
           </div>
 
           <TransactionsTable
+            orderSourceMappings={orderSourceMappings}
             transactions={(() => {
               let filtered = transactions
 
@@ -1174,13 +1200,27 @@ export function TransactionsDialog({
               // Apply web/non-web order filter
               if (webOrderFilter !== 'all') {
                 filtered = filtered.filter(t => {
-                  // Use is_web_order if available, otherwise determine from source_name
-                  const isWebOrder = t.is_web_order ?? (t.source_name === 'web' || t.source_name === 'checkout')
+                  // Determine if it's a web order:
+                  // 1. If is_web_order is explicitly true, it's a web order
+                  // 2. If is_web_order is explicitly false, it's NOT a web order
+                  // 3. If is_web_order is null/undefined, check source_name
+                  // 4. If source_name is 'web' or 'checkout', it's a web order
+                  // 5. Otherwise, it's NOT a web order
+                  let isWebOrder: boolean
+                  
+                  if (t.is_web_order === true) {
+                    isWebOrder = true
+                  } else if (t.is_web_order === false) {
+                    isWebOrder = false
+                  } else {
+                    // is_web_order is null/undefined, check source_name
+                    isWebOrder = t.source_name === 'web' || t.source_name === 'checkout'
+                  }
                   
                   if (webOrderFilter === 'web') {
                     return isWebOrder === true
                   } else if (webOrderFilter === 'non-web') {
-                    return isWebOrder !== true
+                    return isWebOrder === false
                   }
                   return true
                 })

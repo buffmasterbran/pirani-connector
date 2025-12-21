@@ -53,10 +53,19 @@ interface Transaction {
   feeDescription?: string | null
 }
 
+interface OrderSourceMapping {
+  id: number
+  appId: number | null
+  sourceName: string | null
+  friendlyName: string
+  isActive: boolean
+}
+
 interface TransactionsTableProps {
   transactions: Transaction[]
   isLoading?: boolean
   hideSensitiveData?: boolean
+  orderSourceMappings?: OrderSourceMapping[]
   onDeleteNetSuiteId?: (transactionId: string) => void
   onReassignNetSuite?: (fromTransactionId: string, toTransactionId: string) => Promise<void>
   onAddNetSuite?: (transactionId: string) => void
@@ -324,6 +333,7 @@ export function TransactionsTable({
   transactions, 
   isLoading, 
   hideSensitiveData = false,
+  orderSourceMappings = [],
   onDeleteNetSuiteId,
   onReassignNetSuite,
   onAddNetSuite,
@@ -333,6 +343,41 @@ export function TransactionsTable({
   onToggleInclude,
   onMergeTransactions
 }: TransactionsTableProps) {
+  
+  // Helper function to get friendly name for order source
+  const getOrderSourceDisplayName = (transaction: Transaction): string => {
+    // First, check if there's a mapping for this app_id or source_name
+    if (orderSourceMappings.length > 0) {
+      const mapping = orderSourceMappings.find(m => 
+        m.isActive && (
+          (transaction.app_id && m.appId === transaction.app_id) ||
+          (transaction.source_name && m.sourceName === transaction.source_name)
+        )
+      )
+      
+      if (mapping) {
+        return mapping.friendlyName
+      }
+    }
+    
+    // Fallback to default display logic
+    if (transaction.is_web_order) {
+      return 'Web'
+    }
+    
+    if (transaction.source_name) {
+      if (transaction.source_name === 'checkout') {
+        return 'Checkout'
+      }
+      return transaction.source_name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+    }
+    
+    if (transaction.app_id) {
+      return `App (${transaction.app_id})`
+    }
+    
+    return '—'
+  }
   const [activeId, setActiveId] = useState<string | null>(null)
   const [draggedTransactionId, setDraggedTransactionId] = useState<string | null>(null)
   const [feesDescriptionOptions, setFeesDescriptionOptions] = useState<Array<{ id: number; netsuiteId: string; description: string | null }>>([])
@@ -710,17 +755,30 @@ export function TransactionsTable({
                  )}
                </TableCell>
               <TableCell>
-                {transaction.source_name ? (
-                  <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-medium" title={transaction.is_web_order ? 'Web Order' : `Source: ${transaction.source_name}`}>
-                    {transaction.is_web_order ? 'Web' : (transaction.source_name === 'checkout' ? 'Checkout' : transaction.source_name)}
-                  </span>
-                ) : transaction.app_id ? (
-                  <span className="px-2 py-1 bg-orange-100 text-orange-800 rounded-full text-xs font-medium" title={`App ID: ${transaction.app_id}`}>
-                    App ({transaction.app_id})
-                  </span>
-                ) : (
-                  <span className="text-muted-foreground text-xs">—</span>
-                )}
+                {(() => {
+                  const displayName = getOrderSourceDisplayName(transaction)
+                  const hasMapping = orderSourceMappings.some(m => 
+                    m.isActive && (
+                      (transaction.app_id && m.appId === transaction.app_id) ||
+                      (transaction.source_name && m.sourceName === transaction.source_name)
+                    )
+                  )
+                  
+                  if (displayName === '—') {
+                    return <span className="text-muted-foreground text-xs">—</span>
+                  }
+                  
+                  // Use different colors based on whether it's a web order or has a mapping
+                  const isWeb = transaction.is_web_order === true
+                  const bgColor = isWeb ? 'bg-green-100 text-green-800' : (hasMapping ? 'bg-blue-100 text-blue-800' : 'bg-orange-100 text-orange-800')
+                  
+                  return (
+                    <span className={`px-2 py-1 ${bgColor} rounded-full text-xs font-medium`} 
+                          title={transaction.app_id ? `App ID: ${transaction.app_id}` : `Source: ${transaction.source_name || 'Unknown'}`}>
+                      {displayName}
+                    </span>
+                  )
+                })()}
               </TableCell>
               <TableCell>
                 <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs">

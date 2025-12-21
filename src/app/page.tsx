@@ -14,7 +14,7 @@ import { TransactionsDialog } from '@/components/TransactionsDialog'
 import { OrderInfoDialog } from '@/components/OrderInfoDialog'
 import { Sidebar } from '@/components/Sidebar'
 import { Loader, LoaderWithText } from '@/components/Loader'
-import { Download, Database, ArrowUpRight, Settings, Eye, EyeOff, Filter, Trash2, ChevronDown, ChevronUp, Loader2, X, HelpCircle, ChevronRight, MoreVertical, Pencil, Check } from 'lucide-react'
+import { Download, Database, ArrowUpRight, Settings, Eye, EyeOff, Filter, Trash2, ChevronDown, ChevronUp, Loader2, X, HelpCircle, ChevronRight, MoreVertical, Pencil, Check, MapPin } from 'lucide-react'
 import JsonView from '@uiw/react-json-view'
 import { 
   validateOrderMappings, 
@@ -2559,6 +2559,149 @@ export default function Home() {
     }
   }
 
+  // Order source mappings state
+  const [orderSourceMappings, setOrderSourceMappings] = useState<Array<{
+    id: number
+    appId: number | null
+    sourceName: string | null
+    friendlyName: string
+    isActive: boolean
+  }>>([])
+
+  // Order source mapping edit dialog state
+  const [orderSourceMappingEditDialog, setOrderSourceMappingEditDialog] = useState<{
+    isOpen: boolean
+    mapping: {
+      id: number
+      appId: number | null
+      sourceName: string | null
+      friendlyName: string
+      isActive: boolean
+    } | null
+  }>({
+    isOpen: false,
+    mapping: null
+  })
+
+  const fetchOrderSourceMappings = async () => {
+    try {
+      const response = await fetch('/api/mappings/order-source-mappings')
+      const result = await response.json()
+      if (result.success && result.data) {
+        setOrderSourceMappings(result.data)
+      }
+    } catch (error) {
+      console.error('Error fetching order source mappings:', error)
+    }
+  }
+
+  const handleAddOrderSourceMapping = () => {
+    setOrderSourceMappingEditDialog({
+      isOpen: true,
+      mapping: {
+        id: 0,
+        appId: null,
+        sourceName: null,
+        friendlyName: '',
+        isActive: true
+      }
+    })
+  }
+
+  const handleEditOrderSourceMapping = (mapping: {
+    id: number
+    appId: number | null
+    sourceName: string | null
+    friendlyName: string
+    isActive: boolean
+  }) => {
+    setOrderSourceMappingEditDialog({
+      isOpen: true,
+      mapping: { ...mapping }
+    })
+  }
+
+  const handleSaveOrderSourceMapping = async (mapping: {
+    id: number
+    appId: number | null
+    sourceName: string | null
+    friendlyName: string
+    isActive: boolean
+  }) => {
+    try {
+      if (mapping.id === 0) {
+        // Create new mapping
+        const response = await fetch('/api/mappings/order-source-mappings', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            appId: mapping.appId,
+            sourceName: mapping.sourceName,
+            friendlyName: mapping.friendlyName,
+            isActive: mapping.isActive,
+          }),
+        })
+
+        const result = await response.json()
+
+        if (result.success) {
+          await fetchOrderSourceMappings()
+          setOrderSourceMappingEditDialog({ isOpen: false, mapping: null })
+        } else {
+          alert(`Error creating order source mapping: ${result.error || 'Unknown error'}`)
+        }
+      } else {
+        // Update existing mapping
+        const response = await fetch(`/api/mappings/order-source-mappings/${mapping.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            appId: mapping.appId,
+            sourceName: mapping.sourceName,
+            friendlyName: mapping.friendlyName,
+            isActive: mapping.isActive,
+          }),
+        })
+
+        const result = await response.json()
+
+        if (result.success) {
+          await fetchOrderSourceMappings()
+          setOrderSourceMappingEditDialog({ isOpen: false, mapping: null })
+        } else {
+          alert(`Error updating order source mapping: ${result.error || 'Unknown error'}`)
+        }
+      }
+    } catch (error) {
+      console.error('Error saving order source mapping:', error)
+      alert(`Error saving order source mapping: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
+  const handleDeleteOrderSourceMapping = async (mappingId: number) => {
+    try {
+      const response = await fetch(`/api/mappings/order-source-mappings/${mappingId}`, {
+        method: 'DELETE',
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        await fetchOrderSourceMappings()
+        closeDeleteConfirmDialog()
+      } else {
+        alert(`Error deleting order source mapping: ${result.error || 'Unknown error'}`)
+      }
+    } catch (error) {
+      console.error('Error deleting order source mapping:', error)
+      alert(`Error deleting order source mapping: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
   // Load saved payouts and orders on component mount
   useEffect(() => {
     fetchSavedPayouts()
@@ -2570,6 +2713,7 @@ export default function Home() {
     fetchOrderItemMappings()
     fetchCustomerMappings()
     fetchPayoutMappings()
+    fetchOrderSourceMappings()
   }, [])
 
   // Load customers and addresses when their sections are active
@@ -3426,7 +3570,7 @@ export default function Home() {
             
             {/* Settings Navigation Tabs */}
             <div className="flex space-x-1 border-b">
-              {['General', 'Field Discovery'].map((tab) => (
+              {['General', 'Order Source Mappings', 'Field Discovery'].map((tab) => (
                 <Button
                   key={tab}
                   variant="ghost"
@@ -3493,6 +3637,94 @@ export default function Home() {
                 </div>
               </CardContent>
             </Card>
+            )}
+
+            {/* Order Source Mappings Tab */}
+            {activeSettingsTab === 'Order Source Mappings' && (
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <MapPin className="h-5 w-5" />
+                      Order Source Mappings
+                    </CardTitle>
+                    <p className="text-sm text-slate-600 mt-1">
+                      Map Shopify order sources (app IDs and source names) to friendly display names.
+                    </p>
+                  </div>
+                  <Button onClick={handleAddOrderSourceMapping} className="bg-blue-600 hover:bg-blue-700 text-white">
+                    Add Mapping
+                  </Button>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {/* Order Source Mappings Table */}
+                    <div className="border rounded-lg">
+                      <table className="w-full">
+                        <thead className="bg-slate-50">
+                          <tr>
+                            <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">App ID</th>
+                            <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">Source Name</th>
+                            <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">Friendly Name</th>
+                            <th className="px-4 py-3 text-center text-sm font-medium text-slate-700">Active</th>
+                            <th className="px-4 py-3 text-right text-sm font-medium text-slate-700">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200">
+                          {orderSourceMappings.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500">
+                                No order source mappings found. Click "Add Mapping" to create one.
+                              </td>
+                            </tr>
+                          ) : (
+                            orderSourceMappings.map((mapping) => (
+                              <tr key={mapping.id}>
+                                <td className="px-4 py-3 text-sm text-slate-900 font-mono">
+                                  {mapping.appId ?? '—'}
+                                </td>
+                                <td className="px-4 py-3 text-sm text-slate-600">
+                                  {mapping.sourceName ?? '—'}
+                                </td>
+                                <td className="px-4 py-3 text-sm font-medium text-slate-900">
+                                  {mapping.friendlyName}
+                                </td>
+                                <td className="px-4 py-3 text-center">
+                                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                    mapping.isActive 
+                                      ? 'bg-green-100 text-green-800' 
+                                      : 'bg-gray-100 text-gray-800'
+                                  }`}>
+                                    {mapping.isActive ? 'Active' : 'Inactive'}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 text-right">
+                                  <div className="flex items-center justify-end gap-2">
+                                    <Button 
+                                      variant="ghost" 
+                                      size="sm"
+                                      onClick={() => handleEditOrderSourceMapping(mapping)}
+                                    >
+                                      Edit
+                                    </Button>
+                                    <Button 
+                                      variant="ghost" 
+                                      size="sm"
+                                      onClick={() => openDeleteConfirmDialog('Order Source Mapping', mapping.friendlyName, mapping.id.toString())}
+                                    >
+                                      <Trash2 className="h-4 w-4 text-red-500" />
+                                    </Button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             )}
 
             {/* Field Discovery Tab */}
@@ -3649,6 +3881,116 @@ export default function Home() {
                 </Card>
               </div>
             )}
+
+            {/* Edit/Create Order Source Mapping Dialog */}
+            <Dialog open={orderSourceMappingEditDialog.isOpen} onOpenChange={(open) => {
+              if (!open) {
+                setOrderSourceMappingEditDialog({ isOpen: false, mapping: null })
+              }
+            }}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>
+                    {orderSourceMappingEditDialog.mapping?.id === 0 ? 'Create' : 'Edit'} Order Source Mapping
+                  </DialogTitle>
+                </DialogHeader>
+                {orderSourceMappingEditDialog.mapping && (
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        App ID (optional)
+                      </label>
+                      <Input
+                        type="number"
+                        value={orderSourceMappingEditDialog.mapping.appId || ''}
+                        onChange={(e) => setOrderSourceMappingEditDialog({
+                          ...orderSourceMappingEditDialog,
+                          mapping: {
+                            ...orderSourceMappingEditDialog.mapping!,
+                            appId: e.target.value ? Number(e.target.value) : null,
+                            sourceName: e.target.value ? null : orderSourceMappingEditDialog.mapping!.sourceName
+                          }
+                        })}
+                        placeholder="e.g., 2329312, 3890849"
+                      />
+                      <p className="text-xs text-slate-500 mt-1">
+                        Shopify app_id (e.g., 2329312 for Facebook, 3890849 for Shop App)
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        Source Name (optional)
+                      </label>
+                      <Input
+                        value={orderSourceMappingEditDialog.mapping.sourceName || ''}
+                        onChange={(e) => setOrderSourceMappingEditDialog({
+                          ...orderSourceMappingEditDialog,
+                          mapping: {
+                            ...orderSourceMappingEditDialog.mapping!,
+                            sourceName: e.target.value || null,
+                            appId: e.target.value ? null : orderSourceMappingEditDialog.mapping!.appId
+                          }
+                        })}
+                        placeholder="e.g., web, checkout"
+                      />
+                      <p className="text-xs text-slate-500 mt-1">
+                        Shopify source_name (e.g., 'web', 'checkout'). Either App ID or Source Name must be provided.
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        Friendly Name *
+                      </label>
+                      <Input
+                        value={orderSourceMappingEditDialog.mapping.friendlyName}
+                        onChange={(e) => setOrderSourceMappingEditDialog({
+                          ...orderSourceMappingEditDialog,
+                          mapping: {
+                            ...orderSourceMappingEditDialog.mapping!,
+                            friendlyName: e.target.value
+                          }
+                        })}
+                        placeholder="e.g., Facebook, Shop App, Web"
+                      />
+                      <p className="text-xs text-slate-500 mt-1">
+                        Display name shown in the transactions table
+                      </p>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        checked={orderSourceMappingEditDialog.mapping.isActive}
+                        onChange={(e) => setOrderSourceMappingEditDialog({
+                          ...orderSourceMappingEditDialog,
+                          mapping: {
+                            ...orderSourceMappingEditDialog.mapping!,
+                            isActive: e.target.checked
+                          }
+                        })}
+                        className="w-4 h-4"
+                      />
+                      <label className="text-sm font-medium text-slate-700">
+                        Active
+                      </label>
+                    </div>
+                    <div className="flex justify-end space-x-2 pt-4">
+                      <Button
+                        variant="outline"
+                        onClick={() => setOrderSourceMappingEditDialog({ isOpen: false, mapping: null })}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        className="bg-blue-600 hover:bg-blue-700 text-white"
+                        onClick={() => handleSaveOrderSourceMapping(orderSourceMappingEditDialog.mapping!)}
+                      >
+                        {orderSourceMappingEditDialog.mapping.id === 0 ? 'Create' : 'Save'}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </DialogContent>
+            </Dialog>
           </div>
         )
         
@@ -5102,6 +5444,10 @@ If you've created a matching SKU in Shopify, you'll need to trigger a resync. On
           await handleDeletePayoutMapping(parseInt(itemId))
           closeDeleteConfirmDialog()
           return // handleDeletePayoutMapping already refreshes the list
+        case 'Order Source Mapping':
+          await handleDeleteOrderSourceMapping(parseInt(itemId))
+          closeDeleteConfirmDialog()
+          return // handleDeleteOrderSourceMapping already refreshes the list
         default:
           console.log(`Unknown item type: ${itemType}`)
           return

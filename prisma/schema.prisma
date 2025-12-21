@@ -153,6 +153,22 @@ model ShipmentMethodMapping {
   @@index([isActive])
 }
 
+model OrderSourceMapping {
+  id          Int      @id @default(autoincrement())
+  appId       Int?     // Shopify app_id (e.g., 2329312, 3890849)
+  sourceName  String?  // Shopify source_name (e.g., 'web', 'checkout')
+  friendlyName String  // Display name (e.g., 'Facebook', 'Shop App', 'Web')
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([appId])
+  @@unique([sourceName])
+  @@index([isActive])
+  @@index([appId])
+  @@index([sourceName])
+}
+
 model OrderFieldMapping {
   id                 Int      @id @default(autoincrement())
   mappingType        String // 'Fixed', 'Order Header', 'Order Header with Translation', 'Custom'
