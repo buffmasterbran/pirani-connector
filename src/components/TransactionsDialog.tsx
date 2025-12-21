@@ -1,12 +1,13 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { TransactionsTable } from "@/components/TransactionsTable"
 import { AddNetSuiteTransactionDialog } from "@/components/AddNetSuiteTransactionDialog"
-import { Download, Loader2, Database, Check, X } from "lucide-react"
+import { Download, Loader2, Database, Check, X, Search } from "lucide-react"
+import { Input } from "@/components/ui/input"
 
 interface TransactionsDialogProps {
   isOpen: boolean
@@ -16,6 +17,9 @@ interface TransactionsDialogProps {
     id: string
     source_order_id: string
     order_name?: string | null
+    source_name?: string | null
+    app_id?: number | null
+    is_web_order?: boolean | null
     amount: string | number
     fee: string | number
     net: string | number
@@ -51,10 +55,18 @@ export function TransactionsDialog({
   onRefreshTransactions
 }: TransactionsDialogProps) {
   const [isImporting, setIsImporting] = useState(false)
+  const [importProgress, setImportProgress] = useState<{ imported: number; total: number } | null>(null)
   const [isFetchingNS, setIsFetchingNS] = useState(false)
   const [filterMissingCashSale, setFilterMissingCashSale] = useState(false)
+  const [webOrderFilter, setWebOrderFilter] = useState<'all' | 'web' | 'non-web'>('all')
   const [addNetSuiteDialogOpen, setAddNetSuiteDialogOpen] = useState(false)
   const [selectedTransactionForAdd, setSelectedTransactionForAdd] = useState<typeof transactions[0] | null>(null)
+  const [searchTerm, setSearchTerm] = useState('')
+  // Calculate grouped fee items (Shopify Fees, Shop Ads, etc.)
+  const [groupedFeeItems, setGroupedFeeItems] = useState<Array<{ description: string; shopifyAmount: number; netsuiteAmount: number }>>([])
+  
+  // Use ref to track if component is mounted to prevent state updates after unmount
+  const isMountedRef = useRef(true)
 
   // Identify transactions with missing orders
   const missingOrderIds = transactions
@@ -178,7 +190,11 @@ export function TransactionsDialog({
   // Calculate NetSuite total using hybrid approach:
   // - For cash sales: use NetSuite amount if available, otherwise Shopify amount
   // - For non-cash sales (with dropdown): use Shopify amount
-  const includedTransactionsForNetSuite = transactions.filter(t => t.includeInNetSuite !== false)
+  // Memoize includedTransactionsForNetSuite to prevent unnecessary recalculations
+  const includedTransactionsForNetSuite = useMemo(
+    () => transactions.filter(t => t.includeInNetSuite !== false),
+    [transactions]
+  )
   
   // Calculate NetSuite breakdown first (needed for both summary and total)
   const nsCharges = includedTransactionsForNetSuite
@@ -231,22 +247,46 @@ export function TransactionsDialog({
   const currency = payoutCurrency || transactions[0]?.currency || 'USD'
   const transactionsWithNS = transactions.filter(t => t.netsuiteTransactionId)
 
-  // Calculate grouped fee items (Shopify Fees, Shop Ads, etc.)
-  const [groupedFeeItems, setGroupedFeeItems] = useState<Array<{ description: string; shopifyAmount: number; netsuiteAmount: number }>>([])
-
   useEffect(() => {
+    // Guard: Don't run if transactions array is empty or hasn't been initialized
+    if (!transactions || transactions.length === 0) {
+      setGroupedFeeItems([])
+      return
+    }
+
+    let cancelled = false
+
     const calculateFeeItems = async () => {
       try {
         // Fetch payout mappings to resolve descriptions
         const response = await fetch('/api/mappings/payout-mappings')
+        
+        if (cancelled || !isMountedRef.current) return
+        
+        if (!response.ok) {
+          console.error('Failed to fetch payout mappings:', response.status, response.statusText)
+          if (isMountedRef.current) {
+            setGroupedFeeItems([])
+          }
+          return
+        }
+        
         const data = await response.json()
         
+        if (cancelled || !isMountedRef.current) return
+        
         if (!data.success || !data.data) {
-          setGroupedFeeItems([])
+          console.warn('Payout mappings response missing data:', data)
+          if (isMountedRef.current) {
+            setGroupedFeeItems([])
+          }
           return
         }
 
-        const payoutMappings = Object.values(data.data).flat() as Array<{ id: number; netsuiteId: string; description: string | null }>
+        // Handle both array and object formats
+        const payoutMappings = Array.isArray(data.data) 
+          ? data.data 
+          : Object.values(data.data).flat() as Array<{ id: number; netsuiteId: string; description: string | null }>
         
         // Helper to find mapping
         const findMapping = (value: string | null | undefined) => {
@@ -362,20 +402,91 @@ export function TransactionsDialog({
             return a.description.localeCompare(b.description)
           })
         
-        setGroupedFeeItems(items)
+        if (!cancelled && isMountedRef.current) {
+          setGroupedFeeItems(items)
+        }
       } catch (error) {
         console.error('Error calculating fee items:', error)
-        setGroupedFeeItems([])
+        if (!cancelled && isMountedRef.current) {
+          setGroupedFeeItems([])
+        }
       }
     }
 
     calculateFeeItems()
-  }, [transactions, includedTransactionsForNetSuite])
+    
+    return () => {
+      cancelled = true
+      // Don't set isMountedRef.current = false here - that's only for component unmount
+    }
+  }, [transactions, includedTransactionsForNetSuite]) // includedTransactionsForNetSuite is memoized from transactions
+  
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [])
+
+  // Helper function to safely refresh transactions, deferring to next frame to prevent hook order issues
+  const safeRefreshTransactions = () => {
+    if (!onRefreshTransactions || !isMountedRef.current) return
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        if (isMountedRef.current && onRefreshTransactions) {
+          onRefreshTransactions()
+        }
+      }, 0)
+    })
+  }
 
   const handleImportMissingOrders = async () => {
     if (missingOrderIds.length === 0) return
 
+    const totalOrders = missingOrderIds.length
     setIsImporting(true)
+    setImportProgress({ imported: 0, total: totalOrders })
+    
+    // Start progress simulation - update every second with estimated progress
+    // Use a more aggressive/optimistic estimate to show progress quickly
+    // Start showing progress after 0.5 seconds, increment by ~1% every second
+    const startTime = Date.now()
+    const progressIntervalRef = { current: null as NodeJS.Timeout | null }
+    let lastEstimatedProgress = 0
+    
+    progressIntervalRef.current = setInterval(() => {
+      if (!isMountedRef.current || !progressIntervalRef.current) {
+        if (progressIntervalRef.current) {
+          clearInterval(progressIntervalRef.current)
+          progressIntervalRef.current = null
+        }
+        return
+      }
+      
+      const elapsed = Date.now() - startTime
+      
+      // Use a simple linear progression: after 0.5s, start at 1, then add ~1% per second
+      // This ensures users see progress immediately
+      let estimatedProgress = 0
+      
+      if (elapsed >= 500) {
+        // After 0.5 seconds, show at least 1
+        // Then increment by roughly 1% of total every second (capped at 95%)
+        const secondsElapsed = Math.floor((elapsed - 500) / 1000) // Seconds since 0.5s mark
+        const incrementPerSecond = Math.max(1, Math.floor(totalOrders * 0.01)) // ~1% per second, min 1
+        estimatedProgress = Math.min(
+          1 + (secondsElapsed * incrementPerSecond),
+          Math.floor(totalOrders * 0.95) // Cap at 95%
+        )
+      }
+      
+      // Only update if progress has actually increased
+      if (estimatedProgress > lastEstimatedProgress && estimatedProgress <= totalOrders) {
+        lastEstimatedProgress = estimatedProgress
+        setImportProgress({ imported: estimatedProgress, total: totalOrders })
+      }
+    }, 500) // Update every 500ms for smoother progress
+    
     try {
       const response = await fetch('/api/orders/import-by-ids', {
         method: 'POST',
@@ -385,6 +496,12 @@ export function TransactionsDialog({
         body: JSON.stringify({ orderIds: missingOrderIds }),
       })
 
+      // Clear the progress interval since we're about to get real results
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current)
+        progressIntervalRef.current = null
+      }
+
       const data = await response.json()
 
       if (response.ok && data.success) {
@@ -392,25 +509,56 @@ export function TransactionsDialog({
         const updatedCount = data.updated || 0
         const totalProcessed = importedCount + updatedCount
         
-        if (data.errors && data.errors.length > 0) {
+        // The API returns line item counts, not order counts
+        // For display purposes: if we have line items saved, assume orders were processed
+        // Only count as errors if they're actual order-level failures (not line-item level)
+        const errorCount = data.errors?.length || 0
+        const hasLineItemsSaved = totalProcessed > 0
+        
+        // Estimate: if we saved line items, assume orders were processed
+        // Only show failures if there are errors AND no line items were saved
+        let estimatedOrdersProcessed = totalOrders
+        if (errorCount > 0 && !hasLineItemsSaved) {
+          // Only count as failures if no line items were saved at all
+          estimatedOrdersProcessed = Math.max(0, totalOrders - errorCount)
+        }
+        
+        // Update progress to show completion
+        setImportProgress({ imported: estimatedOrdersProcessed, total: totalOrders })
+        
+        if (data.errors && data.errors.length > 0 && !hasLineItemsSaved) {
           console.warn('Some orders failed to import:', data.errors)
-          alert(`Imported ${totalProcessed} order(s). Some orders failed to import. Check console for details.`)
+          alert(`Processed ${estimatedOrdersProcessed} of ${totalOrders} orders. ${errorCount} order(s) failed to import. Check console for details.`)
+        } else if (hasLineItemsSaved) {
+          // Success message - orders were saved (even if there were some non-critical errors)
+          const errorMsg = errorCount > 0 ? ` Note: ${errorCount} non-critical error(s) occurred (check console).` : ''
+          alert(`Successfully processed ${totalOrders} order(s) (${importedCount} new line items, ${updatedCount} updated line items).${errorMsg}`)
         } else {
-          alert(`Successfully imported ${importedCount} new order(s) and updated ${updatedCount} existing order(s).`)
+          alert(`Successfully processed ${totalOrders} order(s) (${importedCount} new line items, ${updatedCount} updated line items).`)
         }
 
         // Refresh transactions to show the newly imported order names
-        if (onRefreshTransactions) {
-          onRefreshTransactions()
-        }
+        safeRefreshTransactions()
+        
+        // Clear progress after transactions refresh (they'll update the missing count)
+        setTimeout(() => {
+          setImportProgress(null)
+        }, 3000)
       } else {
         console.error('Error importing orders:', data.error)
         alert(`Error importing orders: ${data.error || 'Unknown error'}`)
+        setImportProgress(null)
       }
     } catch (error) {
       console.error('Error importing orders:', error)
       alert(`Error importing orders: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      setImportProgress(null)
     } finally {
+      // Clear progress interval if it's still running
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current)
+        progressIntervalRef.current = null
+      }
       setIsImporting(false)
     }
   }
@@ -442,9 +590,7 @@ export function TransactionsDialog({
         }
 
         // Refresh transactions to show the newly fetched NetSuite IDs
-        if (onRefreshTransactions) {
-          onRefreshTransactions()
-        }
+        safeRefreshTransactions()
       } else {
         console.error('Error fetching NetSuite transactions:', data.error)
         alert(`Error fetching NetSuite transactions: ${data.error || 'Unknown error'}`)
@@ -471,9 +617,7 @@ export function TransactionsDialog({
 
       if (response.ok && data.success) {
         // Refresh transactions to show the updated data
-        if (onRefreshTransactions) {
-          onRefreshTransactions()
-        }
+        safeRefreshTransactions()
       } else {
         console.error('Error deleting NetSuite transaction ID:', data.error)
         alert(`Error deleting NetSuite transaction ID: ${data.error || 'Unknown error'}`)
@@ -497,10 +641,13 @@ export function TransactionsDialog({
       const data = await response.json()
 
       if (response.ok && data.success) {
-        // Refresh transactions to show the updated data
-        if (onRefreshTransactions) {
-          onRefreshTransactions()
-        }
+        // Use requestAnimationFrame + setTimeout to defer the refresh to the next frame,
+        // ensuring React has completed the current render cycle and preventing hook order issues
+        requestAnimationFrame(() => {
+          setTimeout(() => {
+            safeRefreshTransactions()
+          }, 0)
+        })
       } else {
         console.error('Error toggling includeInNetSuite:', data.error)
         alert(`Error updating transaction: ${data.error || 'Unknown error'}`)
@@ -528,9 +675,7 @@ export function TransactionsDialog({
 
       if (response.ok && data.success) {
         // Refresh transactions to show the updated data
-        if (onRefreshTransactions) {
-          onRefreshTransactions()
-        }
+        safeRefreshTransactions()
       } else {
         console.error('Error reassigning NetSuite ID:', data.error)
         throw new Error(data.error || 'Unknown error')
@@ -570,9 +715,7 @@ export function TransactionsDialog({
 
     if (response.ok && result.success) {
       // Refresh transactions to show the updated data
-      if (onRefreshTransactions) {
-        onRefreshTransactions()
-      }
+      safeRefreshTransactions()
     } else {
       throw new Error(result.error || 'Failed to add NetSuite transaction')
     }
@@ -592,9 +735,7 @@ export function TransactionsDialog({
 
       if (response.ok && data.success) {
         // Refresh transactions to show the updated data
-        if (onRefreshTransactions) {
-          onRefreshTransactions()
-        }
+        safeRefreshTransactions()
       } else {
         console.error('Error updating other fees description:', data.error)
         alert(`Error updating other fees description: ${data.error || 'Unknown error'}`)
@@ -618,9 +759,7 @@ export function TransactionsDialog({
       const data = await response.json()
 
       if (response.ok && data.success) {
-        if (onRefreshTransactions) {
-          onRefreshTransactions()
-        }
+        safeRefreshTransactions()
       } else {
         console.error('Error updating amount description:', data.error)
         alert(`Error updating amount description: ${data.error || 'Unknown error'}`)
@@ -644,9 +783,7 @@ export function TransactionsDialog({
       const data = await response.json()
 
       if (response.ok && data.success) {
-        if (onRefreshTransactions) {
-          onRefreshTransactions()
-        }
+        safeRefreshTransactions()
       } else {
         console.error('Error updating fee description:', data.error)
         alert(`Error updating fee description: ${data.error || 'Unknown error'}`)
@@ -673,9 +810,7 @@ export function TransactionsDialog({
       const data = await response.json()
 
       if (response.ok && data.success) {
-        if (onRefreshTransactions) {
-          onRefreshTransactions()
-        }
+        safeRefreshTransactions()
       } else {
         console.error('Error merging transactions:', data.error)
         throw new Error(data.error || 'Failed to merge transactions')
@@ -893,9 +1028,16 @@ export function TransactionsDialog({
         <div className="mt-4 space-y-2">
           {missingOrderIds.length > 0 && (
             <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">
-                {missingOrderIds.length} order{missingOrderIds.length !== 1 ? 's' : ''} missing from database
-              </p>
+              <div className="flex items-center gap-3">
+                <p className="text-sm text-muted-foreground">
+                  {missingOrderIds.length} order{missingOrderIds.length !== 1 ? 's' : ''} missing from database
+                </p>
+                {importProgress && (
+                  <p className="text-sm font-medium text-blue-600">
+                    {importProgress.imported} / {importProgress.total} imported
+                  </p>
+                )}
+              </div>
               <Button
                 onClick={handleImportMissingOrders}
                 disabled={isImporting}
@@ -905,7 +1047,7 @@ export function TransactionsDialog({
                 {isImporting ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Importing...
+                    {importProgress ? `Importing... ${importProgress.imported}/${importProgress.total}` : 'Importing...'}
                   </>
                 ) : (
                   <>
@@ -936,6 +1078,21 @@ export function TransactionsDialog({
                   Orders with Issues
                 </label>
               </div>
+              <div className="flex items-center gap-2">
+                <label htmlFor="web-order-filter" className="text-sm font-medium">
+                  Order Source:
+                </label>
+                <select
+                  id="web-order-filter"
+                  value={webOrderFilter}
+                  onChange={(e) => setWebOrderFilter(e.target.value as 'all' | 'web' | 'non-web')}
+                  className="px-2 py-1 text-sm border rounded-md"
+                >
+                  <option value="all">All Orders</option>
+                  <option value="web">Web Orders</option>
+                  <option value="non-web">Non-Web Orders</option>
+                </select>
+              </div>
             </div>
             {missingNSTransactions.length > 0 && (
               <Button
@@ -960,9 +1117,75 @@ export function TransactionsDialog({
             )}
           </div>
         </div>
-        <div className="mt-4">
+        <div className="mt-4 space-y-4">
+          {/* Search Bar */}
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search transactions by order name, order ID, amount, type, or NetSuite transaction..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-9 h-9"
+              />
+            </div>
+            {searchTerm && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSearchTerm('')}
+                className="h-9"
+              >
+                Clear
+              </Button>
+            )}
+          </div>
+
           <TransactionsTable
             transactions={(() => {
+              let filtered = transactions
+
+              // Apply search filter if search term exists
+              if (searchTerm.trim()) {
+                const searchLower = searchTerm.toLowerCase().trim()
+                filtered = filtered.filter(t => {
+                  const orderName = (t.order_name || '').toLowerCase()
+                  const orderId = (t.source_order_id || '').toLowerCase()
+                  const amount = String(t.amount || 0).toLowerCase()
+                  const fee = String(t.fee || 0).toLowerCase()
+                  const net = String(t.net || 0).toLowerCase()
+                  const type = (t.type || '').toLowerCase()
+                  const netsuiteTransactionName = (t.netsuiteTransactionName || '').toLowerCase()
+                  const netsuiteTransactionId = (t.netsuiteTransactionId || '').toLowerCase()
+                  const currency = (t.currency || '').toLowerCase()
+                  
+                  return orderName.includes(searchLower) ||
+                         orderId.includes(searchLower) ||
+                         amount.includes(searchLower) ||
+                         fee.includes(searchLower) ||
+                         net.includes(searchLower) ||
+                         type.includes(searchLower) ||
+                         netsuiteTransactionName.includes(searchLower) ||
+                         netsuiteTransactionId.includes(searchLower) ||
+                         currency.includes(searchLower)
+                })
+              }
+
+              // Apply web/non-web order filter
+              if (webOrderFilter !== 'all') {
+                filtered = filtered.filter(t => {
+                  // Use is_web_order if available, otherwise determine from source_name
+                  const isWebOrder = t.is_web_order ?? (t.source_name === 'web' || t.source_name === 'checkout')
+                  
+                  if (webOrderFilter === 'web') {
+                    return isWebOrder === true
+                  } else if (webOrderFilter === 'non-web') {
+                    return isWebOrder !== true
+                  }
+                  return true
+                })
+              }
+
               // When filterMissingCashSale is checked, show all transactions for Order IDs
               // that have at least one problematic transaction
               if (filterMissingCashSale) {
@@ -1018,22 +1241,22 @@ export function TransactionsDialog({
                 
                 // Find all Order IDs that have at least one problematic transaction
                 const problematicOrderIds = new Set<string>()
-                transactions.forEach(t => {
+                filtered.forEach(t => {
                   if (isProblematicTransaction(t) && t.source_order_id && t.source_order_id !== 'N/A') {
                     problematicOrderIds.add(t.source_order_id)
                   }
                 })
                 
                 // Return all transactions for those Order IDs
-                return transactions.filter(t => 
+                return filtered.filter(t => 
                   t.source_order_id && 
                   t.source_order_id !== 'N/A' && 
                   problematicOrderIds.has(t.source_order_id)
                 )
               }
               
-              // No filter applied, return all transactions
-              return transactions
+              // Return filtered transactions (search already applied)
+              return filtered
             })().map(t => ({
               ...t,
               amount: typeof t.amount === 'string' ? parseFloat(t.amount) : t.amount,

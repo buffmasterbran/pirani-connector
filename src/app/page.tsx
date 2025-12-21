@@ -320,6 +320,8 @@ export default function Home() {
   // Search state
   const [payoutSearchTerm, setPayoutSearchTerm] = useState('')
   const [orderSearchTerm, setOrderSearchTerm] = useState('')
+  const [isSearchingOrders, setIsSearchingOrders] = useState(false)
+  const [searchedOrders, setSearchedOrders] = useState<Order[]>([])
 
   // Filter dialog state
   const [isPayoutFiltersOpen, setIsPayoutFiltersOpen] = useState(false)
@@ -1375,12 +1377,15 @@ export default function Home() {
         setSelectedPayoutCurrency(data.payoutCurrency || 'USD')
         setIsDialogOpen(true) // Open the dialog
       } else {
-        console.error('Error fetching transactions:', data.error)
-        alert('Error fetching transactions: ' + (data.error || 'Unknown error'))
+        console.error('Error fetching transactions:', data)
+        const errorMsg = data.error || 'Unknown error'
+        const details = data.details ? `\n\nDetails: ${data.details}` : ''
+        alert(`Error fetching transactions: ${errorMsg}${details}`)
       }
     } catch (error) {
       console.error('Error fetching transactions:', error)
-      alert('Error fetching transactions: ' + error)
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      alert(`Error fetching transactions: ${errorMsg}`)
     } finally {
       setIsLoadingTransactions(false)
     }
@@ -1626,13 +1631,18 @@ export default function Home() {
         })
 
         await fetchSavedOrders()
+        
+        // Return the result so callers can check if orders were imported or updated
+        return { success: true, imported: data.imported ?? 0, updated: data.updated ?? 0 }
       } else {
         console.error('❌ Failed to save orders to database:', data.error)
         alert(`Failed to save orders to database: ${data.error}`)
+        return { success: false, error: data.error }
       }
     } catch (error) {
       console.error('❌ Error saving orders to database:', error)
       alert('Error saving orders to database')
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
     }
   }
 
@@ -1662,7 +1672,18 @@ export default function Home() {
         console.log(`✅ Fetched order ${order.name} from Shopify`)
         
         // Save to database
-        await saveNewOrdersOnly([order])
+        const saveResult = await saveNewOrdersOnly([order])
+        
+        // Show appropriate message based on whether order was imported or updated
+        if (saveResult?.success) {
+          if (saveResult.updated > 0 && saveResult.imported === 0) {
+            // Order already existed in database
+            alert(`Order ${order.name} already exists in the database. It has been updated with the latest information.`)
+          } else if (saveResult.imported > 0) {
+            // New order imported
+            alert(`Successfully imported order ${order.name} to the database.`)
+          }
+        }
         
         // Add to orders list if not already present
         setOrders(prevOrders => {
@@ -1992,23 +2013,49 @@ export default function Home() {
     }
   }
 
-  // Filter orders based on current filter state and search term
-  const filteredOrders = orders.filter(order => {
-    // Search filter
-    if (orderSearchTerm.trim()) {
-      const searchLower = orderSearchTerm.toLowerCase()
-      const orderName = order.name.toLowerCase()
-      const orderId = String(order.id).toLowerCase()
-      const amount = String(order.total_price).toLowerCase()
-      const currency = order.currency.toLowerCase()
-      
-      if (!orderName.includes(searchLower) && 
-          !orderId.includes(searchLower) && 
-          !amount.includes(searchLower) && 
-          !currency.includes(searchLower)) {
-        return false
-      }
+  // Search orders in database when search term is entered
+  useEffect(() => {
+    const searchTerm = orderSearchTerm.trim()
+    
+    if (!searchTerm) {
+      // Clear search results when search is empty
+      setSearchedOrders([])
+      setIsSearchingOrders(false)
+      return
     }
+    
+    // Debounce search to avoid too many API calls
+    const timeoutId = setTimeout(async () => {
+      setIsSearchingOrders(true)
+      try {
+        const response = await fetch(`/api/orders?search=${encodeURIComponent(searchTerm)}`)
+        const data = await response.json()
+        
+        if (response.ok && data.orders) {
+          setSearchedOrders(data.orders)
+        } else {
+          console.error('Error searching orders:', data.error)
+          setSearchedOrders([])
+        }
+      } catch (error) {
+        console.error('Error searching orders:', error)
+        setSearchedOrders([])
+      } finally {
+        setIsSearchingOrders(false)
+      }
+    }, 300) // 300ms debounce
+    
+    return () => clearTimeout(timeoutId)
+  }, [orderSearchTerm])
+
+  // Determine which orders to use: searched orders if searching, otherwise regular orders
+  const ordersToFilter = orderSearchTerm.trim() ? searchedOrders : orders
+
+  // Filter orders based on current filter state and search term
+  // Note: If searching, the search is already done in the database, so we only apply other filters
+  const filteredOrders = ordersToFilter.filter(order => {
+    // If we're searching, the search is already done in the database query
+    // So we only need to apply other filters here
 
     // Financial status filter
     if (!orderFilters.financialStatus.all) {
@@ -2817,12 +2864,23 @@ export default function Home() {
 
                   {/* Results Count */}
                   <div className="text-sm text-muted-foreground">
-                    {filteredOrders.length} of {orders.length}
+                    {orderSearchTerm.trim() ? (
+                      <>
+                        {isSearchingOrders ? 'Searching...' : `${filteredOrders.length} result${filteredOrders.length !== 1 ? 's' : ''} found`}
+                        {!isSearchingOrders && filteredOrders.length > 0 && (
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            (searching all orders in database)
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      `${filteredOrders.length} of ${orders.length}`
+                    )}
                   </div>
                 </div>
 
                 {/* Orders Display */}
-                {isLoadingOrders ? (
+                {(isLoadingOrders || isSearchingOrders) ? (
                   <div className="space-y-4">
                     {[...Array(3)].map((_, i) => (
                       <div key={i} className="h-20 bg-gray-100 rounded animate-pulse" />
@@ -2916,6 +2974,16 @@ export default function Home() {
 
                             {/* Actions */}
                             <div className="flex items-center space-x-2">
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                onClick={() => window.open(`https://admin.shopify.com/store/pirani-life/orders/${order.id}`, '_blank', 'noopener,noreferrer')}
+                                className="text-xs flex items-center gap-1"
+                                title="View order in Shopify"
+                              >
+                                <ArrowUpRight className="h-3 w-3" />
+                                View in Shopify
+                              </Button>
                               <Button 
                                 variant="outline" 
                                 size="sm" 
@@ -4752,6 +4820,7 @@ If you've created a matching SKU in Shopify, you'll need to trigger a resync. On
 
           {/* Transactions Dialog */}
           <TransactionsDialog
+            key={selectedPayoutId || 'transactions-dialog'}
             isOpen={isDialogOpen}
             onClose={() => setIsDialogOpen(false)}
             payoutId={selectedPayoutId}

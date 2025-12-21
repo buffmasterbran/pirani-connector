@@ -34,25 +34,66 @@ export async function POST(request: NextRequest) {
       let firstOrderLineId: number | null = null
 
       for (const line of flattened) {
-        const { shopifyOrderId: lineShopifyOrderId, lineItemId, ...rest } = line
+        const { shopifyOrderId: lineShopifyOrderId, lineItemId, sourceName, appId, ...rest } = line
 
-        const result = await prisma.orderLine.upsert({
-          where: {
-            shopifyOrderId_lineItemId: {
-              shopifyOrderId: lineShopifyOrderId,
-              lineItemId,
+        // Try to include sourceName and appId if Prisma client supports them, otherwise exclude them
+        const createData: any = {
+          shopifyOrderId: lineShopifyOrderId,
+          lineItemId,
+          ...rest,
+        }
+        
+        // Only include sourceName and appId if they exist (Prisma client may not have been regenerated)
+        if (sourceName !== undefined && sourceName !== null) {
+          createData.sourceName = sourceName
+        }
+        if (appId !== undefined && appId !== null) {
+          createData.appId = appId
+        }
+
+        let result
+        try {
+          result = await prisma.orderLine.upsert({
+            where: {
+              shopifyOrderId_lineItemId: {
+                shopifyOrderId: lineShopifyOrderId,
+                lineItemId,
+              },
             },
-          },
-          create: {
-            shopifyOrderId: lineShopifyOrderId,
-            lineItemId,
-            ...rest,
-          },
-          update: {
-            ...rest,
-            updatedAt: new Date(),
-          },
-        })
+            create: createData,
+            update: {
+              ...rest,
+              ...(sourceName !== undefined && sourceName !== null ? { sourceName } : {}),
+              ...(appId !== undefined && appId !== null ? { appId } : {}),
+              updatedAt: new Date(),
+            },
+          })
+        } catch (error: any) {
+          // If error is about unknown fields, retry without sourceName/appId
+          if (error.message?.includes('sourceName') || error.message?.includes('appId') || error.message?.includes('Unknown arg')) {
+            console.warn(`⚠️ Prisma client not regenerated with new fields, saving without sourceName/appId for order ${lineShopifyOrderId}`)
+            const { sourceName: _, appId: __, ...restWithoutNewFields } = line
+            result = await prisma.orderLine.upsert({
+              where: {
+                shopifyOrderId_lineItemId: {
+                  shopifyOrderId: lineShopifyOrderId,
+                  lineItemId,
+                },
+              },
+              create: {
+                shopifyOrderId: lineShopifyOrderId,
+                lineItemId,
+                ...restWithoutNewFields,
+              },
+              update: {
+                ...restWithoutNewFields,
+                updatedAt: new Date(),
+              },
+            })
+          } else {
+            throw error
+          }
+        }
 
         // Store the first OrderLine ID for this order (for transaction backfilling)
         if (!firstOrderLineId) {

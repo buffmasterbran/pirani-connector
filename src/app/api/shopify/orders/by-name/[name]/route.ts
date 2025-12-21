@@ -3,10 +3,12 @@ import { getOrderByNameFromShopify } from '@/lib/shopify'
 
 export async function GET(
   request: Request,
-  { params }: { params: { name: string } }
+  { params }: { params: Promise<{ name: string }> | { name: string } }
 ) {
   try {
-    const orderName = decodeURIComponent(params.name)
+    // Handle both sync and async params (Next.js 14 vs 15)
+    const resolvedParams = params instanceof Promise ? await params : params
+    const orderName = decodeURIComponent(resolvedParams.name)
     console.log(`=== FETCHING ORDER BY NAME: ${orderName} ===`)
     console.log(`Raw params:`, params)
     console.log(`Decoded order name:`, orderName)

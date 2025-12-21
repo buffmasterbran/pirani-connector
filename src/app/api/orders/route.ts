@@ -43,10 +43,35 @@ const parseObject = (value?: string | null): Record<string, unknown> | null => {
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url)
+    const searchTerm = searchParams.get('search')?.trim().toLowerCase() || ''
+    
+    // Build where clause with optional search
+    const whereClause: any = { isDeleted: false }
+    
+    if (searchTerm) {
+      // SQLite doesn't support case-insensitive mode, so we'll use contains
+      // and handle case-insensitivity in the application layer if needed
+      const searchLower = searchTerm.toLowerCase()
+      whereClause.OR = [
+        { shopifyOrderName: { contains: searchTerm } },
+        { shopifyOrderId: { contains: searchTerm } },
+        { currency: { contains: searchTerm } },
+      ]
+      
+      // For numeric search, try to parse as number and search orderTotal
+      const numericSearch = parseFloat(searchTerm)
+      if (!isNaN(numericSearch)) {
+        whereClause.OR.push({
+          orderTotal: { equals: numericSearch }
+        })
+      }
+    }
+    
     const lines = await prisma.orderLine.findMany({
-      where: { isDeleted: false },
+      where: whereClause,
       orderBy: [{ orderCreatedAt: 'desc' }, { lineItemName: 'asc' }],
     })
 

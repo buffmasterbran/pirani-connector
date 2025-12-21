@@ -133,6 +133,8 @@ export function flattenShopifyOrder(order: any): FlattenedOrderLine[] {
     customerFirstName: order.customer?.first_name ?? null,
     customerLastName: order.customer?.last_name ?? null,
     shippingAddress: stringify(order.shipping_address ?? null),
+    sourceName: order.source_name ?? null,
+    appId: order.app_id ? Number(order.app_id) : null,
     lineItemSku: null,
     lineItemName: null,
     lineItemQuantity: null,

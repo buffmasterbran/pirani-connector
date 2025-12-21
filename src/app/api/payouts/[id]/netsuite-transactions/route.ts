@@ -4,10 +4,12 @@ import { fetchNetSuiteTransactions, matchNetSuiteTransactions } from '@/lib/nets
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
-    const payoutId = params.id
+    // Handle both sync and async params (Next.js 14 vs 15)
+    const resolvedParams = params instanceof Promise ? await params : params
+    const payoutId = resolvedParams.id
 
     // Get payout and transactions
     const payout = await prisma.payout.findUnique({
@@ -90,29 +92,118 @@ export async function POST(
       })
     }
 
-    // Prepare NetSuite request
+    // NetSuite has a limit of 4000 search results per request
+    // Since each order name can match multiple transactions (cash sale, refund, payment),
+    // we need to use a conservative batch size. Using 1500 to account for multiple matches per order.
+    // The total order names per batch (cash sales + refunds + payments) should not exceed 1500
+    const MAX_ORDER_NAMES_PER_BATCH = 1500
+
+    // Helper function to split array into batches
+    const chunkArray = <T,>(array: T[], size: number): T[][] => {
+      const chunks: T[][] = []
+      for (let i = 0; i < array.length; i += size) {
+        chunks.push(array.slice(i, i + size))
+      }
+      return chunks
+    }
+
+    // Prepare base request data
     const payoutDate = payout.payoutDate || new Date()
-    const netsuiteRequest = {
+    const baseRequest = {
       account: 217, // Default account ID, could be made configurable
       memo: `Shopify payout ${payoutId.slice(-8)}`,
       date: payoutDate.toISOString().split('T')[0], // YYYY-MM-DD format
-      cashsales: cashSales,
-      refunds: refunds,
-      payments: payments.length > 0 ? payments : undefined,
     }
 
-    // Fetch from NetSuite
-    const netsuiteData = await fetchNetSuiteTransactions(netsuiteRequest)
+    // Create batch requests ensuring total order names per batch doesn't exceed limit
+    // We'll distribute cash sales, refunds, and payments across batches
+    const batchRequests: Array<{
+      cashsales: string[]
+      refunds: string[]
+      payments?: string[]
+    }> = []
 
-    if (netsuiteData.status !== 'success') {
+    // Process all order names in batches, distributing across transaction types
+    let cashSalesIndex = 0
+    let refundsIndex = 0
+    let paymentsIndex = 0
+
+    while (cashSalesIndex < cashSales.length || refundsIndex < refunds.length || paymentsIndex < payments.length) {
+      const batchCashSales: string[] = []
+      const batchRefunds: string[] = []
+      const batchPayments: string[] = []
+      let totalInBatch = 0
+
+      // Fill batch with cash sales first
+      while (cashSalesIndex < cashSales.length && totalInBatch < MAX_ORDER_NAMES_PER_BATCH) {
+        batchCashSales.push(cashSales[cashSalesIndex])
+        cashSalesIndex++
+        totalInBatch++
+      }
+
+      // Then add refunds
+      while (refundsIndex < refunds.length && totalInBatch < MAX_ORDER_NAMES_PER_BATCH) {
+        batchRefunds.push(refunds[refundsIndex])
+        refundsIndex++
+        totalInBatch++
+      }
+
+      // Finally add payments
+      while (paymentsIndex < payments.length && totalInBatch < MAX_ORDER_NAMES_PER_BATCH) {
+        batchPayments.push(payments[paymentsIndex])
+        paymentsIndex++
+        totalInBatch++
+      }
+
+      // Only create a batch if it has at least one order name
+      if (batchCashSales.length > 0 || batchRefunds.length > 0 || batchPayments.length > 0) {
+        batchRequests.push({
+          cashsales: batchCashSales,
+          refunds: batchRefunds,
+          payments: batchPayments.length > 0 ? batchPayments : undefined,
+        })
+      }
+    }
+
+    // Fetch from NetSuite in parallel for all batches
+    console.log(`📦 Processing ${batchRequests.length} batch(es) to stay under NetSuite's 4000 result limit`)
+    
+    const netsuiteResponses = await Promise.all(
+      batchRequests.map(async (batch, index) => {
+        const netsuiteRequest = {
+          ...baseRequest,
+          ...batch,
+        }
+        console.log(`  Batch ${index + 1}/${batchRequests.length}: ${batch.cashsales.length} cash sales, ${batch.refunds.length} refunds, ${batch.payments?.length || 0} payments`)
+        return fetchNetSuiteTransactions(netsuiteRequest)
+      })
+    )
+
+    // Check for errors in any batch
+    const failedBatches = netsuiteResponses.filter(response => response.status !== 'success')
+    if (failedBatches.length > 0) {
+      const errorMessages = failedBatches.map(r => r.message || 'Unknown error').join('; ')
       return NextResponse.json(
         {
           success: false,
-          error: netsuiteData.message || 'NetSuite API returned error',
+          error: `NetSuite API returned errors in ${failedBatches.length} batch(es): ${errorMessages}`,
         },
         { status: 500 }
       )
     }
+
+    // Combine results from all batches
+    const netsuiteData = {
+      status: 'success' as const,
+      message: 'Combined results from multiple batches',
+      details: {
+        cashsales: netsuiteResponses.flatMap(r => r.details.cashsales),
+        refunds: netsuiteResponses.flatMap(r => r.details.refunds),
+        payments: netsuiteResponses.flatMap(r => r.details.payments || []),
+      },
+    }
+
+    console.log(`✅ Combined results: ${netsuiteData.details.cashsales.length} cash sales, ${netsuiteData.details.refunds.length} refunds, ${netsuiteData.details.payments.length} payments`)
 
     // Match NetSuite transactions to our transactions by order name AND transaction type
     // Store ALL transactions for each order name (not just one) since orders can have both charges and refunds

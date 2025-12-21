@@ -16,20 +16,31 @@ export async function GET() {
     // Return flat array for UI table display
     return NextResponse.json({ 
       success: true, 
-      data: allMappings.map(m => ({
-        id: m.id,
-        mappingType: m.mappingType,
-        netsuiteId: m.netsuiteId,
-        description: m.description,
-        isActive: m.isActive,
-        isDefaultDepositAccount: (m as any).isDefaultDepositAccount || false,
-        isDefaultFeesAccount: (m as any).isDefaultFeesAccount || false,
-      }))
+      data: allMappings.map(m => {
+        // Safely access fields that might not exist in older database schemas
+        const mapping = m as any
+        return {
+          id: m.id,
+          mappingType: m.mappingType,
+          netsuiteId: m.netsuiteId,
+          description: m.description,
+          isActive: m.isActive,
+          isDefaultDepositAccount: mapping.isDefaultDepositAccount ?? false,
+          isDefaultFeesAccount: mapping.isDefaultFeesAccount ?? false,
+        }
+      })
     })
   } catch (error) {
     console.error('Error fetching payout mappings:', error)
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    const errorStack = error instanceof Error ? error.stack : undefined
+    console.error('Error stack:', errorStack)
     return NextResponse.json(
-      { success: false, error: 'Failed to fetch payout mappings', details: error instanceof Error ? error.message : String(error) },
+      { 
+        success: false, 
+        error: 'Failed to fetch payout mappings', 
+        details: errorMessage 
+      },
       { status: 500 }
     )
   }

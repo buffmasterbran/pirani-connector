@@ -33,6 +33,9 @@ interface Transaction {
   id: string
   source_order_id: string
   order_name?: string | null
+  source_name?: string | null
+  app_id?: number | null
+  is_web_order?: boolean
   amount: number
   fee: number
   net: number
@@ -336,6 +339,8 @@ export function TransactionsTable({
   const [loadingFeesOptions, setLoadingFeesOptions] = useState(false)
   const [selectedTransactionIds, setSelectedTransactionIds] = useState<Set<string>>(new Set())
   const [showMergeDialog, setShowMergeDialog] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [itemsPerPage, setItemsPerPage] = useState(50)
 
   // Fetch fees description options from payout mappings
   useEffect(() => {
@@ -550,6 +555,20 @@ export function TransactionsTable({
     displayTransactions.push(txn)
   })
 
+  // Pagination calculations
+  const totalTransactions = displayTransactions.length
+  const totalPages = Math.ceil(totalTransactions / itemsPerPage)
+  const startIndex = (currentPage - 1) * itemsPerPage
+  const endIndex = startIndex + itemsPerPage
+  const paginatedTransactions = displayTransactions.slice(startIndex, endIndex)
+
+  // Reset to page 1 if current page is out of bounds
+  useEffect(() => {
+    if (totalPages > 0 && currentPage > totalPages) {
+      setCurrentPage(1)
+    }
+  }, [totalPages, currentPage])
+
   const activeTransaction = activeId 
     ? transactions.find(t => `netsuite-${t.id}` === activeId)
     : null
@@ -597,6 +616,7 @@ export function TransactionsTable({
             </div>
           </div>
         )}
+        <div className="overflow-x-auto">
         <Table>
         <TableHeader>
           <TableRow>
@@ -615,6 +635,7 @@ export function TransactionsTable({
             <TableHead>Transaction ID</TableHead>
                 <TableHead>Order ID</TableHead>
             <TableHead>Order Name</TableHead>
+            <TableHead>Order Source</TableHead>
                 <TableHead>Type</TableHead>
             <TableHead>Adjustment Reason</TableHead>
                 <TableHead>Amount</TableHead>
@@ -626,7 +647,7 @@ export function TransactionsTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {displayTransactions.map((transaction, idx) => {
+          {paginatedTransactions.map((transaction, idx) => {
             const isFirstInGroup = transaction.isGrouped && transaction.groupIndex === 0
             const isLastInGroup = transaction.isGrouped && transaction.groupIndex === (transaction.groupSize! - 1)
             const showGroupIndicator = transaction.isGrouped && isFirstInGroup
@@ -688,6 +709,19 @@ export function TransactionsTable({
                     transaction.order_name || '—'
                  )}
                </TableCell>
+              <TableCell>
+                {transaction.source_name ? (
+                  <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-medium" title={transaction.is_web_order ? 'Web Order' : `Source: ${transaction.source_name}`}>
+                    {transaction.is_web_order ? 'Web' : (transaction.source_name === 'checkout' ? 'Checkout' : transaction.source_name)}
+                  </span>
+                ) : transaction.app_id ? (
+                  <span className="px-2 py-1 bg-orange-100 text-orange-800 rounded-full text-xs font-medium" title={`App ID: ${transaction.app_id}`}>
+                    App ({transaction.app_id})
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground text-xs">—</span>
+                )}
+              </TableCell>
               <TableCell>
                 <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs">
                   {transaction.type}
@@ -852,7 +886,98 @@ export function TransactionsTable({
           })}
         </TableBody>
       </Table>
+        </div>
       </div>
+      
+      {/* Pagination Controls */}
+      {totalTransactions > itemsPerPage && (
+        <div className="flex items-center justify-between mt-4 px-2">
+          <div className="flex items-center gap-4">
+            <div className="text-sm text-slate-600">
+              Showing {startIndex + 1} – {Math.min(endIndex, totalTransactions)} of {totalTransactions} transactions
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-slate-600">Rows per page:</span>
+              <Select
+                value={String(itemsPerPage)}
+                onValueChange={(value) => {
+                  setItemsPerPage(Number(value))
+                  setCurrentPage(1)
+                }}
+              >
+                <SelectTrigger className="h-8 w-[80px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="25">25</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                  <SelectItem value="100">100</SelectItem>
+                  <SelectItem value="200">200</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(1)}
+              disabled={currentPage === 1}
+            >
+              ««
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(currentPage - 1)}
+              disabled={currentPage === 1}
+            >
+              «
+            </Button>
+            <div className="flex items-center gap-1">
+              {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+                let pageNum: number
+                if (totalPages <= 7) {
+                  pageNum = i + 1
+                } else if (currentPage <= 4) {
+                  pageNum = i + 1
+                } else if (currentPage >= totalPages - 3) {
+                  pageNum = totalPages - 6 + i
+                } else {
+                  pageNum = currentPage - 3 + i
+                }
+                return (
+                  <Button
+                    key={pageNum}
+                    variant={currentPage === pageNum ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setCurrentPage(pageNum)}
+                    className="min-w-[40px]"
+                  >
+                    {pageNum}
+                  </Button>
+                )
+              })}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(currentPage + 1)}
+              disabled={currentPage === totalPages}
+            >
+              »
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(totalPages)}
+              disabled={currentPage === totalPages}
+            >
+              »»
+            </Button>
+          </div>
+        </div>
+      )}
       <DragOverlay>
         {activeTransaction && activeTransaction.netsuiteTransactionName ? (
           <div className="px-3 py-2 bg-white border-2 border-blue-400 rounded-lg shadow-lg">

@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
-    const { id } = params
+    // Handle both sync and async params (Next.js 14 vs 15)
+    const resolvedParams = params instanceof Promise ? await params : params
+    const { id } = resolvedParams
     
     const SHOPIFY_STORE_URL = process.env.SHOPIFY_STORE_URL || 'https://pirani-life.myshopify.com'
     const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || ''
@@ -30,8 +32,12 @@ export async function GET(
     return NextResponse.json({ order: data.order })
   } catch (error) {
     console.error('Error fetching order:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
     return NextResponse.json(
-      { error: 'Failed to fetch order from Shopify' },
+      { 
+        error: 'Failed to fetch order from Shopify',
+        details: errorMessage 
+      },
       { status: 500 }
     )
   }
