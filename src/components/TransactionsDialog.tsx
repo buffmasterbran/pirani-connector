@@ -90,11 +90,129 @@ export function TransactionsDialog({
   // Calculate grouped fee items (Shopify Fees, Shop Ads, etc.)
   const [groupedFeeItems, setGroupedFeeItems] = useState<Array<{ description: string; shopifyAmount: number; netsuiteAmount: number }>>([])
   
+  // Local state for optimistic updates - syncs with transactions prop but can be updated immediately
+  const [localTransactions, setLocalTransactions] = useState(transactions)
+  
+  // Sync local transactions with prop when transactions change
+  useEffect(() => {
+    setLocalTransactions(transactions)
+  }, [transactions])
+  
   // Use ref to track if component is mounted to prevent state updates after unmount
   const isMountedRef = useRef(true)
 
+  // Helper function to check if a transaction is problematic (used for filtering)
+  const isProblematicTransaction = (t: typeof localTransactions[0]): boolean => {
+    // If transaction is resolved (ignored or has dropdown selection), it's not problematic
+    const isResolved = t.includeInNetSuite === false || 
+                      !!(t.amountDescription || t.feeDescription || t.otherFeesDescription)
+    if (isResolved) return false
+    
+    // Missing NetSuite ID
+    if (!t.netsuiteTransactionId) return true
+    
+    // Check for actual amount mismatch (recalculate for payments to use net amount)
+    if (t.amountMismatch === true) {
+      // For payments, recalculate mismatch using net amount instead of amount
+      const netsuiteNameUpper = (t.netsuiteTransactionName || '').toUpperCase().trim()
+      const isPayment = netsuiteNameUpper.startsWith('PYMT') ||
+                       netsuiteNameUpper.startsWith('CUSTPYMT') ||
+                       netsuiteNameUpper.includes('PAYMENT')
+      
+      if (isPayment && t.netsuiteAmount !== null && t.netsuiteAmount !== undefined) {
+        // For payments, compare net amount with NetSuite amount
+        const shopifyNet = typeof t.net === 'string' ? parseFloat(t.net) : (t.net || 0)
+        const netsuiteAmount = typeof t.netsuiteAmount === 'string' ? parseFloat(t.netsuiteAmount) : t.netsuiteAmount
+        const actualMismatch = Math.abs(Math.abs(shopifyNet) - Math.abs(netsuiteAmount)) > 0.01
+        // If amounts actually match, don't treat as problematic
+        if (!actualMismatch) return false
+      }
+      // For non-payments or actual mismatches, treat as problematic
+      return true
+    }
+    
+    // Has order_name but missing NetSuite transaction name
+    const hasOrderName = t.order_name && t.order_name !== '—' && t.order_name !== 'N/A'
+    if (hasOrderName && !t.netsuiteTransactionName) return true
+    
+    // Has order_name but NetSuite transaction is not a cash sale/refund/payment
+    if (hasOrderName && t.netsuiteTransactionName) {
+      const name = t.netsuiteTransactionName.toUpperCase()
+      const isCashSaleOrRefundOrPayment = name.startsWith('CS') || 
+                                         name.startsWith('RFND') || 
+                                         name.startsWith('PYMT') ||
+                                         name.startsWith('CUSTPYMT') ||
+                                         name.includes('CASH SALE') || 
+                                         name.includes('CASH REFUND') ||
+                                         name.includes('PAYMENT')
+      if (!isCashSaleOrRefundOrPayment) return true
+    }
+    
+    return false
+  }
+
+  // Calculate counts for each filter option to determine if they should be disabled
+  const calculateFilterCounts = useMemo(() => {
+    // Count web orders
+    const webOrdersCount = localTransactions.filter(t => {
+      if (t.is_web_order === true) return true
+      if (t.is_web_order === false) return false
+      return t.source_name === 'web' || t.source_name === 'checkout'
+    }).length
+
+    // Count non-web orders
+    const nonWebOrdersCount = localTransactions.filter(t => {
+      if (t.is_web_order === false) return true
+      if (t.is_web_order === true) return false
+      return t.source_name !== 'web' && t.source_name !== 'checkout'
+    }).length
+
+    // Count problematic transactions (for "Orders with Issues")
+    const problematicOrderIds = new Set<string>()
+    localTransactions.forEach(t => {
+      if (isProblematicTransaction(t) && t.source_order_id && t.source_order_id !== 'N/A') {
+        problematicOrderIds.add(t.source_order_id)
+      }
+    })
+    const problematicOrdersCount = problematicOrderIds.size
+
+    // Count problematic web orders
+    const problematicWebOrderIds = new Set<string>()
+    localTransactions.filter(t => {
+      if (t.is_web_order === true) return true
+      if (t.is_web_order === false) return false
+      return t.source_name === 'web' || t.source_name === 'checkout'
+    }).forEach(t => {
+      if (isProblematicTransaction(t) && t.source_order_id && t.source_order_id !== 'N/A') {
+        problematicWebOrderIds.add(t.source_order_id)
+      }
+    })
+    const problematicWebOrdersCount = problematicWebOrderIds.size
+
+    // Count problematic non-web orders
+    const problematicNonWebOrderIds = new Set<string>()
+    localTransactions.filter(t => {
+      if (t.is_web_order === false) return true
+      if (t.is_web_order === true) return false
+      return t.source_name !== 'web' && t.source_name !== 'checkout'
+    }).forEach(t => {
+      if (isProblematicTransaction(t) && t.source_order_id && t.source_order_id !== 'N/A') {
+        problematicNonWebOrderIds.add(t.source_order_id)
+      }
+    })
+    const problematicNonWebOrdersCount = problematicNonWebOrderIds.size
+
+    return {
+      webOrdersCount,
+      nonWebOrdersCount,
+      problematicOrdersCount,
+      problematicWebOrdersCount,
+      problematicNonWebOrdersCount,
+    }
+  }, [localTransactions])
+
   // Identify transactions with missing orders
-  const missingOrderIds = transactions
+  const missingOrderIds = localTransactions
     .filter(t => {
       const hasOrderId = t.source_order_id && t.source_order_id !== 'N/A'
       const missingOrderName = !t.order_name || t.order_name === '—'
@@ -104,12 +222,66 @@ export function TransactionsDialog({
     .filter((id, index, self) => self.indexOf(id) === index) // unique
 
   // Identify transactions with missing NetSuite IDs
-  const missingNSTransactions = transactions.filter(
+  const missingNSTransactions = localTransactions.filter(
     t => t.order_name && t.order_name !== '—' && !t.netsuiteTransactionId
   )
 
+  // Auto-reset filters if they would result in 0 transactions
+  // Use a ref to track if we've already reset to prevent infinite loops
+  // Skip auto-reset if there's an active search term (user might be filtering)
+  const hasResetFiltersRef = useRef(false)
+  useEffect(() => {
+    // Don't auto-reset filters if user is actively searching
+    if (searchTerm.trim().length > 0) {
+      return
+    }
+    
+    if (localTransactions.length === 0) {
+      if (filterMissingCashSale || webOrderFilter !== 'all') {
+        setFilterMissingCashSale(false)
+        setWebOrderFilter('all')
+      }
+      hasResetFiltersRef.current = false
+      return
+    }
+
+    // Check if current filter combination would result in 0 transactions
+    let wouldBeEmpty = false
+
+    if (webOrderFilter === 'web') {
+      if (filterMissingCashSale) {
+        wouldBeEmpty = calculateFilterCounts.problematicWebOrdersCount === 0
+      } else {
+        wouldBeEmpty = calculateFilterCounts.webOrdersCount === 0
+      }
+    } else if (webOrderFilter === 'non-web') {
+      if (filterMissingCashSale) {
+        wouldBeEmpty = calculateFilterCounts.problematicNonWebOrdersCount === 0
+      } else {
+        wouldBeEmpty = calculateFilterCounts.nonWebOrdersCount === 0
+      }
+    } else {
+      if (filterMissingCashSale) {
+        wouldBeEmpty = calculateFilterCounts.problematicOrdersCount === 0
+      }
+    }
+
+    if (wouldBeEmpty && !hasResetFiltersRef.current) {
+      // Reset filters to prevent 0 results
+      hasResetFiltersRef.current = true
+      setFilterMissingCashSale(false)
+      setWebOrderFilter('all')
+      // Reset the flag after a short delay to allow for future resets if needed
+      setTimeout(() => {
+        hasResetFiltersRef.current = false
+      }, 100)
+    } else if (!wouldBeEmpty) {
+      hasResetFiltersRef.current = false
+    }
+  }, [localTransactions, webOrderFilter, filterMissingCashSale, calculateFilterCounts, searchTerm])
+
   // Helper function to check if transaction is cash sale, cash refund, or payment
-  const isCashSaleOrRefund = (transaction: typeof transactions[0]): boolean => {
+  const isCashSaleOrRefund = (transaction: typeof localTransactions[0]): boolean => {
     if (!transaction.netsuiteTransactionName) return false
     const name = transaction.netsuiteTransactionName.toUpperCase()
     // Check for NetSuite transaction name patterns: CS (Cash Sale), RFND (Cash Refund), PYMT/CUSTPYMT (Payment)
@@ -125,7 +297,7 @@ export function TransactionsDialog({
   // Helper function to get the amount to use for NetSuite totals
   // For cash sales: use NetSuite amount if available, otherwise Shopify amount
   // For non-cash sales (with dropdown): use Shopify amount
-  const getNetSuiteAmount = (transaction: typeof transactions[0]): number => {
+  const getNetSuiteAmount = (transaction: typeof localTransactions[0]): number => {
     const isCashSale = isCashSaleOrRefund(transaction)
     
     if (isCashSale) {
@@ -146,7 +318,7 @@ export function TransactionsDialog({
   }
 
   // Calculate Shopify summary breakdown (matching Shopify payout format)
-  const includedTransactions = transactions.filter(t => t.includeInNetSuite !== false)
+  const includedTransactions = localTransactions.filter(t => t.includeInNetSuite !== false)
   
   const totalCharges = includedTransactions
     .filter(t => {
@@ -182,7 +354,7 @@ export function TransactionsDialog({
   // Sum all fees (they're stored as positive in DB, but should be negative for display/calculation)
   // Fees should be included from ALL transactions in the payout, not just included ones
   // IMPORTANT: Fees are only on charge transactions, not on refunds/adjustments/marketplace sales tax
-  const totalFeesRaw = transactions.reduce((sum, t) => {
+  const totalFeesRaw = localTransactions.reduce((sum, t) => {
     const fee = typeof t.fee === 'string' ? parseFloat(t.fee) : (t.fee ?? 0)
     // Fees can be positive or negative in DB, but we want absolute value for summing
     // Then we'll make it negative for display
@@ -195,12 +367,12 @@ export function TransactionsDialog({
   
   // Debug: Log fee calculation (remove in production)
   if (process.env.NODE_ENV === 'development') {
-    const transactionsWithFees = transactions.filter(t => {
+    const transactionsWithFees = localTransactions.filter(t => {
       const fee = typeof t.fee === 'string' ? parseFloat(t.fee) : (t.fee ?? 0)
       return Math.abs(fee) > 0.01
     })
     console.log('Fee calculation debug:', {
-      totalTransactions: transactions.length,
+      totalTransactions: localTransactions.length,
       transactionsWithFees: transactionsWithFees.length,
       totalFeesRaw,
       totalFees,
@@ -217,8 +389,8 @@ export function TransactionsDialog({
   // - For non-cash sales (with dropdown): use Shopify amount
   // Memoize includedTransactionsForNetSuite to prevent unnecessary recalculations
   const includedTransactionsForNetSuite = useMemo(
-    () => transactions.filter(t => t.includeInNetSuite !== false),
-    [transactions]
+    () => localTransactions.filter(t => t.includeInNetSuite !== false),
+    [localTransactions]
   )
   
   // Calculate NetSuite breakdown first (needed for both summary and total)
@@ -269,12 +441,12 @@ export function TransactionsDialog({
   // This represents what actually hits the account
   const totalNetSuiteAmount = nsCharges - Math.abs(nsRefunds) - Math.abs(nsAdjustments) - Math.abs(nsFees)
 
-  const currency = payoutCurrency || transactions[0]?.currency || 'USD'
-  const transactionsWithNS = transactions.filter(t => t.netsuiteTransactionId)
+  const currency = payoutCurrency || localTransactions[0]?.currency || 'USD'
+  const transactionsWithNS = localTransactions.filter(t => t.netsuiteTransactionId)
 
   useEffect(() => {
     // Guard: Don't run if transactions array is empty or hasn't been initialized
-    if (!transactions || transactions.length === 0) {
+    if (!localTransactions || localTransactions.length === 0) {
       setGroupedFeeItems([])
       return
     }
@@ -326,7 +498,7 @@ export function TransactionsDialog({
         const netsuiteFeeMap = new Map<string, number>()
 
         // Add ALL fees from transactions table to Shopify Fees (sum all fees)
-        const shopifyFeesRaw = transactions.reduce((sum, t) => {
+        const shopifyFeesRaw = localTransactions.reduce((sum, t) => {
           const fee = typeof t.fee === 'string' ? parseFloat(t.fee) : t.fee
           return sum + Math.abs(fee || 0)
         }, 0)
@@ -342,7 +514,7 @@ export function TransactionsDialog({
         netsuiteFeeMap.set('Shopify Fees', netsuiteFeesRaw)
 
         // Add dropdown selections
-        transactions.forEach((txn) => {
+        localTransactions.forEach((txn) => {
           // amountDescription dropdown
           if (txn.amountDescription) {
             const mapping = findMapping(txn.amountDescription)
@@ -399,7 +571,7 @@ export function TransactionsDialog({
 
         // Ensure "Shopify Fees" always shows the sum of ALL fees from the transactions table
         // Recalculate to make sure it's the total of all fees (not affected by dropdown selections)
-        const allFeesTotal = transactions.reduce((sum, t) => {
+        const allFeesTotal = localTransactions.reduce((sum, t) => {
           const fee = typeof t.fee === 'string' ? parseFloat(t.fee) : t.fee
           return sum + Math.abs(fee || 0)
         }, 0)
@@ -444,7 +616,7 @@ export function TransactionsDialog({
       cancelled = true
       // Don't set isMountedRef.current = false here - that's only for component unmount
     }
-  }, [transactions, includedTransactionsForNetSuite]) // includedTransactionsForNetSuite is memoized from transactions
+  }, [localTransactions, includedTransactionsForNetSuite]) // includedTransactionsForNetSuite is memoized from localTransactions
   
   // Cleanup on unmount
   useEffect(() => {
@@ -712,7 +884,7 @@ export function TransactionsDialog({
   }
 
   const handleAddNetSuite = (transactionId: string) => {
-    const transaction = transactions.find(t => t.id === transactionId)
+    const transaction = localTransactions.find(t => t.id === transactionId)
     if (transaction) {
       setSelectedTransactionForAdd(transaction)
       setAddNetSuiteDialogOpen(true)
@@ -747,6 +919,15 @@ export function TransactionsDialog({
   }
 
   const handleUpdateOtherFeesDescription = async (transactionId: string, description: string | null) => {
+    // Optimistically update local state immediately
+    setLocalTransactions(prev => 
+      prev.map(t => 
+        t.id === transactionId 
+          ? { ...t, otherFeesDescription: description }
+          : t
+      )
+    )
+    
     try {
       const response = await fetch(`/api/payouts/transactions/${transactionId}/other-fees-description`, {
         method: 'PATCH',
@@ -759,19 +940,35 @@ export function TransactionsDialog({
       const data = await response.json()
 
       if (response.ok && data.success) {
-        // Refresh transactions to show the updated data
-        safeRefreshTransactions()
+        if (onRefreshTransactions && isMountedRef.current) {
+          Promise.resolve().then(() => {
+            if (isMountedRef.current && onRefreshTransactions) {
+              onRefreshTransactions()
+            }
+          })
+        }
       } else {
         console.error('Error updating other fees description:', data.error)
         alert(`Error updating other fees description: ${data.error || 'Unknown error'}`)
+        setLocalTransactions(transactions)
       }
     } catch (error) {
       console.error('Error updating other fees description:', error)
       alert(`Error updating other fees description: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      setLocalTransactions(transactions)
     }
   }
 
   const handleUpdateAmountDescription = async (transactionId: string, description: string | null) => {
+    // Optimistically update local state immediately for instant UI feedback
+    setLocalTransactions(prev => 
+      prev.map(t => 
+        t.id === transactionId 
+          ? { ...t, amountDescription: description }
+          : t
+      )
+    )
+    
     try {
       const response = await fetch(`/api/payouts/transactions/${transactionId}/amount-description`, {
         method: 'PATCH',
@@ -784,18 +981,38 @@ export function TransactionsDialog({
       const data = await response.json()
 
       if (response.ok && data.success) {
-        safeRefreshTransactions()
+        // Refresh from server to ensure consistency (but UI already updated optimistically)
+        if (onRefreshTransactions && isMountedRef.current) {
+          Promise.resolve().then(() => {
+            if (isMountedRef.current && onRefreshTransactions) {
+              onRefreshTransactions()
+            }
+          })
+        }
       } else {
         console.error('Error updating amount description:', data.error)
         alert(`Error updating amount description: ${data.error || 'Unknown error'}`)
+        // Revert optimistic update on error
+        setLocalTransactions(transactions)
       }
     } catch (error) {
       console.error('Error updating amount description:', error)
       alert(`Error updating amount description: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      // Revert optimistic update on error
+      setLocalTransactions(transactions)
     }
   }
 
   const handleUpdateFeeDescription = async (transactionId: string, description: string | null) => {
+    // Optimistically update local state immediately
+    setLocalTransactions(prev => 
+      prev.map(t => 
+        t.id === transactionId 
+          ? { ...t, feeDescription: description }
+          : t
+      )
+    )
+    
     try {
       const response = await fetch(`/api/payouts/transactions/${transactionId}/fee-description`, {
         method: 'PATCH',
@@ -808,14 +1025,22 @@ export function TransactionsDialog({
       const data = await response.json()
 
       if (response.ok && data.success) {
-        safeRefreshTransactions()
+        if (onRefreshTransactions && isMountedRef.current) {
+          Promise.resolve().then(() => {
+            if (isMountedRef.current && onRefreshTransactions) {
+              onRefreshTransactions()
+            }
+          })
+        }
       } else {
         console.error('Error updating fee description:', data.error)
         alert(`Error updating fee description: ${data.error || 'Unknown error'}`)
+        setLocalTransactions(transactions)
       }
     } catch (error) {
       console.error('Error updating fee description:', error)
       alert(`Error updating fee description: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      setLocalTransactions(transactions)
     }
   }
 
@@ -1094,13 +1319,47 @@ export function TransactionsDialog({
                 <Checkbox
                   id="filter-missing-cash-sale"
                   checked={filterMissingCashSale}
-                  onCheckedChange={(checked) => setFilterMissingCashSale(checked === true)}
+                  disabled={
+                    calculateFilterCounts.problematicOrdersCount === 0 ||
+                    (webOrderFilter === 'web' && calculateFilterCounts.problematicWebOrdersCount === 0) ||
+                    (webOrderFilter === 'non-web' && calculateFilterCounts.problematicNonWebOrdersCount === 0)
+                  }
+                  onCheckedChange={(checked) => {
+                    const newValue = checked === true
+                    // Check if this would result in 0 transactions
+                    let wouldBeEmpty = false
+                    if (webOrderFilter === 'web') {
+                      wouldBeEmpty = newValue && calculateFilterCounts.problematicWebOrdersCount === 0
+                    } else if (webOrderFilter === 'non-web') {
+                      wouldBeEmpty = newValue && calculateFilterCounts.problematicNonWebOrdersCount === 0
+                    } else {
+                      wouldBeEmpty = newValue && calculateFilterCounts.problematicOrdersCount === 0
+                    }
+                    if (!wouldBeEmpty) {
+                      setFilterMissingCashSale(newValue)
+                    }
+                  }}
                 />
                 <label
                   htmlFor="filter-missing-cash-sale"
-                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                  className={`text-sm font-medium leading-none ${
+                    (calculateFilterCounts.problematicOrdersCount === 0 ||
+                     (webOrderFilter === 'web' && calculateFilterCounts.problematicWebOrdersCount === 0) ||
+                     (webOrderFilter === 'non-web' && calculateFilterCounts.problematicNonWebOrdersCount === 0))
+                      ? 'cursor-not-allowed opacity-50'
+                      : 'cursor-pointer'
+                  }`}
                 >
                   Orders with Issues
+                  {calculateFilterCounts.problematicOrdersCount === 0 && webOrderFilter === 'all' && (
+                    <span className="text-xs text-muted-foreground ml-1">(0)</span>
+                  )}
+                  {webOrderFilter === 'web' && calculateFilterCounts.problematicWebOrdersCount === 0 && (
+                    <span className="text-xs text-muted-foreground ml-1">(0)</span>
+                  )}
+                  {webOrderFilter === 'non-web' && calculateFilterCounts.problematicNonWebOrdersCount === 0 && (
+                    <span className="text-xs text-muted-foreground ml-1">(0)</span>
+                  )}
                 </label>
               </div>
               <div className="flex items-center gap-2">
@@ -1110,12 +1369,46 @@ export function TransactionsDialog({
                 <select
                   id="web-order-filter"
                   value={webOrderFilter}
-                  onChange={(e) => setWebOrderFilter(e.target.value as 'all' | 'web' | 'non-web')}
+                  onChange={(e) => {
+                    const newValue = e.target.value as 'all' | 'web' | 'non-web'
+                    // Check if this would result in 0 transactions
+                    let wouldBeEmpty = false
+                    if (newValue === 'web') {
+                      wouldBeEmpty = filterMissingCashSale 
+                        ? calculateFilterCounts.problematicWebOrdersCount === 0
+                        : calculateFilterCounts.webOrdersCount === 0
+                    } else if (newValue === 'non-web') {
+                      wouldBeEmpty = filterMissingCashSale
+                        ? calculateFilterCounts.problematicNonWebOrdersCount === 0
+                        : calculateFilterCounts.nonWebOrdersCount === 0
+                    }
+                    if (!wouldBeEmpty) {
+                      setWebOrderFilter(newValue)
+                    }
+                  }}
                   className="px-2 py-1 text-sm border rounded-md"
                 >
                   <option value="all">All Orders</option>
-                  <option value="web">Web Orders</option>
-                  <option value="non-web">Non-Web Orders</option>
+                  <option 
+                    value="web"
+                    disabled={filterMissingCashSale 
+                      ? calculateFilterCounts.problematicWebOrdersCount === 0
+                      : calculateFilterCounts.webOrdersCount === 0}
+                  >
+                    Web Orders {filterMissingCashSale 
+                      ? `(${calculateFilterCounts.problematicWebOrdersCount})`
+                      : `(${calculateFilterCounts.webOrdersCount})`}
+                  </option>
+                  <option 
+                    value="non-web"
+                    disabled={filterMissingCashSale
+                      ? calculateFilterCounts.problematicNonWebOrdersCount === 0
+                      : calculateFilterCounts.nonWebOrdersCount === 0}
+                  >
+                    Non-Web Orders {filterMissingCashSale
+                      ? `(${calculateFilterCounts.problematicNonWebOrdersCount})`
+                      : `(${calculateFilterCounts.nonWebOrdersCount})`}
+                  </option>
                 </select>
               </div>
             </div>
@@ -1167,9 +1460,10 @@ export function TransactionsDialog({
           </div>
 
           <TransactionsTable
+            key={`transactions-${payoutId}`}
             orderSourceMappings={orderSourceMappings}
             transactions={(() => {
-              let filtered = transactions
+              let filtered = localTransactions
 
               // Apply search filter if search term exists
               if (searchTerm.trim()) {
@@ -1229,56 +1523,6 @@ export function TransactionsDialog({
               // When filterMissingCashSale is checked, show all transactions for Order IDs
               // that have at least one problematic transaction
               if (filterMissingCashSale) {
-                // Helper function to check if a transaction is problematic
-                const isProblematicTransaction = (t: typeof transactions[0]): boolean => {
-                  // If transaction is resolved (ignored or has dropdown selection), it's not problematic
-                  const isResolved = t.includeInNetSuite === false || 
-                                    !!(t.amountDescription || t.feeDescription || t.otherFeesDescription)
-                  if (isResolved) return false
-                  
-                  // Missing NetSuite ID
-                  if (!t.netsuiteTransactionId) return true
-                  
-                  // Check for actual amount mismatch (recalculate for payments to use net amount)
-                  if (t.amountMismatch === true) {
-                    // For payments, recalculate mismatch using net amount instead of amount
-                    const netsuiteNameUpper = (t.netsuiteTransactionName || '').toUpperCase().trim()
-                    const isPayment = netsuiteNameUpper.startsWith('PYMT') ||
-                                     netsuiteNameUpper.startsWith('CUSTPYMT') ||
-                                     netsuiteNameUpper.includes('PAYMENT')
-                    
-                    if (isPayment && t.netsuiteAmount !== null && t.netsuiteAmount !== undefined) {
-                      // For payments, compare net amount with NetSuite amount
-                      const shopifyNet = typeof t.net === 'string' ? parseFloat(t.net) : (t.net || 0)
-                      const netsuiteAmount = typeof t.netsuiteAmount === 'string' ? parseFloat(t.netsuiteAmount) : t.netsuiteAmount
-                      const actualMismatch = Math.abs(Math.abs(shopifyNet) - Math.abs(netsuiteAmount)) > 0.01
-                      // If amounts actually match, don't treat as problematic
-                      if (!actualMismatch) return false
-                    }
-                    // For non-payments or actual mismatches, treat as problematic
-                    return true
-                  }
-                  
-                  // Has order_name but missing NetSuite transaction name
-                  const hasOrderName = t.order_name && t.order_name !== '—' && t.order_name !== 'N/A'
-                  if (hasOrderName && !t.netsuiteTransactionName) return true
-                  
-                  // Has order_name but NetSuite transaction is not a cash sale/refund/payment
-                  if (hasOrderName && t.netsuiteTransactionName) {
-                    const name = t.netsuiteTransactionName.toUpperCase()
-                    const isCashSaleOrRefundOrPayment = name.startsWith('CS') || 
-                                                       name.startsWith('RFND') || 
-                                                       name.startsWith('PYMT') ||
-                                                       name.startsWith('CUSTPYMT') ||
-                                                       name.includes('CASH SALE') || 
-                                                       name.includes('CASH REFUND') ||
-                                                       name.includes('PAYMENT')
-                    if (!isCashSaleOrRefundOrPayment) return true
-                  }
-                  
-                  return false
-                }
-                
                 // Find all Order IDs that have at least one problematic transaction
                 const problematicOrderIds = new Set<string>()
                 filtered.forEach(t => {
@@ -1286,6 +1530,11 @@ export function TransactionsDialog({
                     problematicOrderIds.add(t.source_order_id)
                   }
                 })
+                
+                // If no problematic order IDs found, return empty array (show 0 orders)
+                if (problematicOrderIds.size === 0) {
+                  return []
+                }
                 
                 // Return all transactions for those Order IDs
                 return filtered.filter(t => 

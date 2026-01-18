@@ -11,6 +11,10 @@ async function seedPayoutMappings() {
       { mappingType: 'deposit_account', netsuiteId: '217', description: 'Default deposit account', isActive: true },
       { mappingType: 'fees_account', netsuiteId: '989', description: 'Shopify fees account', isActive: true },
       { mappingType: 'fees_description', netsuiteId: '', description: 'Shopify Fees', isActive: true },
+      { mappingType: 'fees_description', netsuiteId: '', description: 'Tax', isActive: true },
+      { mappingType: 'fees_description', netsuiteId: '', description: 'Shopify Campaigns', isActive: true },
+      { mappingType: 'fees_description', netsuiteId: '', description: 'Shop Cash Campaign Billing', isActive: true },
+      { mappingType: 'fees_description', netsuiteId: '', description: 'Tax Adjustment', isActive: true },
     ]
 
     for (const mapping of payoutMappings) {

@@ -408,8 +408,8 @@ export function TransactionsTable({
           
           allMappings.forEach((mapping: any) => {
             const mappingType = (mapping.mappingType || '').toLowerCase()
-            // Include all mappings except deposit_account and fees_account
-            if (!excludedTypes.includes(mappingType)) {
+            // Include all mappings except deposit_account and fees_account, and only active ones
+            if (!excludedTypes.includes(mappingType) && mapping.isActive !== false) {
               allFeesOptions.push({
                 id: mapping.id,
                 netsuiteId: mapping.netsuiteId || '',
@@ -804,22 +804,37 @@ export function TransactionsTable({
                       <span>{transaction.currency || 'USD'} {Number(transaction.amount).toFixed(2)}</span>
                       {!isCashSaleRefund && onUpdateAmountDescription && (
                         <Select
+                          key={`amount-desc-${transaction.id}-${transaction.amountDescription || 'none'}`}
                           value={(() => {
                             // If transaction is ignored, show "Ignore" in dropdown
                             if (transaction.includeInNetSuite === false) return '__ignore__'
                             if (!transaction.amountDescription) return '__none__'
-                            const matchingOption = feesDescriptionOptions.find(
-                              opt => opt.netsuiteId === transaction.amountDescription ||
-                                     opt.description === transaction.amountDescription ||
-                                     (!opt.netsuiteId && opt.description === transaction.amountDescription)
-                            )
+                            
+                            // Try to find matching option by description first (for options with empty netsuiteId)
+                            // Then try netsuiteId match
+                            const matchingOption = feesDescriptionOptions.find(opt => {
+                              // Match by description (handles cases where netsuiteId is empty)
+                              if (opt.description && opt.description === transaction.amountDescription) {
+                                return true
+                              }
+                              // Match by netsuiteId (if netsuiteId exists and matches)
+                              if (opt.netsuiteId && opt.netsuiteId.trim() !== '' && opt.netsuiteId === transaction.amountDescription) {
+                                return true
+                              }
+                              return false
+                            })
+                            
                             if (matchingOption) {
+                              // If netsuiteId exists and is not empty, use netsuiteId as value
                               if (matchingOption.netsuiteId && matchingOption.netsuiteId.trim() !== '') {
                                 return matchingOption.netsuiteId
                               } else {
+                                // Otherwise use the opt_ format for display value
                                 return `opt_${matchingOption.id}_${matchingOption.description || 'unknown'}`
                               }
                             }
+                            
+                            // Fallback: return the stored value (might be a description that doesn't match any option)
                             return transaction.amountDescription
                           })()}
                           onValueChange={async (value) => {
@@ -840,19 +855,30 @@ export function TransactionsTable({
                                 await onUpdateAmountDescription(String(transaction.id), null)
                                 return
                               }
+                              // Find the selected option by matching the value
                               const selectedOption = feesDescriptionOptions.find(opt => {
+                                // Match by netsuiteId if it exists and value matches
                                 if (opt.netsuiteId && opt.netsuiteId.trim() !== '' && opt.netsuiteId === value) {
                                   return true
                                 }
+                                // Match by the opt_ format (for options with empty netsuiteId)
                                 const expectedValue = `opt_${opt.id}_${opt.description || 'unknown'}`
                                 if (expectedValue === value) {
                                   return true
                                 }
                                 return false
                               })
-                              const valueToStore = selectedOption?.netsuiteId && selectedOption.netsuiteId.trim() !== '' 
+                              
+                              if (!selectedOption) {
+                                console.warn('Selected option not found for value:', value)
+                                return
+                              }
+                              
+                              // Store the description if netsuiteId is empty, otherwise store netsuiteId
+                              const valueToStore = selectedOption.netsuiteId && selectedOption.netsuiteId.trim() !== '' 
                                 ? selectedOption.netsuiteId 
-                                : selectedOption?.description || null
+                                : (selectedOption.description || null)
+                              
                               await onUpdateAmountDescription(String(transaction.id), valueToStore)
                             }
                           }}

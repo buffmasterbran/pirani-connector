@@ -1370,6 +1370,16 @@ export default function Home() {
     setSelectedPayoutId(payoutId)
     try {
       const response = await fetch(`/api/payouts/${payoutId}/transactions`)
+      
+      // Check if response is JSON before parsing
+      const contentType = response.headers.get('content-type')
+      if (!contentType || !contentType.includes('application/json')) {
+        // If not JSON, it's likely an HTML error page
+        const text = await response.text()
+        console.error('Non-JSON response received:', text.substring(0, 200))
+        throw new Error(`Server returned non-JSON response (${response.status} ${response.statusText}). The API route may not be found or there's a server error.`)
+      }
+      
       const data = await response.json()
       if (response.ok) {
         setSelectedPayoutTransactions(data.transactions || [])
