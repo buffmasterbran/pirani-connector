@@ -1751,7 +1751,25 @@ export default function Home() {
       
       // Fetch the specified number of orders (most recent first)
       const response = await fetch(`/api/shopify/orders?limit=${limit}`)
-      const data = await response.json()
+      
+      // Check if response is JSON before parsing, handle errors gracefully
+      const contentType = response.headers.get('content-type')
+      let data: any
+      try {
+        if (contentType && contentType.includes('application/json')) {
+          data = await response.json()
+        } else {
+          const text = await response.text()
+          throw new Error(text || 'Server returned non-JSON response')
+        }
+      } catch (parseError) {
+        // If JSON parsing fails, try to get the error message from the response
+        if (parseError instanceof SyntaxError) {
+          const text = await response.clone().text()
+          throw new Error(text || 'Failed to parse server response as JSON')
+        }
+        throw parseError
+      }
       
       if (response.ok) {
         const fetchedOrders = data.orders || []
@@ -1771,11 +1789,12 @@ export default function Home() {
         }
       } else {
         console.error('❌ Error fetching orders:', data.error)
-        alert(`Error fetching orders: ${data.error}`)
+        alert(`Error fetching orders: ${data.error || 'Unknown error'}`)
       }
     } catch (error) {
       console.error('❌ Error importing orders by range:', error)
-      alert('Error importing orders by range: ' + error)
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      alert('Error importing orders by range: ' + errorMessage)
     } finally {
       setIsLoadingOrders(false)
     }

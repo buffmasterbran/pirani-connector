@@ -18,7 +18,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ orders })
   } catch (error) {
     console.error('❌ Failed to fetch Shopify orders', error)
-    return NextResponse.json({ error: 'Failed to fetch orders from Shopify' }, { status: 500 })
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+    return NextResponse.json({ 
+      error: 'Failed to fetch orders from Shopify',
+      details: errorMessage 
+    }, { status: 500 })
   }
 }
 
@@ -83,6 +87,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ imported, updated })
   } catch (error) {
     console.error('❌ Failed to import Shopify orders', error)
-    return NextResponse.json({ error: 'Failed to import Shopify orders' }, { status: 500 })
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+    return NextResponse.json({ 
+      error: 'Failed to import Shopify orders',
+      details: errorMessage 
+    }, { status: 500 })
   }
 }
