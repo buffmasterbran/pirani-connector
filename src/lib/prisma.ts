@@ -5,7 +5,12 @@ declare global {
   var prisma: PrismaClient | undefined
 }
 
-export const prisma = global.prisma ?? new PrismaClient()
+// Configure Prisma Client with connection pooling settings
+const prismaClientOptions = {
+  log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
+}
+
+export const prisma = global.prisma ?? new PrismaClient(prismaClientOptions)
 
 if (process.env.NODE_ENV !== 'production') {
   global.prisma = prisma

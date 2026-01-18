@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
-
-const prisma = new PrismaClient()
+import { prisma } from '@/lib/prisma'
 
 export async function PUT(
   request: NextRequest,
@@ -9,23 +7,20 @@ export async function PUT(
 ) {
   try {
     const { netsuiteDepositNumber } = await request.json()
-    const orderId = BigInt(params.id)
+    const shopifyOrderId = params.id
     
-    console.log(`💾 Updating NetSuite ID for order ${params.id} to: ${netsuiteDepositNumber}`)
+    console.log(`💾 Updating NetSuite deposit ID for order ${shopifyOrderId} to: ${netsuiteDepositNumber}`)
     
-    const updatedOrder = await prisma.order.update({
-      where: { id: orderId },
-      data: { netsuiteDepositNumber }
+    const updatedLines = await prisma.orderLine.updateMany({
+      where: { shopifyOrderId, isDeleted: false },
+      data: { netsuiteDepositId: netsuiteDepositNumber || null }
     })
     
-    console.log(`✅ Updated order ${params.id} NetSuite ID successfully`)
+    console.log(`✅ Updated ${updatedLines.count} order line(s) for order ${shopifyOrderId}`)
     
     return NextResponse.json({ 
       success: true, 
-      order: {
-        id: updatedOrder.id.toString(),
-        netsuiteDepositNumber: updatedOrder.netsuiteDepositNumber
-      }
+      updatedCount: updatedLines.count
     })
     
   } catch (error) {

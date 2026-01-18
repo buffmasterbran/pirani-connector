@@ -98,8 +98,8 @@ export async function PUT(request: NextRequest) {
             shopifyCode: shopifyCode || null,
             shopifyValue: shopifyValue || null,
             netsuiteId,
-            applyToAllAccounts,
-            isActive,
+            applyToAllAccounts: typeof applyToAllAccounts === 'boolean' ? applyToAllAccounts : undefined,
+            isActive: typeof isActive === 'boolean' ? isActive : undefined,
             customFieldId: customFieldId || null,
           },
         })
@@ -113,8 +113,8 @@ export async function PUT(request: NextRequest) {
             shopifyCode: shopifyCode || null,
             shopifyValue: shopifyValue || null,
             netsuiteId,
-            applyToAllAccounts,
-            isActive,
+            applyToAllAccounts: typeof applyToAllAccounts === 'boolean' ? applyToAllAccounts : undefined,
+            isActive: typeof isActive === 'boolean' ? isActive : undefined,
             customFieldId: customFieldId || null,
           },
         })

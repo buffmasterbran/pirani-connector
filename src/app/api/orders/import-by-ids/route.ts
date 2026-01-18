@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
             // If error is about unknown fields, retry without sourceName/appId
             if (error.message?.includes('sourceName') || error.message?.includes('appId') || error.message?.includes('Unknown arg')) {
               console.warn(`⚠️ Prisma client not regenerated with new fields, saving without sourceName/appId for order ${lineShopifyOrderId}`)
-              const { sourceName: _, appId: __, ...restWithoutNewFields } = line
+              const { sourceName: _, appId: __, shopifyOrderId: ___, lineItemId: ____, ...restWithoutNewFields } = line
               result = await prisma.orderLine.upsert({
                 where: {
                   shopifyOrderId_lineItemId: {

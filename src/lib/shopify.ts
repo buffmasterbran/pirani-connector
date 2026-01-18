@@ -136,11 +136,6 @@ export function flattenShopifyOrder(order: any): FlattenedOrderLine[] {
     sourceName: order.source_name ?? null,
     appId: order.app_id ? Number(order.app_id) : null,
     lineItemSku: null,
-    lineItemName: null,
-    lineItemQuantity: null,
-    lineItemPrice: null,
-    lineItemTotal: null,
-    lineItemNet: null,
     lineItemMetadata: null,
     isDeleted: false,
   }
@@ -210,14 +205,14 @@ export async function fetchShopifyOrdersPaginated(maxOrders = 250, status: 'any'
     const remaining = target - allOrders.length
     const limit = Math.min(remaining, 250)
 
-    const requestUrl = nextUrl
+    const requestUrl: string = nextUrl
       ? nextUrl
       : `${SHOPIFY_BASE_URL}/orders.json?${new URLSearchParams({
           status,
           limit: String(limit),
         }).toString()}`
 
-    const response = await fetch(requestUrl, {
+    const response: Response = await fetch(requestUrl, {
       headers: SHOPIFY_HEADERS,
       cache: 'no-store',
     })
@@ -240,12 +235,12 @@ export async function fetchShopifyOrdersPaginated(maxOrders = 250, status: 'any'
       break
     }
 
-    const linkHeader = response.headers.get('Link')
+    const linkHeader: string | null = response.headers.get('Link')
     if (!linkHeader) {
       break
     }
 
-    const nextMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/)
+    const nextMatch: RegExpMatchArray | null = linkHeader.match(/<([^>]+)>;\s*rel="next"/)
     if (!nextMatch) {
       break
     }
@@ -286,10 +281,10 @@ export async function fetchShopifyPayoutTransactions(payoutId: string) {
 
   while (hasNextPage && pageCount < maxPages) {
     pageCount++
-    const url = nextUrl || `/shopify_payments/balance/transactions.json?payout_id=${payoutId}&limit=250`
+    const url: string = nextUrl || `/shopify_payments/balance/transactions.json?payout_id=${payoutId}&limit=250`
     
     try {
-      const { data, headers } = await shopifyFetchWithHeaders<{ transactions: any[] }>(url)
+      const { data, headers }: { data: { transactions: any[] }; headers: Headers } = await shopifyFetchWithHeaders<{ transactions: any[] }>(url)
       const transactions = data.transactions ?? []
       allTransactions.push(...transactions)
 
@@ -299,12 +294,12 @@ export async function fetchShopifyPayoutTransactions(payoutId: string) {
       }
 
       // Parse Link header to get next page URL
-      const linkHeader = headers.get('link')
+      const linkHeader: string | null = headers.get('link')
       if (linkHeader) {
         // Parse Link header: <url>; rel="next" (can be full URL or relative)
-        const nextMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/)
+        const nextMatch: RegExpMatchArray | null = linkHeader.match(/<([^>]+)>;\s*rel="next"/)
         if (nextMatch) {
-          let extractedUrl = nextMatch[1]
+          let extractedUrl: string = nextMatch[1]
           // Handle both full URLs and relative paths
           if (extractedUrl.startsWith('http')) {
             // Full URL - extract just the path part

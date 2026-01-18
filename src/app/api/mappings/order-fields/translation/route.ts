@@ -21,35 +21,35 @@ export async function GET(request: NextRequest) {
     try {
       if (shopifyCode === 'financial_status') {
         const values = await prisma.orderLine.findMany({
-          where: { isDeleted: false, financialStatus: { not: null } },
+          where: { isDeleted: false },
           select: { financialStatus: true },
           distinct: ['financialStatus'],
         })
         shopifyValues = values.map(v => v.financialStatus).filter(Boolean) as string[]
       } else if (shopifyCode === 'fulfillment_status') {
         const values = await prisma.orderLine.findMany({
-          where: { isDeleted: false, fulfillmentStatus: { not: null } },
+          where: { isDeleted: false },
           select: { fulfillmentStatus: true },
           distinct: ['fulfillmentStatus'],
         })
         shopifyValues = values.map(v => v.fulfillmentStatus).filter(Boolean) as string[]
       } else if (shopifyCode === 'currency') {
         const values = await prisma.orderLine.findMany({
-          where: { isDeleted: false, currency: { not: null } },
+          where: { isDeleted: false },
           select: { currency: true },
           distinct: ['currency'],
         })
         shopifyValues = values.map(v => v.currency).filter(Boolean) as string[]
       } else if (shopifyCode === 'customer.id') {
         const values = await prisma.orderLine.findMany({
-          where: { isDeleted: false, customerId: { not: null } },
+          where: { isDeleted: false },
           select: { customerId: true },
           distinct: ['customerId'],
         })
         shopifyValues = values.map(v => v.customerId).filter(Boolean) as string[]
       } else if (shopifyCode === 'customer.email') {
         const values = await prisma.orderLine.findMany({
-          where: { isDeleted: false, customerEmail: { not: null } },
+          where: { isDeleted: false },
           select: { customerEmail: true },
           distinct: ['customerEmail'],
         })
@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
       } else if (shopifyCode === 'payment_gateway_names') {
         // This is stored as JSON string, need to parse it
         const values = await prisma.orderLine.findMany({
-          where: { isDeleted: false, paymentGatewayNames: { not: null } },
+          where: { isDeleted: false },
           select: { paymentGatewayNames: true },
         })
         const allValues: string[] = []
@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
             }
           }
         }
-        shopifyValues = [...new Set(allValues)].sort()
+        shopifyValues = Array.from(new Set(allValues)).sort()
       }
     } catch (error) {
       console.error('Error fetching Shopify values:', error)

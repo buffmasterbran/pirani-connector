@@ -544,25 +544,8 @@ export function TransactionsTable({
       }
     }
   }
-  if (isLoading) {
-    return (
-      <div className="space-y-2">
-        {[...Array(3)].map((_, i) => (
-          <div key={i} className="h-12 bg-gray-100 rounded animate-pulse" />
-        ))}
-      </div>
-    )
-  }
 
-  if (transactions.length === 0) {
-    return (
-      <div className="text-center py-8 text-muted-foreground">
-        No transactions found for this payout.
-      </div>
-    )
-  }
-
-  // Group transactions by shopifyOrderId
+  // Group transactions by shopifyOrderId (must be before early returns for hooks)
   const groupedTransactions = new Map<string, Transaction[]>()
   const ungroupedTransactions: Transaction[] = []
 
@@ -607,12 +590,30 @@ export function TransactionsTable({
   const endIndex = startIndex + itemsPerPage
   const paginatedTransactions = displayTransactions.slice(startIndex, endIndex)
 
-  // Reset to page 1 if current page is out of bounds
+  // Reset to page 1 if current page is out of bounds (must be before early returns)
   useEffect(() => {
     if (totalPages > 0 && currentPage > totalPages) {
       setCurrentPage(1)
     }
   }, [totalPages, currentPage])
+
+  if (isLoading) {
+    return (
+      <div className="space-y-2">
+        {[...Array(3)].map((_, i) => (
+          <div key={i} className="h-12 bg-gray-100 rounded animate-pulse" />
+        ))}
+      </div>
+    )
+  }
+
+  if (transactions.length === 0) {
+    return (
+      <div className="text-center py-8 text-muted-foreground">
+        No transactions found for this payout.
+      </div>
+    )
+  }
 
   const activeTransaction = activeId 
     ? transactions.find(t => `netsuite-${t.id}` === activeId)
@@ -656,7 +657,7 @@ export function TransactionsTable({
               <Users className="h-4 w-4" />
               <span>
                 {multiTransactionOrders.length} order{multiTransactionOrders.length !== 1 ? 's' : ''} with multiple transactions detected. 
-                Use the "Ignore" option in dropdowns to exclude transactions from NetSuite matching.
+                Use the &quot;Ignore&quot; option in dropdowns to exclude transactions from NetSuite matching.
               </span>
             </div>
           </div>

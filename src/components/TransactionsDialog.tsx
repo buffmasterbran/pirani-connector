@@ -489,7 +489,7 @@ export function TransactionsDialog({
         const findMapping = (value: string | null | undefined) => {
           if (!value) return null
           return payoutMappings.find(
-            (m) => m.netsuiteId === value || m.description === value
+            (m: { netsuiteId: string; description: string }) => m.netsuiteId === value || m.description === value
           )
         }
 
@@ -1463,7 +1463,7 @@ export function TransactionsDialog({
             key={`transactions-${payoutId}`}
             orderSourceMappings={orderSourceMappings}
             transactions={(() => {
-              let filtered = localTransactions
+              let filtered = localTransactions as typeof transactions
 
               // Apply search filter if search term exists
               if (searchTerm.trim()) {
@@ -1545,13 +1545,13 @@ export function TransactionsDialog({
               }
               
               // Return filtered transactions (search already applied)
-              return filtered
-            })().map(t => ({
-              ...t,
-              amount: typeof t.amount === 'string' ? parseFloat(t.amount) : t.amount,
-              fee: typeof t.fee === 'string' ? parseFloat(t.fee) : t.fee,
-              net: typeof t.net === 'string' ? parseFloat(t.net) : t.net,
-            }))}
+              return filtered.map(t => ({
+                ...t,
+                amount: typeof t.amount === 'string' ? parseFloat(t.amount) : t.amount,
+                fee: typeof t.fee === 'string' ? parseFloat(t.fee) : t.fee,
+                net: typeof t.net === 'string' ? parseFloat(t.net) : t.net,
+              }))
+            })() as any}
             isLoading={isLoading}
             hideSensitiveData={hideSensitiveData}
             onDeleteNetSuiteId={handleDeleteNetSuiteId}

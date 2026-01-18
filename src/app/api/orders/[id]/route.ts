@@ -1,27 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
-
-const prisma = new PrismaClient()
+import { prisma } from '@/lib/prisma'
 
 export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const orderId = BigInt(params.id)
+    const shopifyOrderId = params.id
     
-    console.log(`🗑️ Deleting order ${params.id} from database...`)
+    console.log(`🗑️ Deleting order ${shopifyOrderId} from database...`)
     
-    // Delete the order
-    const deletedOrder = await prisma.order.delete({
-      where: { id: orderId }
+    // Soft delete all order lines for this order
+    const deletedLines = await prisma.orderLine.updateMany({
+      where: { shopifyOrderId, isDeleted: false },
+      data: { isDeleted: true }
     })
-    console.log(`✅ Deleted order ${params.id} from database`)
+    
+    console.log(`✅ Soft deleted ${deletedLines.count} order line(s) for order ${shopifyOrderId}`)
     
     return NextResponse.json({ 
       success: true, 
-      message: `Successfully deleted order ${params.id}`,
-      deletedOrder: params.id
+      message: `Successfully deleted order ${shopifyOrderId}`,
+      deletedCount: deletedLines.count
     })
     
   } catch (error) {

@@ -157,7 +157,13 @@ export async function GET(
       )
     }
 
-    const depositRequest = {
+    const depositRequest: {
+      account: { id: string }
+      trandate: string
+      memo: string
+      payment: { items: Array<{ deposit: boolean; id: number }> }
+      other?: { items: Array<{ description: string; amount: number; account: { id: string } }> }
+    } = {
       account: { id: '217' }, // Default account ID
       trandate: payoutDate.toISOString(),
       memo: `Shopify payout ${payoutId.slice(-8)}`,

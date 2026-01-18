@@ -25,7 +25,8 @@ import {
   type ShipmentMethodMapping,
   type OrderFieldMapping,
   type OrderItemFieldMapping,
-  type CustomerFieldMapping
+  type CustomerFieldMapping,
+  type OrderFieldTranslationMapping
 } from '@/lib/mappingUtils'
 import { safeToLocaleDateString } from '@/lib/dateUtils'
 
@@ -1804,6 +1805,8 @@ export default function Home() {
       isOpen: true,
       orderId,
       payload: null,
+      customerInfo: null,
+      addressInfo: null,
       isLoading: true,
     })
 
@@ -1839,6 +1842,8 @@ export default function Home() {
         isOpen: false,
         orderId: null,
         payload: null,
+        customerInfo: null,
+        addressInfo: null,
         isLoading: false,
       })
     }
@@ -1863,6 +1868,8 @@ export default function Home() {
         isOpen: false,
         orderId: null,
         payload: null,
+        customerInfo: null,
+        addressInfo: null,
         isLoading: false,
       })
 
@@ -1884,6 +1891,8 @@ export default function Home() {
         isOpen: false,
         orderId: null,
         payload: null,
+        customerInfo: null,
+        addressInfo: null,
         isLoading: false,
       })
     }
@@ -3042,7 +3051,7 @@ export default function Home() {
                   </div>
                 ) : orders.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
-                    No orders found. Click "Import All Orders" or "Import by Name" to get started.
+                    No orders found. Click &quot;Import All Orders&quot; or &quot;Import by Name&quot; to get started.
                   </div>
                 ) : filteredOrders.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
@@ -3684,7 +3693,7 @@ export default function Home() {
                           {orderSourceMappings.length === 0 ? (
                             <tr>
                               <td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500">
-                                No order source mappings found. Click "Add Mapping" to create one.
+                                No order source mappings found. Click &quot;Add Mapping&quot; to create one.
                               </td>
                             </tr>
                           ) : (
@@ -3834,7 +3843,7 @@ export default function Home() {
                                   <span className="text-green-600 text-sm">✅ Default Location (mapped)</span>
                                 </div>
                                 <div className="text-xs text-slate-500 mt-1">
-                                  Location ID 1 is correctly mapped to "Default Location"
+                                  Location ID 1 is correctly mapped to &quot;Default Location&quot;
                                 </div>
                               </div>
                             </div>
@@ -3944,7 +3953,7 @@ export default function Home() {
                         placeholder="e.g., web, checkout"
                       />
                       <p className="text-xs text-slate-500 mt-1">
-                        Shopify source_name (e.g., 'web', 'checkout'). Either App ID or Source Name must be provided.
+                        Shopify source_name (e.g., &apos;web&apos;, &apos;checkout&apos;). Either App ID or Source Name must be provided.
                       </p>
                     </div>
                     <div>
@@ -4056,7 +4065,7 @@ export default function Home() {
                           <div className="bg-blue-50 border border-blue-200 rounded p-3">
                             <p className="font-medium text-blue-900 mb-1">💡 Recommendation:</p>
                             <p className="text-blue-800">
-                              All tax adjustments should be set to <strong>"Shopify Tax Adjustment"</strong> in the dropdown. This ensures proper categorization in NetSuite and maintains accurate accounting records.
+                              All tax adjustments should be set to <strong>&quot;Shopify Tax Adjustment&quot;</strong> in the dropdown. This ensures proper categorization in NetSuite and maintains accurate accounting records.
                             </p>
                             <p className="text-blue-800 mt-2 text-xs">
                               <strong>Note:</strong> This is a recommendation, not a requirement. You can still choose other options if needed for your specific use case.
@@ -4090,7 +4099,7 @@ export default function Home() {
                           <div>
                             <p className="font-medium mb-2">When Shopify Pay payments span multiple payouts:</p>
                             <p>
-                              In some cases, Shopify Pay may split a single order's payment across <strong>two separate payouts</strong>. This typically happens when there are timing differences or payment processing delays.
+                              In some cases, Shopify Pay may split a single order&apos;s payment across <strong>two separate payouts</strong>. This typically happens when there are timing differences or payment processing delays.
                             </p>
                           </div>
                           <div>
@@ -4387,7 +4396,7 @@ export default function Home() {
               </div>
             ) : products.length === 0 ? (
               <div className="text-center py-8 text-slate-500">
-                No products loaded. Click "Sync" to fetch products from NetSuite.
+                No products loaded. Click &quot;Sync&quot; to fetch products from NetSuite.
               </div>
             ) : (
               <>
@@ -5027,7 +5036,7 @@ If you've created a matching SKU in Shopify, you'll need to trigger a resync. On
             </div>
           ) : allPayouts.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
-              No payouts found. Click "Import All Payouts" or "Import by ID" to get started.
+              No payouts found. Click &quot;Import All Payouts&quot; or &quot;Import by ID&quot; to get started.
             </div>
           ) : filteredPayouts.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
@@ -6261,9 +6270,9 @@ If you've created a matching SKU in Shopify, you'll need to trigger a resync. On
                                      {mapping.netsuiteId}
                                    </div>
                                  ) : (
-                                   <div className="text-slate-400 italic text-sm p-2 w-full">
-                                     Click "Add row" to set NetSuite field
-                                   </div>
+                                  <div className="text-slate-400 italic text-sm p-2 w-full">
+                                    Click &quot;Add row&quot; to set NetSuite field
+                                  </div>
                                  )}
                                </div>
                              </div>
@@ -7193,7 +7202,6 @@ If you've created a matching SKU in Shopify, you'll need to trigger a resync. On
                       backgroundColor: 'transparent',
                       fontSize: '12px',
                     }}
-                    theme="light"
                     collapsed={false}
                     displayDataTypes={false}
                     displayObjectSize={false}
@@ -7245,7 +7253,7 @@ If you've created a matching SKU in Shopify, you'll need to trigger a resync. On
               <h4 className="font-semibold text-blue-800 mb-2">How to Fix:</h4>
               <ol className="text-sm text-blue-700 space-y-1">
                 <li>1. Go to the <strong>Mappings</strong> section in the left sidebar</li>
-                <li>2. Look for the <strong>"Unmapped Payment Methods"</strong> or <strong>"Unmapped Shipment Methods"</strong> section</li>
+                <li>2. Look for the <strong>&quot;Unmapped Payment Methods&quot;</strong> or <strong>&quot;Unmapped Shipment Methods&quot;</strong> section</li>
                 <li>3. Select the appropriate NetSuite ID for each unmapped item</li>
                 <li>4. The mapping will be automatically saved to the database</li>
                 <li>5. Return to this order - the error should be resolved</li>
@@ -7268,6 +7276,8 @@ If you've created a matching SKU in Shopify, you'll need to trigger a resync. On
             isOpen: false,
             orderId: null,
             payload: null,
+            customerInfo: null,
+            addressInfo: null,
             isLoading: false,
           })
         }
@@ -7288,7 +7298,7 @@ If you've created a matching SKU in Shopify, you'll need to trigger a resync. On
                   <strong>Order ID:</strong> {netsuitePayloadDialog.orderId}
                 </p>
                 <p className="text-xs text-blue-600 mt-1">
-                  Review the JSON payload below. Click "Push to NetSuite" to send this order.
+                  Review the JSON payload below. Click &quot;Push to NetSuite&quot; to send this order.
                 </p>
               </div>
 
@@ -7393,7 +7403,6 @@ If you've created a matching SKU in Shopify, you'll need to trigger a resync. On
                       backgroundColor: 'transparent',
                       fontSize: '12px',
                     }}
-                    theme="light"
                     collapsed={false}
                     displayDataTypes={false}
                     displayObjectSize={false}
@@ -7413,6 +7422,8 @@ If you've created a matching SKU in Shopify, you'll need to trigger a resync. On
                       isOpen: false,
                       orderId: null,
                       payload: null,
+                      customerInfo: null,
+                      addressInfo: null,
                       isLoading: false,
                     })
                   }}
@@ -8163,7 +8174,7 @@ If you've created a matching SKU in Shopify, you'll need to trigger a resync. On
                   </div>
                 ) : customCustomerNetSuiteFieldName.trim() ? (
                   <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800">
-                    Enter a field name and click "Query" to load field information.
+                    Enter a field name and click &quot;Query&quot; to load field information.
                   </div>
                 ) : null}
               </div>
@@ -8271,7 +8282,7 @@ If you've created a matching SKU in Shopify, you'll need to trigger a resync. On
                     setCustomerCustomFieldInfo(null)
                     setCustomerCustomFieldValue('')
                   }}
-                  disabled={!customCustomerNetSuiteFieldName.trim() || (customerCustomFieldInfo && !customerCustomFieldValue)}
+                  disabled={!customCustomerNetSuiteFieldName.trim() || (customerCustomFieldInfo !== null && !customerCustomFieldValue)}
                 >
                   Add Mapping
                 </Button>
@@ -8346,7 +8357,7 @@ If you've created a matching SKU in Shopify, you'll need to trigger a resync. On
             <p className="text-sm text-slate-600">
               Below is the field data for this order. Any mapping you add will only apply to orders imported after the mapping is saved. 
               Note that this tool is in beta; please report any issues you encounter using it. 
-              If you're mapping an order line field, please be aware that only the first item's data from the order is shown for simplicity.
+              If you&apos;re mapping an order line field, please be aware that only the first item&apos;s data from the order is shown for simplicity.
             </p>
 
             {customShopifyOrderData && (
@@ -8568,7 +8579,6 @@ If you've created a matching SKU in Shopify, you'll need to trigger a resync. On
                           backgroundColor: 'transparent',
                           fontSize: '12px',
                         }}
-                        theme="light"
                         collapsed={2}
                         displayDataTypes={false}
                         displayObjectSize={false}
@@ -8831,7 +8841,6 @@ If you've created a matching SKU in Shopify, you'll need to trigger a resync. On
                           backgroundColor: 'transparent',
                           fontSize: '12px',
                         }}
-                        theme="light"
                         collapsed={2}
                         displayDataTypes={false}
                         displayObjectSize={false}
@@ -9047,9 +9056,13 @@ If you've created a matching SKU in Shopify, you'll need to trigger a resync. On
                   // Save translation mappings to the mapping object in state before closing
                   if (translationMappingIndex !== null) {
                     const updated = [...orderMappings]
-                    const filteredTranslations = translationMappings.filter(
+                    const filteredTranslations: OrderFieldTranslationMapping[] = translationMappings.filter(
                       (tm) => tm.shopifyValue && tm.netsuiteValue
-                    )
+                    ).map((tm) => ({
+                      ...tm,
+                      id: tm.id || `temp-${Date.now()}-${Math.random()}`,
+                      orderFieldMappingId: orderMappings[translationMappingIndex]?.id || '',
+                    }))
                     updated[translationMappingIndex] = {
                       ...updated[translationMappingIndex],
                       translationMappings: filteredTranslations,
@@ -9102,9 +9115,13 @@ If you've created a matching SKU in Shopify, you'll need to trigger a resync. On
                   if (result.success) {
                     // Update local state - store translations in the mapping object itself
                     const updated = [...orderMappings]
-                    const filteredTranslations = translationMappings.filter(
+                    const filteredTranslations: OrderFieldTranslationMapping[] = translationMappings.filter(
                       (tm) => tm.shopifyValue && tm.netsuiteValue
-                    )
+                    ).map((tm) => ({
+                      ...tm,
+                      id: tm.id || `temp-${Date.now()}-${Math.random()}`,
+                      orderFieldMappingId: orderMappings[translationMappingIndex]?.id || '',
+                    }))
                     updated[translationMappingIndex] = {
                       ...updated[translationMappingIndex],
                       translationMappings: filteredTranslations,

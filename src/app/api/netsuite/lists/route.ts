@@ -51,22 +51,6 @@ const FIELD_QUERIES: Record<string, { name: string; query: string }> = {
     name: 'accounts',
     query: "SELECT id, acctnumber, acctname, isinactive FROM account ORDER BY acctname"
   },
-  shipMethod: {
-    name: 'shipmethods',
-    query: "SELECT id, name, isinactive FROM shipmethod ORDER BY name"
-  },
-  taxCode: {
-    name: 'taxcodes',
-    query: "SELECT id, name, rate, isinactive FROM taxcode ORDER BY name"
-  },
-  priceLevel: {
-    name: 'pricelevels',
-    query: "SELECT id, name, isinactive FROM pricelevel ORDER BY name"
-  },
-  units: {
-    name: 'units',
-    query: "SELECT id, name, pluralname, abbreviation, isinactive FROM unitstype ORDER BY name"
-  },
   unitsOfMeasure: {
     name: 'units',
     query: "SELECT id, name, pluralname, abbreviation, isinactive FROM unitstype ORDER BY name"
