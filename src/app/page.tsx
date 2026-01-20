@@ -1070,8 +1070,14 @@ export default function Home() {
   const fetchSavedPayouts = async () => {
     setIsLoadingSaved(true)
     try {
+      console.log('🔍 [DEBUG] Frontend: Fetching /api/payouts...')
       const response = await fetch('/api/payouts')
       const data = await response.json()
+      console.log('🔍 [DEBUG] Frontend: Response status:', response.status)
+      console.log('🔍 [DEBUG] Frontend: Response data keys:', Object.keys(data))
+      console.log('🔍 [DEBUG] Frontend: Payouts array length:', data.payouts?.length || 0)
+      console.log('🔍 [DEBUG] Frontend: Payout IDs received:', data.payouts?.map((p: any) => p.id).join(', ') || 'none')
+      
       if (response.ok) {
         setSavedPayouts(data.payouts || [])
         console.log(`✅ Loaded ${data.payouts?.length || 0} saved payouts from database`)
@@ -1080,6 +1086,7 @@ export default function Home() {
       }
     } catch (error) {
       console.error('Error fetching saved payouts:', error)
+      console.error('🔍 [DEBUG] Frontend: Fetch error details:', error)
     } finally {
       setIsLoadingSaved(false)
     }

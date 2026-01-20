@@ -5,6 +5,12 @@ const toISO = (date: Date | null | undefined) => (date ? date.toISOString() : nu
 
 export async function GET() {
   try {
+    // Debug: Log database connection info (sanitized)
+    const dbUrl = process.env.DATABASE_URL || 'NOT_SET'
+    const sanitizedDbUrl = dbUrl.replace(/:[^:@]+@/, ':****@') // Hide password
+    console.log('🔍 [DEBUG] DATABASE_URL:', sanitizedDbUrl)
+    console.log('🔍 [DEBUG] Environment:', process.env.NODE_ENV)
+    
     const payouts = await prisma.payout.findMany({
       orderBy: { payoutDate: 'desc' },
       include: {
@@ -15,6 +21,13 @@ export async function GET() {
         },
       },
     })
+
+    console.log('🔍 [DEBUG] Raw payouts count from DB:', payouts.length)
+    console.log('🔍 [DEBUG] Payout IDs found:', payouts.map(p => p.id).join(', '))
+    
+    if (payouts.length === 0) {
+      console.warn('⚠️ [DEBUG] No payouts found in database!')
+    }
 
     // Get all unique shopifyOrderIds from all transactions that don't have orderLine relation
     const missingOrderIds = new Set<string>()
@@ -100,9 +113,20 @@ export async function GET() {
       }
     })
 
-    return NextResponse.json({ payouts: payload })
+    console.log('🔍 [DEBUG] Final payload count:', payload.length)
+    console.log('🔍 [DEBUG] Final payload payout IDs:', payload.map(p => p.id).join(', '))
+    
+    const response = NextResponse.json({ payouts: payload })
+    console.log('🔍 [DEBUG] Response status:', response.status)
+    
+    return response
   } catch (error) {
     console.error('❌ Failed to load payouts', error)
+    console.error('❌ [DEBUG] Error details:', {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+      name: error instanceof Error ? error.name : undefined,
+    })
     return NextResponse.json({ error: 'Failed to load payouts' }, { status: 500 })
   }
 }
