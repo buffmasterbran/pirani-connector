@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -15,6 +15,11 @@ import {
   Database,
   Truck,
   Server,
+  ScrollText,
+  Trash2,
+  ChevronDown,
+  ChevronRight,
+  Clock,
 } from 'lucide-react'
 
 interface TestResult {
@@ -343,6 +348,175 @@ function RestletTestTab() {
   )
 }
 
+interface WebhookLogEntry {
+  id: number
+  endpoint: string
+  method: string
+  requestPayload: any
+  responsePayload: any
+  responseStatus: number | null
+  durationMs: number | null
+  source: string | null
+  itemCount: number | null
+  summary: string | null
+  createdAt: string
+}
+
+function WebhookActivityLog() {
+  const [logs, setLogs] = useState<WebhookLogEntry[]>([])
+  const [loading, setLoading] = useState(false)
+  const [expandedId, setExpandedId] = useState<number | null>(null)
+  const [filter, setFilter] = useState<string>('all')
+  const [clearing, setClearing] = useState(false)
+
+  const fetchLogs = useCallback(async () => {
+    setLoading(true)
+    try {
+      const endpoint = filter !== 'all' ? `&endpoint=${encodeURIComponent(filter)}` : ''
+      const res = await fetch(`/api/webhooks/logs?limit=50${endpoint}`)
+      const data = await res.json()
+      setLogs(data.logs || [])
+    } catch {
+      setLogs([])
+    }
+    setLoading(false)
+  }, [filter])
+
+  useEffect(() => {
+    fetchLogs()
+  }, [fetchLogs])
+
+  const clearLogs = useCallback(async () => {
+    setClearing(true)
+    try {
+      await fetch('/api/webhooks/logs', { method: 'DELETE' })
+      setLogs([])
+    } catch { /* ignore */ }
+    setClearing(false)
+  }, [])
+
+  const formatTime = (iso: string) => {
+    const d = new Date(iso)
+    return d.toLocaleString()
+  }
+
+  const endpointLabel = (ep: string) => {
+    if (ep.includes('inventory')) return 'Inventory'
+    if (ep.includes('fulfillment')) return 'Fulfillment'
+    return ep
+  }
+
+  const filteredLogs = logs
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <h3 className="text-sm font-semibold text-slate-700">Webhook Activity Log</h3>
+          <span className="text-xs text-slate-400">Last {filteredLogs.length} entries</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <select
+            className="text-xs border rounded px-2 py-1 bg-white"
+            value={filter}
+            onChange={e => setFilter(e.target.value)}
+          >
+            <option value="all">All Endpoints</option>
+            <option value="/api/webhooks/inventory-update">Inventory Only</option>
+            <option value="/api/webhooks/fulfillment">Fulfillment Only</option>
+          </select>
+          <Button variant="outline" size="sm" onClick={fetchLogs} disabled={loading}>
+            {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+          </Button>
+          <Button variant="outline" size="sm" onClick={clearLogs} disabled={clearing} className="text-red-600 hover:text-red-700">
+            {clearing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+          </Button>
+        </div>
+      </div>
+
+      {filteredLogs.length === 0 ? (
+        <div className="text-center py-8 text-sm text-slate-400 border rounded-lg bg-slate-50">
+          <ScrollText className="h-8 w-8 mx-auto mb-2 opacity-30" />
+          No webhook activity yet. Send a test or wait for the NetSuite scripts to call in.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filteredLogs.map(log => {
+            const isExpanded = expandedId === log.id
+            const isSuccess = log.responseStatus && log.responseStatus >= 200 && log.responseStatus < 300
+
+            return (
+              <div key={log.id} className="border rounded-lg overflow-hidden">
+                <button
+                  className="w-full flex items-center gap-3 p-3 text-left hover:bg-slate-50 transition-colors"
+                  onClick={() => setExpandedId(isExpanded ? null : log.id)}
+                >
+                  {isExpanded ? <ChevronDown className="h-4 w-4 text-slate-400 flex-shrink-0" /> : <ChevronRight className="h-4 w-4 text-slate-400 flex-shrink-0" />}
+
+                  {isSuccess ? (
+                    <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
+                  ) : (
+                    <XCircle className="h-4 w-4 text-red-500 flex-shrink-0" />
+                  )}
+
+                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                    log.endpoint.includes('inventory')
+                      ? 'bg-blue-100 text-blue-700'
+                      : 'bg-purple-100 text-purple-700'
+                  }`}>
+                    {endpointLabel(log.endpoint)}
+                  </span>
+
+                  <span className="text-xs text-slate-600 font-medium">
+                    {log.itemCount != null ? `${log.itemCount} item${log.itemCount !== 1 ? 's' : ''}` : ''}
+                  </span>
+
+                  <span className="text-xs text-slate-500 flex-1 truncate">
+                    {log.summary || ''}
+                  </span>
+
+                  <span className="text-xs text-slate-400 flex items-center gap-1 flex-shrink-0">
+                    <Clock className="h-3 w-3" />
+                    {log.durationMs != null ? `${log.durationMs}ms` : '—'}
+                  </span>
+
+                  <span className="text-xs text-slate-400 flex-shrink-0">
+                    {formatTime(log.createdAt)}
+                  </span>
+                </button>
+
+                {isExpanded && (
+                  <div className="border-t bg-slate-50 p-3 space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-medium text-slate-500 block mb-1">Request Payload</label>
+                        <pre className="text-xs font-mono bg-slate-900 text-green-400 p-3 rounded-lg overflow-auto max-h-64">
+                          {JSON.stringify(log.requestPayload, null, 2)}
+                        </pre>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-slate-500 block mb-1">Response ({log.responseStatus})</label>
+                        <pre className="text-xs font-mono bg-slate-900 text-green-400 p-3 rounded-lg overflow-auto max-h-64">
+                          {JSON.stringify(log.responsePayload, null, 2)}
+                        </pre>
+                      </div>
+                    </div>
+                    {log.source && (
+                      <div className="text-xs text-slate-400">
+                        Source: <code className="bg-slate-200 px-1 rounded">{log.source}</code>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function ScriptTestingView() {
   return (
     <div className="space-y-6">
@@ -382,6 +556,18 @@ export default function ScriptTestingView() {
               <RestletTestTab />
             </TabsContent>
           </Tabs>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm flex items-center gap-2">
+            <ScrollText className="h-4 w-4" />
+            Received from NetSuite
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <WebhookActivityLog />
         </CardContent>
       </Card>
 

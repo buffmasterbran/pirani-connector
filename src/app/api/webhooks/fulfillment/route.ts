@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { getShopifyStore, shopifyGraphQLThrottled } from '@/lib/product-sync/shopify-graphql'
+import { logWebhook } from '@/lib/webhook-logger'
 
 function verifyAuth(request: NextRequest): boolean {
   const secret = process.env.NETSUITE_WEBHOOK_SECRET
@@ -102,6 +103,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'fulfillments array is required' }, { status: 400 })
   }
 
+  const startTime = Date.now()
   const dryRun = payload.dry_run === true
   console.info(`[webhook:fulfillment] Received ${payload.fulfillments.length} fulfillments${dryRun ? ' (DRY RUN)' : ''}`)
 
@@ -294,5 +296,18 @@ export async function POST(request: NextRequest) {
 
   console.info(`[webhook:fulfillment] Done${dryRun ? ' (DRY RUN)' : ''}. ${succeeded} succeeded, ${failed} failed`)
 
-  return NextResponse.json({ results, succeeded, failed, dryRun }, { status: 200 })
+  const responseBody = { results, succeeded, failed, dryRun }
+
+  await logWebhook({
+    endpoint: '/api/webhooks/fulfillment',
+    requestPayload: payload,
+    responsePayload: responseBody,
+    responseStatus: 200,
+    durationMs: Date.now() - startTime,
+    source: request.headers.get('user-agent') || 'unknown',
+    itemCount: payload.fulfillments.length,
+    summary: `${succeeded} succeeded, ${failed} failed${dryRun ? ' (dry run)' : ''}`,
+  })
+
+  return NextResponse.json(responseBody, { status: 200 })
 }

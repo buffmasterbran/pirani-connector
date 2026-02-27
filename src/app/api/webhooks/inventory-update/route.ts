@@ -6,6 +6,7 @@ import {
   updateVariantPrices,
   setInventoryQuantities,
 } from '@/lib/product-sync/shopify-graphql'
+import { logWebhook } from '@/lib/webhook-logger'
 
 function verifyAuth(request: NextRequest): boolean {
   const secret = process.env.NETSUITE_WEBHOOK_SECRET
@@ -31,6 +32,8 @@ interface InventoryPayload {
 }
 
 export async function POST(request: NextRequest) {
+  const startTime = Date.now()
+
   if (!verifyAuth(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
@@ -204,6 +207,17 @@ export async function POST(request: NextRequest) {
   }
 
   console.info(`[webhook:inventory] Done. Prices: ${priceUpdates}, Qty: ${quantityUpdates}, Skipped: ${skipped}, Unmatched: ${newUnmatched}, Errors: ${errors}`)
+
+  await logWebhook({
+    endpoint: '/api/webhooks/inventory-update',
+    requestPayload: payload,
+    responsePayload: summary,
+    responseStatus: 200,
+    durationMs: Date.now() - startTime,
+    source: request.headers.get('user-agent') || 'unknown',
+    itemCount: payload.items.length,
+    summary: `Prices: ${priceUpdates}, Qty: ${quantityUpdates}, Skipped: ${skipped}, Unmatched: ${newUnmatched}, Errors: ${errors}`,
+  })
 
   return NextResponse.json(summary, { status: 200 })
 }

@@ -522,6 +522,23 @@ model ProductSyncFieldMapping {
   @@index([storeConfigId])
 }
 
+model WebhookLog {
+  id              Int      @id @default(autoincrement())
+  endpoint        String
+  method          String   @default("POST")
+  requestPayload  Json?
+  responsePayload Json?
+  responseStatus  Int?
+  durationMs      Int?
+  source          String?
+  itemCount       Int?
+  summary         String?
+  createdAt       DateTime @default(now())
+
+  @@index([endpoint])
+  @@index([createdAt(sort: Desc)])
+}
+
 model Fulfillment {
   id                    Int       @id @default(autoincrement())
   shopifyOrderId        String
