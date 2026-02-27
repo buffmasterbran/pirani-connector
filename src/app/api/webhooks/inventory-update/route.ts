@@ -62,12 +62,13 @@ export async function POST(request: NextRequest) {
   let priceUpdates = 0
   let quantityUpdates = 0
   let skipped = 0
+  let newUnmatched = 0
   let errors = 0
   const errorDetails: Array<{ sku: string; error: string }> = []
 
   for (const item of payload.items) {
     try {
-      const existing = await prisma.productSyncMapping.findUnique({
+      let existing = await prisma.productSyncMapping.findUnique({
         where: { storeConfigId_netsuiteSku: { storeConfigId: storeConfig.id, netsuiteSku: item.sku } },
       })
 
@@ -77,7 +78,23 @@ export async function POST(request: NextRequest) {
           data: {
             netsuiteCurrentPrice: item.price != null ? item.price : undefined,
             netsuiteCurrentQty: item.quantity,
+            netsuiteName: item.name || existing.netsuiteName,
+            netsuiteItemType: item.itemType || existing.netsuiteItemType,
             updatedAt: new Date(),
+          },
+        })
+      } else {
+        existing = await prisma.productSyncMapping.create({
+          data: {
+            storeConfigId: storeConfig.id,
+            netsuiteItemId: item.netsuiteId,
+            netsuiteSku: item.sku,
+            netsuiteName: item.name || null,
+            netsuiteItemType: item.itemType || null,
+            netsuiteCurrentPrice: item.price != null ? item.price : undefined,
+            netsuiteCurrentQty: item.quantity,
+            matchStatus: 'unmatched',
+            netsuiteFlagValue: '1',
           },
         })
       }
@@ -97,17 +114,39 @@ export async function POST(request: NextRequest) {
 
       const matches = await findVariantBySku(store, item.sku)
       if (matches.length === 0) {
-        skipped++
+        await prisma.productSyncMapping.update({
+          where: { id: existing.id },
+          data: {
+            matchStatus: 'unmatched',
+            lastSyncError: 'SKU not found in Shopify',
+          },
+        })
+        newUnmatched++
         continue
       }
       if (matches.length > 1) {
+        await prisma.productSyncMapping.update({
+          where: { id: existing.id },
+          data: {
+            matchStatus: 'multiple_matches',
+            lastSyncError: `Multiple Shopify variants found (${matches.length})`,
+          },
+        })
         errorDetails.push({ sku: item.sku, error: `Multiple Shopify variants found (${matches.length})` })
         errors++
         continue
       }
 
       const variant = matches[0]
-      const updateData: Record<string, any> = {}
+      const updateData: Record<string, any> = {
+        matchStatus: 'matched',
+        shopifyVariantId: variant.variantId,
+        shopifyProductId: variant.productId,
+        shopifyInventoryItemId: variant.inventoryItemId,
+        shopifyProductTitle: variant.productTitle,
+        shopifyProductHandle: variant.productHandle,
+        lastSyncError: null,
+      }
 
       if (priceChanged && currentPrice !== null) {
         const priceResult = await updateVariantPrices(store, variant.productId, [
@@ -159,11 +198,12 @@ export async function POST(request: NextRequest) {
     priceUpdates,
     quantityUpdates,
     skipped,
+    newUnmatched,
     errors,
     errorDetails: errorDetails.length > 0 ? errorDetails.slice(0, 20) : undefined,
   }
 
-  console.info(`[webhook:inventory] Done. Prices: ${priceUpdates}, Qty: ${quantityUpdates}, Skipped: ${skipped}, Errors: ${errors}`)
+  console.info(`[webhook:inventory] Done. Prices: ${priceUpdates}, Qty: ${quantityUpdates}, Skipped: ${skipped}, Unmatched: ${newUnmatched}, Errors: ${errors}`)
 
   return NextResponse.json(summary, { status: 200 })
 }

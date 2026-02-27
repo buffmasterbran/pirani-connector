@@ -29,6 +29,7 @@ interface FulfillmentPayload {
 interface WebhookPayload {
   fulfillments: FulfillmentPayload[]
   timestamp?: string
+  dry_run?: boolean
 }
 
 const FULFILLMENT_ORDER_QUERY = `
@@ -101,7 +102,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'fulfillments array is required' }, { status: 400 })
   }
 
-  console.info(`[webhook:fulfillment] Received ${payload.fulfillments.length} fulfillments`)
+  const dryRun = payload.dry_run === true
+  console.info(`[webhook:fulfillment] Received ${payload.fulfillments.length} fulfillments${dryRun ? ' (DRY RUN)' : ''}`)
 
   const storeConfig = await prisma.productSyncStoreConfig.findFirst({
     where: { isActive: true },
@@ -112,7 +114,7 @@ export async function POST(request: NextRequest) {
   }
 
   const store = await getShopifyStore(storeConfig.id)
-  const results: Array<{ netsuiteIfId: string; success: boolean; error?: string; shopifyFulfillmentId?: string }> = []
+  const results: Array<{ netsuiteIfId: string; success: boolean; error?: string; shopifyFulfillmentId?: string; dryRun?: boolean; matchedLines?: number }> = []
 
   for (const ful of payload.fulfillments) {
     try {
@@ -180,6 +182,18 @@ export async function POST(request: NextRequest) {
 
         if (lineItemsToFulfill.length === 0) continue
 
+        if (dryRun) {
+          results.push({
+            netsuiteIfId: ful.netsuiteIfId,
+            success: true,
+            dryRun: true,
+            matchedLines: lineItemsToFulfill.length,
+            shopifyFulfillmentId: '(dry run - not created)',
+          })
+          fulfilled = true
+          break
+        }
+
         const trackingInfo = ful.trackingNumbers.length > 0
           ? { number: ful.trackingNumbers[0], company: ful.carrier || undefined }
           : undefined
@@ -224,7 +238,6 @@ export async function POST(request: NextRequest) {
         const shopifyFulId = createResult.data?.fulfillmentCreateV2?.fulfillment?.id
         fulfilled = true
 
-        // Save to Fulfillment table if it exists
         try {
           await prisma.$executeRaw`
             INSERT INTO "Fulfillment" ("shopifyOrderId", "netsuiteSoId", "netsuiteIfId", "shopifyFulfillmentId", "trackingNumber", "carrier", "shippedDate", "lineItems", "status", "createdAt", "updatedAt")
@@ -256,14 +269,15 @@ export async function POST(request: NextRequest) {
         })
       }
 
-      // Update OrderLine fulfillment status
-      try {
-        await prisma.orderLine.updateMany({
-          where: { shopifyOrderId: ful.shopifyOrderId },
-          data: { fulfillmentStatus: 'fulfilled' },
-        })
-      } catch {
-        // OrderLine may not exist for this order
+      if (!dryRun) {
+        try {
+          await prisma.orderLine.updateMany({
+            where: { shopifyOrderId: ful.shopifyOrderId },
+            data: { fulfillmentStatus: 'fulfilled' },
+          })
+        } catch {
+          // OrderLine may not exist for this order
+        }
       }
     } catch (err: any) {
       console.error(`[webhook:fulfillment] Error processing IF ${ful.netsuiteIfId}:`, err.message)
@@ -278,7 +292,7 @@ export async function POST(request: NextRequest) {
   const succeeded = results.filter(r => r.success).length
   const failed = results.filter(r => !r.success).length
 
-  console.info(`[webhook:fulfillment] Done. ${succeeded} succeeded, ${failed} failed`)
+  console.info(`[webhook:fulfillment] Done${dryRun ? ' (DRY RUN)' : ''}. ${succeeded} succeeded, ${failed} failed`)
 
-  return NextResponse.json({ results, succeeded, failed }, { status: 200 })
+  return NextResponse.json({ results, succeeded, failed, dryRun }, { status: 200 })
 }

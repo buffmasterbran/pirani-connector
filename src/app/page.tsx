@@ -34,6 +34,7 @@ import { useAccountContext } from '@/lib/account-context'
 import { AccountHeader } from '@/components/AccountHeader'
 import ProductSyncView from '@/app/product-sync/ProductSyncView'
 import ProductFieldMappings from '@/components/ProductFieldMappings'
+import ScriptTestingView from '@/app/script-testing/ScriptTestingView'
 
 interface Payout {
   id: string | number
@@ -4213,6 +4214,11 @@ export default function Home() {
       case 'product-sync':
         return (
           <ProductSyncView />
+        )
+        
+      case 'script-testing':
+        return (
+          <ScriptTestingView />
         )
         
       case 'mappings-orders':
