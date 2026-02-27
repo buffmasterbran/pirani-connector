@@ -522,6 +522,25 @@ model ProductSyncFieldMapping {
   @@index([storeConfigId])
 }
 
+model Fulfillment {
+  id                    Int       @id @default(autoincrement())
+  shopifyOrderId        String
+  netsuiteSoId          String?
+  netsuiteIfId          String    @unique
+  shopifyFulfillmentId  String?
+  trackingNumber        String?
+  carrier               String?
+  shippedDate           DateTime?
+  lineItems             Json?
+  status                String    @default("synced")
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([shopifyOrderId])
+  @@index([netsuiteSoId])
+  @@index([status])
+}
+
 model CustomerAddress {
   id                Int      @id @default(autoincrement())
   customerId        Int
