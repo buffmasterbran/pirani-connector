@@ -640,122 +640,81 @@ export function TransactionsDialog({
   const handleImportMissingOrders = async () => {
     if (missingOrderIds.length === 0) return
 
+    const BATCH_SIZE = 25
     const totalOrders = missingOrderIds.length
     setIsImporting(true)
     setImportProgress({ imported: 0, total: totalOrders })
-    
-    // Start progress simulation - update every second with estimated progress
-    // Use a more aggressive/optimistic estimate to show progress quickly
-    // Start showing progress after 0.5 seconds, increment by ~1% every second
-    const startTime = Date.now()
-    const progressIntervalRef = { current: null as NodeJS.Timeout | null }
-    let lastEstimatedProgress = 0
-    
-    progressIntervalRef.current = setInterval(() => {
-      if (!isMountedRef.current || !progressIntervalRef.current) {
-        if (progressIntervalRef.current) {
-          clearInterval(progressIntervalRef.current)
-          progressIntervalRef.current = null
-        }
-        return
-      }
-      
-      const elapsed = Date.now() - startTime
-      
-      // Use a simple linear progression: after 0.5s, start at 1, then add ~1% per second
-      // This ensures users see progress immediately
-      let estimatedProgress = 0
-      
-      if (elapsed >= 500) {
-        // After 0.5 seconds, show at least 1
-        // Then increment by roughly 1% of total every second (capped at 95%)
-        const secondsElapsed = Math.floor((elapsed - 500) / 1000) // Seconds since 0.5s mark
-        const incrementPerSecond = Math.max(1, Math.floor(totalOrders * 0.01)) // ~1% per second, min 1
-        estimatedProgress = Math.min(
-          1 + (secondsElapsed * incrementPerSecond),
-          Math.floor(totalOrders * 0.95) // Cap at 95%
-        )
-      }
-      
-      // Only update if progress has actually increased
-      if (estimatedProgress > lastEstimatedProgress && estimatedProgress <= totalOrders) {
-        lastEstimatedProgress = estimatedProgress
-        setImportProgress({ imported: estimatedProgress, total: totalOrders })
-      }
-    }, 500) // Update every 500ms for smoother progress
-    
+
+    let totalImported = 0
+    let totalUpdated = 0
+    let totalErrors: string[] = []
+    let ordersProcessed = 0
+
     try {
-      const response = await fetch('/api/orders/import-by-ids', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ orderIds: missingOrderIds }),
-      })
-
-      // Clear the progress interval since we're about to get real results
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current)
-        progressIntervalRef.current = null
+      const batches: string[][] = []
+      for (let i = 0; i < missingOrderIds.length; i += BATCH_SIZE) {
+        batches.push(missingOrderIds.slice(i, i + BATCH_SIZE))
       }
 
-      const data = await response.json()
+      console.log(`Starting import of ${totalOrders} orders in ${batches.length} batches of ${BATCH_SIZE}`)
 
-      if (response.ok && data.success) {
-        const importedCount = data.imported || 0
-        const updatedCount = data.updated || 0
-        const totalProcessed = importedCount + updatedCount
-        
-        // The API returns line item counts, not order counts
-        // For display purposes: if we have line items saved, assume orders were processed
-        // Only count as errors if they're actual order-level failures (not line-item level)
-        const errorCount = data.errors?.length || 0
-        const hasLineItemsSaved = totalProcessed > 0
-        
-        // Estimate: if we saved line items, assume orders were processed
-        // Only show failures if there are errors AND no line items were saved
-        let estimatedOrdersProcessed = totalOrders
-        if (errorCount > 0 && !hasLineItemsSaved) {
-          // Only count as failures if no line items were saved at all
-          estimatedOrdersProcessed = Math.max(0, totalOrders - errorCount)
-        }
-        
-        // Update progress to show completion
-        setImportProgress({ imported: estimatedOrdersProcessed, total: totalOrders })
-        
-        if (data.errors && data.errors.length > 0 && !hasLineItemsSaved) {
-          console.warn('Some orders failed to import:', data.errors)
-          alert(`Processed ${estimatedOrdersProcessed} of ${totalOrders} orders. ${errorCount} order(s) failed to import. Check console for details.`)
-        } else if (hasLineItemsSaved) {
-          // Success message - orders were saved (even if there were some non-critical errors)
-          const errorMsg = errorCount > 0 ? ` Note: ${errorCount} non-critical error(s) occurred (check console).` : ''
-          alert(`Successfully processed ${totalOrders} order(s) (${importedCount} new line items, ${updatedCount} updated line items).${errorMsg}`)
-        } else {
-          alert(`Successfully processed ${totalOrders} order(s) (${importedCount} new line items, ${updatedCount} updated line items).`)
-        }
+      for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
+        const batch = batches[batchIdx]
 
-        // Refresh transactions to show the newly imported order names
-        safeRefreshTransactions()
-        
-        // Clear progress after transactions refresh (they'll update the missing count)
-        setTimeout(() => {
-          setImportProgress(null)
-        }, 3000)
+        try {
+          const response = await fetch('/api/orders/import-by-ids', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orderIds: batch }),
+          })
+
+          if (!response.ok) {
+            let errorMsg = `Batch ${batchIdx + 1}: HTTP ${response.status}`
+            try { const errData = await response.json(); errorMsg = errData.error || errorMsg } catch { /* response may not be JSON */ }
+            console.error(errorMsg)
+            totalErrors.push(errorMsg)
+            ordersProcessed += batch.length
+            setImportProgress({ imported: ordersProcessed, total: totalOrders })
+            continue
+          }
+
+          const data = await response.json()
+          totalImported += data.imported || 0
+          totalUpdated += data.updated || 0
+          if (data.errors) totalErrors.push(...data.errors)
+
+          ordersProcessed += batch.length
+          setImportProgress({ imported: ordersProcessed, total: totalOrders })
+
+          if ((batchIdx + 1) % 10 === 0 || batchIdx === batches.length - 1) {
+            console.log(`Batch ${batchIdx + 1}/${batches.length}: ${totalImported} imported, ${totalUpdated} updated, ${totalErrors.length} errors`)
+          }
+        } catch (err: any) {
+          console.error(`Batch ${batchIdx + 1} failed:`, err.message)
+          totalErrors.push(`Batch ${batchIdx + 1}: ${err.message}`)
+          ordersProcessed += batch.length
+          setImportProgress({ imported: ordersProcessed, total: totalOrders })
+        }
+      }
+
+      setImportProgress({ imported: totalOrders, total: totalOrders })
+
+      const errorCount = totalErrors.length
+      if (errorCount > 0 && totalImported === 0 && totalUpdated === 0) {
+        console.warn('Order import errors:', totalErrors.slice(0, 20))
+        alert(`Processed ${totalOrders} orders. ${errorCount} error(s) occurred. Check console for details.`)
       } else {
-        console.error('Error importing orders:', data.error)
-        alert(`Error importing orders: ${data.error || 'Unknown error'}`)
-        setImportProgress(null)
+        const errorMsg = errorCount > 0 ? ` Note: ${errorCount} error(s) occurred (check console).` : ''
+        alert(`Successfully processed ${totalOrders} order(s) (${totalImported} new line items, ${totalUpdated} updated line items).${errorMsg}`)
       }
+
+      safeRefreshTransactions()
+      setTimeout(() => { setImportProgress(null) }, 3000)
     } catch (error) {
       console.error('Error importing orders:', error)
       alert(`Error importing orders: ${error instanceof Error ? error.message : 'Unknown error'}`)
       setImportProgress(null)
     } finally {
-      // Clear progress interval if it's still running
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current)
-        progressIntervalRef.current = null
-      }
       setIsImporting(false)
     }
   }
