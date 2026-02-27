@@ -58,7 +58,7 @@ export function Sidebar({ activeSection, onSectionChange }: SidebarProps) {
       color: 'text-pink-600'
     },
     {
-      id: 'products',
+      id: 'product-sync',
       name: 'Products',
       icon: Package,
       color: 'text-orange-600'

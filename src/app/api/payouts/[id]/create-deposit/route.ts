@@ -2,31 +2,66 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { generateOAuthHeader } from '@/lib/netsuite'
 
+export const maxDuration = 300
+
 const NETSUITE_ACCOUNT_ID = process.env.NETSUITE_ACCOUNT_ID || '7913744'
 const NETSUITE_API_URL = `https://${NETSUITE_ACCOUNT_ID}.suitetalk.api.netsuite.com/services/rest/record/v1/deposit`
 
-interface NetSuiteDepositRequest {
-  account: { id: string }
-  trandate: string // ISO 8601 format
-  memo: string
-  payment: {
-    items: Array<{ deposit: boolean; id: number }>
+const CHUNK_SIZE = 500
+
+interface DepositItem { deposit: boolean; id: number }
+interface OtherItem { description: string; amount: number; account: { id: string } }
+
+function extractDepositId(response: Response, responseText: string): string | null {
+  // Try response body
+  if (responseText?.trim()) {
+    try {
+      const data = JSON.parse(responseText)
+      if (data?.id) return String(data.id)
+      if (data?.links) {
+        for (const link of data.links) {
+          const m = link.href?.match(/deposit\/(\d+)/) || link.href?.match(/id=(\d+)/)
+          if (m) return m[1]
+        }
+      }
+    } catch { /* ignore parse errors */ }
   }
-  other?: {
-    items: Array<{
-      description: string
-      amount: number
-      account: { id: string }
-    }>
+
+  // Try Location header
+  const location = response.headers.get('Location')
+  if (location) {
+    const m = location.match(/\/deposit\/(\d+)/) || location.match(/deposit\.nl\?id=(\d+)/)
+    if (m) return m[1]
   }
+
+  return null
 }
 
-interface NetSuiteDepositResponse {
-  id: string
-  links?: Array<{
-    rel: string
-    href: string
-  }>
+async function netsuiteRequest(
+  method: 'POST' | 'PATCH',
+  url: string,
+  body: any,
+): Promise<{ ok: boolean; status: number; depositId: string | null; error?: string }> {
+  const authorization = generateOAuthHeader(method, url)
+  const res = await fetch(url, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: authorization,
+      Accept: 'application/json',
+    },
+    body: JSON.stringify(body),
+  })
+
+  const text = await res.text().catch(() => '')
+
+  if (!res.ok) {
+    console.error(`NetSuite ${method} error:`, { status: res.status, body: text })
+    return { ok: false, status: res.status, depositId: null, error: `${res.status}: ${text || res.statusText}` }
+  }
+
+  const depositId = extractDepositId(res, text)
+  return { ok: true, status: res.status, depositId }
 }
 
 export async function POST(
@@ -36,23 +71,13 @@ export async function POST(
   try {
     const payoutId = params.id
 
-    // Get payout with all transactions first
     const payout = await prisma.payout.findUnique({
       where: { id: payoutId },
-      include: {
-        transactions: {
-          orderBy: {
-            processedAt: 'asc',
-          },
-        },
-      },
+      include: { transactions: { orderBy: { processedAt: 'asc' } } },
     })
 
     if (!payout) {
-      return NextResponse.json(
-        { success: false, error: 'Payout not found' },
-        { status: 404 }
-      )
+      return NextResponse.json({ success: false, error: 'Payout not found' }, { status: 404 })
     }
 
     if (payout.netsuiteDepositId) {
@@ -63,390 +88,219 @@ export async function POST(
       })
     }
 
-    // Get ALL transactions with NetSuite IDs (cash sales, refunds, and payments) that are included
+    // Filter to transactions with NS IDs that are included
     const transactionsWithNS = payout.transactions.filter(
-      (txn) => 
-        txn.netsuiteTransactionId && 
+      (txn) =>
+        txn.netsuiteTransactionId &&
         txn.netsuiteTransactionId.trim() !== '' &&
-        (txn.includeInNetSuite !== false)
+        txn.includeInNetSuite !== false,
     )
 
-    // Separate transactions by type for different handling
     const cashSalesAndRefunds = transactionsWithNS.filter((txn) => {
       const name = (txn.netsuiteTransactionName || '').toUpperCase().trim()
-      return name.startsWith('CS') || name.startsWith('RFND') || 
-             name.includes('CASH SALE') || name.includes('CASH REFUND')
+      return name.startsWith('CS') || name.startsWith('RFND') ||
+        name.includes('CASH SALE') || name.includes('CASH REFUND')
     })
-    
+
     const payments = transactionsWithNS.filter((txn) => {
       const name = (txn.netsuiteTransactionName || '').toUpperCase().trim()
-      return name.startsWith('PYMT') || name.startsWith('CUSTPYMT') || 
-             name.includes('PAYMENT')
+      return name.startsWith('PYMT') || name.startsWith('CUSTPYMT') ||
+        name.includes('PAYMENT')
     })
 
     if (transactionsWithNS.length === 0) {
-      const totalTransactions = payout.transactions.length
       return NextResponse.json(
         {
           success: false,
-          error: `No transactions with NetSuite IDs found. Found ${totalTransactions} total transaction(s). Please fetch NetSuite transaction IDs first using "Get Missing NS Transactions" button.`,
+          error: `No transactions with NetSuite IDs found. Found ${payout.transactions.length} total. Use "Get Missing NS Transactions" first.`,
         },
-        { status: 400 }
+        { status: 400 },
       )
     }
 
-    // Calculate total fees (negative amount for "other" items) - only from included transactions
-    const totalFees = payout.transactions
-      .filter((txn) => txn.includeInNetSuite !== false)
-      .reduce((sum, txn) => {
-        return sum + (txn.fee || 0)
-      }, 0)
-
-    // Get payout mappings to resolve dropdown selections to account IDs and descriptions
-    const payoutMappings = await prisma.payoutMapping.findMany({
-      where: { isActive: true },
-    })
-
-    // Helper function to find mapping by netsuiteId or description
-    const findMapping = (value: string | null | undefined) => {
-      if (!value) return null
-      return payoutMappings.find(
-        (m) => m.netsuiteId === value || m.description === value
-      )
-    }
-
-    // Collect transactions with dropdown selections and group by mapping
-    const includedTransactions = payout.transactions.filter(
-      (txn) => txn.includeInNetSuite !== false
-    )
-
-    // Map to store grouped dropdown items: key = netsuiteId, value = { description, totalAmount }
-    const dropdownItemsMap = new Map<string, { description: string; amount: number }>()
-
-    includedTransactions.forEach((txn) => {
-      // Check amountDescription dropdown
-      if (txn.amountDescription) {
-        const mapping = findMapping(txn.amountDescription)
-        if (mapping && mapping.netsuiteId) {
-          const key = mapping.netsuiteId
-          const existing = dropdownItemsMap.get(key) || { description: mapping.description || '', amount: 0 }
-          existing.amount += Number(txn.amount) || 0
-          dropdownItemsMap.set(key, existing)
-        }
-      }
-
-      // Check feeDescription dropdown
-      if (txn.feeDescription) {
-        const mapping = findMapping(txn.feeDescription)
-        if (mapping && mapping.netsuiteId) {
-          const key = mapping.netsuiteId
-          const existing = dropdownItemsMap.get(key) || { description: mapping.description || '', amount: 0 }
-          existing.amount += Number(txn.fee) || 0
-          dropdownItemsMap.set(key, existing)
-        }
-      }
-
-      // Check otherFeesDescription dropdown
-      if (txn.otherFeesDescription) {
-        const mapping = findMapping(txn.otherFeesDescription)
-        if (mapping && mapping.netsuiteId) {
-          const key = mapping.netsuiteId
-          const existing = dropdownItemsMap.get(key) || { description: mapping.description || '', amount: 0 }
-          // For otherFeesDescription, use the amount field (or fee if amount is 0)
-          const amountToUse = Number(txn.amount) || Number(txn.fee) || 0
-          existing.amount += amountToUse
-          dropdownItemsMap.set(key, existing)
-        }
-      }
-    })
-
-    // Prepare deposit request
-    const payoutDate = payout.payoutDate || new Date()
-    
-    // Get NetSuite transaction IDs for cash sales, refunds, and payments - convert string to number
-    // All transaction types go into payment.items with deposit: true
+    // Build deposit items (deduplicated)
     const allDepositTransactions = [...cashSalesAndRefunds, ...payments]
-    const depositItems = allDepositTransactions
+    const depositItems: DepositItem[] = allDepositTransactions
       .map((txn) => {
-        const nsId = txn.netsuiteTransactionId
-        if (!nsId) return null
-        const idNum = parseInt(nsId, 10)
-        if (isNaN(idNum)) {
-          console.warn(`Invalid NetSuite transaction ID: ${nsId} for transaction ${txn.id}`)
-          return null
-        }
-        // Cash sales, refunds, and payments are all included as deposit items
+        const idNum = parseInt(txn.netsuiteTransactionId!, 10)
+        if (isNaN(idNum)) return null
         return { deposit: true, id: idNum }
       })
-      .filter((item): item is { deposit: true; id: number } => item !== null)
-      // Remove duplicates (in case same NetSuite transaction ID appears multiple times)
-      .filter((item, index, self) => 
-        index === self.findIndex((t) => t.id === item.id)
-      )
+      .filter((item): item is DepositItem => item !== null)
+      .filter((item, idx, arr) => idx === arr.findIndex((t) => t.id === item.id))
 
     if (depositItems.length === 0) {
       return NextResponse.json(
-        {
-          success: false,
-          error: 'No valid NetSuite transaction IDs found',
-        },
-        { status: 400 }
+        { success: false, error: 'No valid NetSuite transaction IDs found' },
+        { status: 400 },
       )
     }
 
-    const depositRequest: NetSuiteDepositRequest = {
-      account: { id: '217' }, // Default account ID
-      trandate: payoutDate.toISOString(),
-      memo: `Shopify payout ${payoutId.slice(-8)}`,
-      payment: {
-        items: depositItems,
-      },
+    // Calculate fees from included transactions
+    const includedTransactions = payout.transactions.filter((txn) => txn.includeInNetSuite !== false)
+    const totalFees = includedTransactions.reduce((sum, txn) => sum + (txn.fee || 0), 0)
+
+    // Get payout mappings for dropdown items
+    const payoutMappings = await prisma.payoutMapping.findMany({ where: { isActive: true } })
+    const findMapping = (value: string | null | undefined) => {
+      if (!value) return null
+      return payoutMappings.find((m) => m.netsuiteId === value || m.description === value)
     }
 
-    // Build "other.items" array
-    const otherItems: Array<{ description: string; amount: number; account: { id: string } }> = []
+    const dropdownItemsMap = new Map<string, { description: string; amount: number }>()
+    for (const txn of includedTransactions) {
+      if (txn.amountDescription) {
+        const mapping = findMapping(txn.amountDescription)
+        if (mapping?.netsuiteId) {
+          const e = dropdownItemsMap.get(mapping.netsuiteId) || { description: mapping.description || '', amount: 0 }
+          e.amount += Number(txn.amount) || 0
+          dropdownItemsMap.set(mapping.netsuiteId, e)
+        }
+      }
+      if (txn.feeDescription) {
+        const mapping = findMapping(txn.feeDescription)
+        if (mapping?.netsuiteId) {
+          const e = dropdownItemsMap.get(mapping.netsuiteId) || { description: mapping.description || '', amount: 0 }
+          e.amount += Number(txn.fee) || 0
+          dropdownItemsMap.set(mapping.netsuiteId, e)
+        }
+      }
+      if (txn.otherFeesDescription) {
+        const mapping = findMapping(txn.otherFeesDescription)
+        if (mapping?.netsuiteId) {
+          const e = dropdownItemsMap.get(mapping.netsuiteId) || { description: mapping.description || '', amount: 0 }
+          e.amount += Number(txn.amount) || Number(txn.fee) || 0
+          dropdownItemsMap.set(mapping.netsuiteId, e)
+        }
+      }
+    }
 
-    // Add fees if there are any (always as negative value)
+    const otherItems: OtherItem[] = []
     if (totalFees !== 0) {
       otherItems.push({
         description: 'Shopify Fees',
-        amount: totalFees < 0 ? totalFees : -Math.abs(totalFees), // Ensure negative
-        account: { id: '989' }, // Fees account
+        amount: totalFees < 0 ? totalFees : -Math.abs(totalFees),
+        account: { id: '989' },
       })
     }
-
-    // Add dropdown items (grouped and summed)
     dropdownItemsMap.forEach((item, netsuiteId) => {
       if (item.amount !== 0) {
-        otherItems.push({
-          description: item.description,
-          amount: item.amount,
-          account: { id: netsuiteId },
-        })
+        otherItems.push({ description: item.description, amount: item.amount, account: { id: netsuiteId } })
       }
     })
 
-    // Only add "other" section if there are items
+    const payoutDate = payout.payoutDate || new Date()
+    const memo = `Shopify payout ${payoutId.slice(-8)}`
+
+    console.log(`💰 Creating deposit for payout ${payoutId}: ${depositItems.length} payment items, ${otherItems.length} other items`)
+
+    // --- Chunk logic ---
+    // If items fit in one request, send them all at once.
+    // Otherwise, create with the first chunk, then PATCH to add remaining chunks.
+    const chunks: DepositItem[][] = []
+    for (let i = 0; i < depositItems.length; i += CHUNK_SIZE) {
+      chunks.push(depositItems.slice(i, i + CHUNK_SIZE))
+    }
+
+    // Step 1: Create deposit with first chunk
+    const createBody: any = {
+      account: { id: '217' },
+      trandate: payoutDate.toISOString(),
+      memo,
+      payment: { items: chunks[0] },
+    }
     if (otherItems.length > 0) {
-      depositRequest.other = {
-        items: otherItems,
-      }
+      createBody.other = { items: otherItems }
     }
 
-    // Generate OAuth header
-    const authorization = generateOAuthHeader('POST', NETSUITE_API_URL)
+    console.log(`📤 Chunk 1/${chunks.length}: Creating deposit with ${chunks[0].length} items...`)
+    const createResult = await netsuiteRequest('POST', NETSUITE_API_URL, createBody)
 
-    // Create deposit in NetSuite
-    // Note: Removed 'Prefer: respond-async' to get immediate response with deposit ID
-    const response = await fetch(NETSUITE_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: authorization,
-        Accept: 'application/json',
-      },
-      body: JSON.stringify(depositRequest),
-    })
-
-    if (!response.ok) {
-      let errorText = ''
-      try {
-        errorText = await response.text()
-      } catch (e) {
-        errorText = `Failed to read error response: ${e instanceof Error ? e.message : 'Unknown error'}`
-      }
-      console.error('NetSuite deposit creation error:', {
-        status: response.status,
-        statusText: response.statusText,
-        errorText,
-      })
+    if (!createResult.ok) {
       return NextResponse.json(
-        {
-          success: false,
-          error: `NetSuite API error ${response.status}: ${errorText || response.statusText}`,
-        },
-        { status: 500 }
+        { success: false, error: `NetSuite API error: ${createResult.error}` },
+        { status: 500 },
       )
     }
 
-    // Read response body once
-    const responseText = await response.text()
-    const location = response.headers.get('Location')
-    
-    // Log the response for debugging
-    console.log('📋 NetSuite API Response:', {
-      status: response.status,
-      statusText: response.statusText,
-      location,
-      responseBody: responseText,
-      headers: Object.fromEntries(response.headers.entries()),
-    })
-    
-    // Try to parse response body first (works for both 200 and 202)
-    let depositData: NetSuiteDepositResponse | null = null
-    if (responseText && responseText.trim() !== '') {
-      try {
-        depositData = JSON.parse(responseText) as NetSuiteDepositResponse
-        console.log('📋 Parsed NetSuite response data:', depositData)
-      } catch (parseError) {
-        console.warn('Failed to parse NetSuite response body:', parseError, 'Raw text:', responseText)
-      }
+    let depositId = createResult.depositId
+
+    // For 202 async responses without an ID, we can't add more chunks
+    if (!depositId && createResult.status === 202) {
+      return NextResponse.json({
+        success: true,
+        message: `Deposit creation initiated (async) with ${chunks[0].length}/${depositItems.length} items. ${chunks.length > 1 ? `${chunks.length - 1} more chunk(s) pending — re-run after the deposit is created in NetSuite.` : ''}`,
+        depositId: null,
+        async: true,
+        totalItems: depositItems.length,
+        itemsInFirstChunk: chunks[0].length,
+      })
     }
-    
-    // Extract deposit ID from response body (preferred) or Location header
-    let depositId: string | null = null
-    
-    if (depositData?.id) {
-      // Got deposit ID from response body
-      depositId = depositData.id
-      console.log('✅ Found deposit ID in response body:', depositId)
-    } else if (depositData?.links && depositData.links.length > 0) {
-      // Check links array for deposit ID
-      const depositLink = depositData.links.find(link => 
-        link.href && link.href.includes('deposit') && link.href.includes('id=')
+
+    if (!depositId) {
+      return NextResponse.json(
+        { success: false, error: 'NetSuite did not return a deposit ID' },
+        { status: 500 },
       )
-      if (depositLink) {
-        const idMatch = depositLink.href.match(/id=(\d+)/)
-        if (idMatch) {
-          depositId = idMatch[1]
-          console.log('✅ Found deposit ID in links array:', depositId)
+    }
+
+    console.log(`✅ Deposit created: ${depositId}`)
+
+    // Step 2: PATCH remaining chunks onto the deposit
+    if (chunks.length > 1) {
+      const depositUrl = `${NETSUITE_API_URL}/${depositId}`
+      let accumulated = [...chunks[0]]
+
+      for (let c = 1; c < chunks.length; c++) {
+        accumulated = [...accumulated, ...chunks[c]]
+        console.log(`📤 Chunk ${c + 1}/${chunks.length}: Updating deposit with ${accumulated.length} total items...`)
+
+        const patchResult = await netsuiteRequest('PATCH', depositUrl, {
+          payment: { items: accumulated },
+        })
+
+        if (!patchResult.ok) {
+          // Save what we have so far
+          await prisma.payout.update({
+            where: { id: payoutId },
+            data: { netsuiteDepositId: depositId },
+          })
+          return NextResponse.json({
+            success: false,
+            error: `Deposit ${depositId} created with ${accumulated.length - chunks[c].length} items, but chunk ${c + 1} failed: ${patchResult.error}. Deposit saved — you can update it manually in NetSuite.`,
+            depositId,
+            depositUrl: `https://${NETSUITE_ACCOUNT_ID}.app.netsuite.com/app/accounting/transactions/deposit.nl?id=${depositId}`,
+            itemsAdded: accumulated.length - chunks[c].length,
+            totalItems: depositItems.length,
+          }, { status: 500 })
         }
       }
-    }
-    
-    if (!depositId && location) {
-      // Try to extract from Location header
-      // NetSuite can return deposit ID in different formats:
-      // 1. REST API format: /services/rest/record/v1/deposit/1405135
-      // 2. UI format: deposit.nl?id=1405135
-      const restApiMatch = location.match(/\/deposit\/(\d+)/)
-      const uiMatch = location.match(/deposit\.nl\?id=(\d+)/)
-      
-      if (restApiMatch) {
-        depositId = restApiMatch[1]
-        console.log('✅ Found deposit ID in Location header (REST API format):', depositId)
-      } else if (uiMatch) {
-        depositId = uiMatch[1]
-        console.log('✅ Found deposit ID in Location header (UI format):', depositId)
-      } else {
-        // It's a job URL, try to extract job ID and note that we'll need to poll
-        const jobMatch = location.match(/job\/(\d+)/)
-        if (jobMatch) {
-          console.warn('⚠️ NetSuite returned async job URL. Deposit ID will be available after job completes.')
-          // For now, we can't get the deposit ID immediately from a job URL
-          // In the future, we could poll the job endpoint, but for now return success
-          // The user will need to manually check NetSuite or we can add polling later
-        }
-      }
-    }
-    
-    // Handle 204 No Content response - deposit created successfully, ID in Location header
-    if (response.status === 204) {
-      if (depositId) {
-        // We got the deposit ID from Location header, store it
-        await prisma.payout.update({
-          where: { id: payoutId },
-          data: {
-            netsuiteDepositId: depositId,
-          },
-        })
-        
-        return NextResponse.json({
-          success: true,
-          message: 'Deposit created successfully',
-          depositId,
-          depositUrl: `https://${NETSUITE_ACCOUNT_ID}.app.netsuite.com/app/accounting/transactions/deposit.nl?id=${depositId}`,
-        })
-      } else {
-        // 204 but no deposit ID found - this shouldn't happen, but handle gracefully
-        console.warn('⚠️ NetSuite returned 204 but no deposit ID found in Location header')
-        return NextResponse.json({
-          success: true,
-          message: 'Deposit creation completed (204), but deposit ID not found in Location header.',
-          depositId: null,
-          location: location || undefined,
-        })
-      }
-    }
-    
-    // Handle async response (202 Accepted) - even without deposit ID, mark as success
-    if (response.status === 202) {
-      if (depositId) {
-        // We got the deposit ID, store it
-        await prisma.payout.update({
-          where: { id: payoutId },
-          data: {
-            netsuiteDepositId: depositId,
-          },
-        })
-        
-        return NextResponse.json({
-          success: true,
-          message: 'Deposit created successfully (async)',
-          depositId,
-          depositUrl: `https://${NETSUITE_ACCOUNT_ID}.app.netsuite.com/app/accounting/transactions/deposit.nl?id=${depositId}`,
-          async: true,
-        })
-      } else {
-        // Async response but no deposit ID yet - NetSuite is processing
-        // Return success but note that deposit ID is pending
-        return NextResponse.json({
-          success: true,
-          message: 'Deposit creation initiated (async). Please check NetSuite for the deposit ID.',
-          depositId: null,
-          async: true,
-          location: location || undefined,
-        })
-      }
+
+      console.log(`✅ All ${chunks.length} chunks applied — ${depositItems.length} total items`)
     }
 
-    // Handle immediate response (200 OK)
-    if (!depositData || !depositData.id) {
-      console.error('❌ NetSuite did not return a deposit ID. Response:', {
-        status: response.status,
-        responseText,
-        depositData,
-        location,
-      })
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'NetSuite did not return a deposit ID in the response',
-          details: {
-            status: response.status,
-            responseBody: responseText,
-            parsedData: depositData,
-            location,
-          },
-        },
-        { status: 500 }
-      )
-    }
-
-    // Update payout with NetSuite deposit ID
+    // Save deposit ID
     await prisma.payout.update({
       where: { id: payoutId },
-      data: {
-        netsuiteDepositId: depositData.id,
-      },
+      data: { netsuiteDepositId: depositId },
     })
 
     return NextResponse.json({
       success: true,
-      message: 'Deposit created successfully',
-      depositId: depositData.id,
-      depositUrl: `https://${NETSUITE_ACCOUNT_ID}.app.netsuite.com/app/accounting/transactions/deposit.nl?id=${depositData.id}`,
+      message: `Deposit created successfully${chunks.length > 1 ? ` in ${chunks.length} chunks` : ''}`,
+      depositId,
+      depositUrl: `https://${NETSUITE_ACCOUNT_ID}.app.netsuite.com/app/accounting/transactions/deposit.nl?id=${depositId}`,
+      totalItems: depositItems.length,
+      chunks: chunks.length,
     })
   } catch (error) {
     console.error('❌ Error creating NetSuite deposit:', error)
     return NextResponse.json(
       {
         success: false,
-        error:
-          error instanceof Error ? error.message : 'Failed to create NetSuite deposit',
+        error: error instanceof Error ? error.message : 'Failed to create NetSuite deposit',
       },
-      { status: 500 }
+      { status: 500 },
     )
   }
 }
-

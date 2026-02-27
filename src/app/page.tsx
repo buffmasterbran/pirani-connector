@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -29,6 +30,10 @@ import {
   type OrderFieldTranslationMapping
 } from '@/lib/mappingUtils'
 import { safeToLocaleDateString } from '@/lib/dateUtils'
+import { useAccountContext } from '@/lib/account-context'
+import { AccountHeader } from '@/components/AccountHeader'
+import ProductSyncView from '@/app/product-sync/ProductSyncView'
+import ProductFieldMappings from '@/components/ProductFieldMappings'
 
 interface Payout {
   id: string | number
@@ -178,7 +183,10 @@ export default function Home() {
   const [payoutIdInput, setPayoutIdInput] = useState('')
   const [hideSensitiveData, setHideSensitiveData] = useState(false)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const searchParams = useSearchParams()
+  const { activeAccountId, refreshAccounts } = useAccountContext()
   const [activeSection, setActiveSection] = useState('orders')
+  const [showShopifyConnectedBanner, setShowShopifyConnectedBanner] = useState(false)
   const [activeMappingTab, setActiveMappingTab] = useState('Payment')
   const [activeSettingsTab, setActiveSettingsTab] = useState('General')
   const [expandedFaq, setExpandedFaq] = useState<string | null>(null)
@@ -1197,36 +1205,47 @@ export default function Home() {
   }
 
   const importPayoutById = async () => {
-    if (!payoutIdInput.trim()) {
-      alert('Please enter a payout ID')
+    const raw = payoutIdInput.trim()
+    if (!raw) {
+      alert('Please enter a payout ID or paste the Shopify payout URL')
       return
     }
-    
+
+    // Extract payout ID from Shopify admin URL or use as-is if it's already just the ID
+    const urlMatch = raw.match(/\/payments\/payouts\/(\d+)/) || raw.match(/\/payouts\/(\d+)/)
+    const payoutId = urlMatch ? urlMatch[1] : raw.replace(/\?.*$/, '').trim()
+
+    console.log('[Payout import] Raw input:', raw, '| Extracted payout ID:', payoutId)
+
+    if (!payoutId) {
+      alert('Could not find a payout ID. Enter the ID (e.g. 129291944193) or paste the full Shopify payout URL.')
+      return
+    }
+
     setIsLoading(true)
     try {
-      // First fetch all payouts and filter by the specific ID
-      const response = await fetch('/api/shopify/payouts')
+      const url = `/api/shopify/payouts?payoutId=${encodeURIComponent(payoutId)}`
+      console.log('[Payout import] Fetching:', url)
+      const response = await fetch(url)
       const data = await response.json()
       if (response.ok) {
-        const filteredPayouts = data.payouts.filter((payout: any) => 
-          String(payout.id).includes(payoutIdInput.trim())
-        )
+        const filteredPayouts = data.payouts || []
+        console.log('[Payout import] Response OK. Payouts returned:', filteredPayouts.length, filteredPayouts.length ? `(id: ${filteredPayouts[0]?.id})` : '')
         if (filteredPayouts.length === 0) {
-          alert('No payouts found with that ID')
+          alert(`No payout found with ID ${payoutId}. It may be older than the last 250 payouts.`)
           setPayouts([])
         } else {
           setPayouts(filteredPayouts)
-          // Check database status first
           await checkPayoutDatabaseStatus(filteredPayouts)
-          // Only save payouts that aren't already in database
           await saveNewPayoutsOnly(filteredPayouts)
+          console.log('[Payout import] Import complete for payout', payoutId)
         }
       } else {
-        console.error('Error fetching payouts:', data.error)
+        console.error('[Payout import] API error:', response.status, data.error)
         alert('Error fetching payouts: ' + (data.error || 'Unknown error'))
       }
     } catch (error) {
-      console.error('Error fetching payouts:', error)
+      console.error('[Payout import] Failed:', error)
       alert('Error fetching payouts: ' + error)
     } finally {
       setIsLoading(false)
@@ -2761,6 +2780,24 @@ export default function Home() {
     fetchOrderSourceMappings()
   }, [])
 
+  // After OAuth callback: refresh accounts and show success banner
+  useEffect(() => {
+    if (searchParams.get('shopify_connected') === '1') {
+      refreshAccounts()
+      setShowShopifyConnectedBanner(true)
+      const t = setTimeout(() => setShowShopifyConnectedBanner(false), 8000)
+      return () => clearTimeout(t)
+    }
+  }, [searchParams, refreshAccounts])
+
+  // Open Product Sync section when navigating from /product-sync (e.g. ?section=product-sync)
+  useEffect(() => {
+    const section = searchParams.get('section')
+    if (section === 'product-sync') {
+      setActiveSection('product-sync')
+    }
+  }, [searchParams])
+
   // Load customers and addresses when their sections are active
   useEffect(() => {
     if (activeSection === 'customers') {
@@ -4173,7 +4210,10 @@ export default function Home() {
         return renderAddressesContent()
         
       case 'products':
-        return renderProductsContent()
+      case 'product-sync':
+        return (
+          <ProductSyncView />
+        )
         
       case 'mappings-orders':
         return renderMappingsOrdersContent()
@@ -5001,10 +5041,10 @@ If you've created a matching SKU in Shopify, you'll need to trigger a resync. On
 
                     <div className="flex items-center gap-2">
                       <Input
-                        placeholder="Payout ID"
+                        placeholder="Payout ID or paste URL"
                         value={payoutIdInput}
                         onChange={(e) => setPayoutIdInput(e.target.value)}
-                        className="w-[120px] h-9"
+                        className="min-w-[200px] h-9"
                       />
                       <Button 
                         onClick={importPayoutById} 
@@ -6851,22 +6891,7 @@ If you've created a matching SKU in Shopify, you'll need to trigger a resync. On
   }
 
   const renderMappingsProductsContent = () => (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-slate-800 mb-2">Product Mappings</h2>
-        <p className="text-slate-600">Configure how Shopify products map to NetSuite items.</p>
-      </div>
-      
-      <Card>
-        <CardContent className="pt-6">
-          <div className="text-center py-12">
-            <Database className="h-12 w-12 text-slate-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-slate-600 mb-2">Product Mappings</h3>
-            <p className="text-slate-500">Configure product mappings between Shopify and NetSuite.</p>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+    <ProductFieldMappings />
   )
 
   const renderMappingsFulfillmentsContent = () => (
@@ -7127,11 +7152,21 @@ If you've created a matching SKU in Shopify, you'll need to trigger a resync. On
   )
 
   return (
-    <div className="min-h-screen bg-slate-50 flex">
-      <Sidebar activeSection={activeSection} onSectionChange={setActiveSection} />
-      <div className="flex-1 p-8 overflow-auto">
-        {renderContent()}
-      </div>
+    <>
+      <div className="min-h-screen bg-slate-50 flex">
+        <Sidebar activeSection={activeSection} onSectionChange={setActiveSection} />
+        <div className="flex-1 flex flex-col min-w-0">
+          <AccountHeader />
+          {showShopifyConnectedBanner && (
+            <div className="bg-emerald-50 border-b border-emerald-200 px-6 py-2 text-sm text-emerald-800 flex items-center justify-between">
+              <span>Store connected. You can switch to it in the account menu (top right).</span>
+              <button type="button" onClick={() => setShowShopifyConnectedBanner(false)} className="text-emerald-600 hover:text-emerald-800">Dismiss</button>
+            </div>
+          )}
+          <div className="flex-1 p-8 overflow-auto">
+            {renderContent()}
+          </div>
+        </div>
 
       {/* NetSuite Deposit Preview Dialog */}
       <Dialog 
@@ -9181,6 +9216,7 @@ If you've created a matching SKU in Shopify, you'll need to trigger a resync. On
         </DialogContent>
       </Dialog>
     </div>
+    </>
   )
 }
 

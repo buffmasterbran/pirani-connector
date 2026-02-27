@@ -11,24 +11,13 @@ export async function GET() {
       },
     })
     
-    // Try to fetch translation mappings separately if the table exists
     let translationMappingsMap = new Map<number, any[]>()
     try {
-      // Use raw query to avoid Prisma client type issues
-      const rawTranslations = await prisma.$queryRaw<Array<{
-        id: number
-        orderFieldMappingId: number
-        shopifyValue: string
-        netsuiteValue: string
-        isActive: number
-      }>>`
-        SELECT id, orderFieldMappingId, shopifyValue, netsuiteValue, isActive
-        FROM OrderFieldTranslationMapping
-        WHERE isActive = 1
-        ORDER BY id ASC
-      `
-      
-      // Group by orderFieldMappingId
+      const rawTranslations = await prisma.orderFieldTranslationMapping.findMany({
+        where: { isActive: true },
+        orderBy: { id: 'asc' },
+      })
+
       for (const tm of rawTranslations) {
         const mappingId = tm.orderFieldMappingId
         if (!translationMappingsMap.has(mappingId)) {
@@ -39,11 +28,10 @@ export async function GET() {
           orderFieldMappingId: tm.orderFieldMappingId,
           shopifyValue: tm.shopifyValue,
           netsuiteValue: tm.netsuiteValue,
-          isActive: Boolean(tm.isActive),
+          isActive: tm.isActive,
         })
       }
     } catch (tmError: any) {
-      // Table doesn't exist or query failed - that's okay, we'll just have empty translations
       console.warn('Could not fetch translation mappings:', tmError?.message)
     }
     

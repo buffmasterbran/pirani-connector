@@ -6,7 +6,7 @@ declare global {
 }
 
 // Configure Prisma Client with connection pooling settings
-const prismaClientOptions = {
+const prismaClientOptions: ConstructorParameters<typeof PrismaClient>[0] = {
   log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
 }
 
@@ -15,3 +15,5 @@ export const prisma = global.prisma ?? new PrismaClient(prismaClientOptions)
 if (process.env.NODE_ENV !== 'production') {
   global.prisma = prisma
 }
+
+export default prisma

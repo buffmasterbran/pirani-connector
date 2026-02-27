@@ -6,11 +6,22 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const limitParam = searchParams.get('limit')
+    const payoutIdParam = searchParams.get('payoutId')?.trim()
 
-    const limit = limitParam ? Number(limitParam) : 50
+    const limit = payoutIdParam ? 250 : (limitParam ? Number(limitParam) : 50)
+    console.log('[Shopify payouts GET] limit=', limit, payoutIdParam ? `payoutId=${payoutIdParam}` : '')
     const { payouts } = await fetchShopifyPayouts(limit)
+    console.log('[Shopify payouts GET] Fetched from Shopify:', payouts.length, 'payout(s)')
 
-    return NextResponse.json({ payouts })
+    const filtered = payoutIdParam
+      ? payouts.filter((p: any) => String(p.id) === payoutIdParam)
+      : payouts
+
+    if (payoutIdParam) {
+      console.log('[Shopify payouts GET] Filtered by payoutId:', filtered.length, filtered.length ? `match id=${filtered[0]?.id}` : 'no match')
+    }
+
+    return NextResponse.json({ payouts: filtered })
   } catch (error) {
     console.error('❌ Failed to fetch Shopify payouts', error)
     return NextResponse.json({ error: 'Failed to fetch payouts from Shopify' }, { status: 500 })

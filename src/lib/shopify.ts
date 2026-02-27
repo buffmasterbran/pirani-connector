@@ -1,67 +1,74 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from './prisma'
+import { decrypt } from './encryption'
 import { findNetSuiteCustomerByEmail, findNetSuiteAddressesByCustomerId, matchShopifyAddressToNetSuite } from './netsuite'
 
-const SHOPIFY_STORE_URL = process.env.SHOPIFY_STORE_URL
-const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN
 const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || '2025-10'
 
-if (!SHOPIFY_STORE_URL || !SHOPIFY_ACCESS_TOKEN) {
-  console.warn('SHOPIFY credentials are not fully configured. Import routes will use mock responses.')
+/** Resolve Shopify credentials: first from a connected store (OAuth) in DB, then from env. */
+export async function getShopifyCredentials(): Promise<{ baseUrl: string; accessToken: string } | null> {
+  try {
+    const store = await prisma.productSyncStoreConfig.findFirst({
+      where: { isActive: true },
+      orderBy: { createdAt: 'asc' },
+      select: { shopifyDomain: true, shopifyAccessTokenEncrypted: true, shopifyApiVersion: true },
+    })
+    if (store?.shopifyAccessTokenEncrypted) {
+      const domain = store.shopifyDomain.replace(/^https?:\/\//, '').replace(/\/$/, '')
+      const baseUrl = `https://${domain}/admin/api/${store.shopifyApiVersion || SHOPIFY_API_VERSION}`
+      const accessToken = decrypt(store.shopifyAccessTokenEncrypted)
+      return { baseUrl, accessToken }
+    }
+  } catch (e) {
+    console.warn('getShopifyCredentials: could not load from DB', e)
+  }
+  const url = process.env.SHOPIFY_STORE_URL
+  const token = process.env.SHOPIFY_ACCESS_TOKEN
+  if (url && token) {
+    const baseUrl = `${url.replace(/\/$/, '')}/admin/api/${SHOPIFY_API_VERSION}`
+    return { baseUrl, accessToken: token }
+  }
+  return null
 }
 
-const SHOPIFY_BASE_URL = SHOPIFY_STORE_URL
-  ? `${SHOPIFY_STORE_URL.replace(/\/$/, '')}/admin/api/${SHOPIFY_API_VERSION}`
-  : ''
-
-const SHOPIFY_HEADERS: HeadersInit = {
-  'Content-Type': 'application/json',
-  Accept: 'application/json',
-  ...(SHOPIFY_ACCESS_TOKEN ? { 'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN } : {}),
+function buildHeaders(accessToken: string): HeadersInit {
+  return {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+    'X-Shopify-Access-Token': accessToken,
+  }
 }
 
 async function shopifyFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  if (!SHOPIFY_BASE_URL) {
-    throw new Error('Shopify credentials missing')
-  }
-
-  const res = await fetch(`${SHOPIFY_BASE_URL}${path}`, {
+  const creds = await getShopifyCredentials()
+  if (!creds) throw new Error('Shopify credentials missing. Connect a store (OAuth) or set SHOPIFY_STORE_URL and SHOPIFY_ACCESS_TOKEN.')
+  const url = path.startsWith('http') ? path : `${creds.baseUrl}${path}`
+  const res = await fetch(url, {
     ...init,
-    headers: {
-      ...SHOPIFY_HEADERS,
-      ...(init?.headers || {}),
-    },
+    headers: { ...buildHeaders(creds.accessToken), ...(init?.headers || {}) },
     cache: 'no-store',
   })
-
   if (!res.ok) {
     const message = await res.text()
     throw new Error(`Shopify API error ${res.status}: ${message}`)
   }
-
   return res.json() as Promise<T>
 }
 
 async function shopifyFetchWithHeaders<T>(path: string, init?: RequestInit): Promise<{ data: T; headers: Headers }> {
-  if (!SHOPIFY_BASE_URL) {
-    throw new Error('Shopify credentials missing')
-  }
-
-  const res = await fetch(`${SHOPIFY_BASE_URL}${path}`, {
+  const creds = await getShopifyCredentials()
+  if (!creds) throw new Error('Shopify credentials missing. Connect a store (OAuth) or set SHOPIFY_STORE_URL and SHOPIFY_ACCESS_TOKEN.')
+  const url = path.startsWith('http') ? path : `${creds.baseUrl}${path}`
+  const res = await fetch(url, {
     ...init,
-    headers: {
-      ...SHOPIFY_HEADERS,
-      ...(init?.headers || {}),
-    },
+    headers: { ...buildHeaders(creds.accessToken), ...(init?.headers || {}) },
     cache: 'no-store',
   })
-
   if (!res.ok) {
     const message = await res.text()
     throw new Error(`Shopify API error ${res.status}: ${message}`)
   }
-
-  const data = await res.json() as T
+  const data = (await res.json()) as T
   return { data, headers: res.headers }
 }
 
@@ -179,23 +186,16 @@ export function flattenShopifyOrder(order: any): FlattenedOrderLine[] {
 }
 
 export async function fetchShopifyOrders(limit = 50, status: 'any' | 'open' | 'closed' = 'any') {
-  if (!SHOPIFY_BASE_URL) {
-    return { orders: [] }
-  }
-
-  const query = new URLSearchParams({
-    status,
-    limit: String(limit),
-  })
-
+  const creds = await getShopifyCredentials()
+  if (!creds) return { orders: [] }
+  const query = new URLSearchParams({ status, limit: String(limit) })
   const data = await shopifyFetch<{ orders: any[] }>(`/orders.json?${query.toString()}`)
   return { orders: data.orders ?? [] }
 }
 
 export async function fetchShopifyOrdersPaginated(maxOrders = 250, status: 'any' | 'open' | 'closed' = 'any') {
-  if (!SHOPIFY_BASE_URL) {
-    return { orders: [] }
-  }
+  const creds = await getShopifyCredentials()
+  if (!creds) return { orders: [] }
 
   const target = Math.min(maxOrders, 4000)
   const allOrders: any[] = []
@@ -207,13 +207,13 @@ export async function fetchShopifyOrdersPaginated(maxOrders = 250, status: 'any'
 
     const requestUrl: string = nextUrl
       ? nextUrl
-      : `${SHOPIFY_BASE_URL}/orders.json?${new URLSearchParams({
+      : `${creds.baseUrl}/orders.json?${new URLSearchParams({
           status,
           limit: String(limit),
         }).toString()}`
 
     const response: Response = await fetch(requestUrl, {
-      headers: SHOPIFY_HEADERS,
+      headers: buildHeaders(creds.accessToken),
       cache: 'no-store',
     })
 
@@ -257,19 +257,16 @@ export async function fetchShopifyOrdersPaginated(maxOrders = 250, status: 'any'
 }
 
 export async function fetchShopifyPayouts(limit = 50) {
-  if (!SHOPIFY_BASE_URL) {
-    return { payouts: [] }
-  }
-
+  const creds = await getShopifyCredentials()
+  if (!creds) return { payouts: [] }
   const query = new URLSearchParams({ limit: String(limit) })
   const data = await shopifyFetch<{ payouts: any[] }>(`/shopify_payments/payouts.json?${query.toString()}`)
   return { payouts: data.payouts ?? [] }
 }
 
 export async function fetchShopifyPayoutTransactions(payoutId: string) {
-  if (!SHOPIFY_BASE_URL) {
-    return { transactions: [] }
-  }
+  const creds = await getShopifyCredentials()
+  if (!creds) return { transactions: [] }
 
   // Fetch all transactions with pagination using Shopify's Link header
   // Handles large payouts (5000+ transactions) by paginating through all pages
@@ -311,7 +308,7 @@ export async function fetchShopifyPayoutTransactions(payoutId: string) {
             } catch (e) {
               // If URL parsing fails, try to extract path manually
               const pathMatch = extractedUrl.match(/\/admin\/api\/[^/]+(\/.*)/)
-              extractedUrl = pathMatch ? pathMatch[1] : extractedUrl.replace(SHOPIFY_BASE_URL, '')
+              extractedUrl = pathMatch ? pathMatch[1] : extractedUrl.replace(/^\/admin\/api\/[^/]+/, '')
             }
           }
           nextUrl = extractedUrl
@@ -346,14 +343,14 @@ export async function fetchShopifyPayoutTransactions(payoutId: string) {
  * Fetches all saved addresses for a customer from Shopify
  */
 export async function fetchCustomerAddresses(customerId: string): Promise<any[]> {
-  if (!SHOPIFY_BASE_URL) {
+  const creds = await getShopifyCredentials()
+  if (!creds) {
     console.warn('Shopify credentials not configured, skipping address fetch')
     return []
   }
-
   try {
-    const response = await fetch(`${SHOPIFY_BASE_URL}/customers/${customerId}/addresses.json`, {
-      headers: SHOPIFY_HEADERS,
+    const response = await fetch(`${creds.baseUrl}/customers/${customerId}/addresses.json`, {
+      headers: buildHeaders(creds.accessToken),
       cache: 'no-store',
     })
 
@@ -694,10 +691,8 @@ export async function saveCustomerAndAddresses(order: any): Promise<void> {
 }
 
 export async function getOrderByNameFromShopify(orderName: string) {
-  if (!SHOPIFY_BASE_URL) {
-    return null
-  }
-
+  const creds = await getShopifyCredentials()
+  if (!creds) return null
   try {
     // Remove # if present to get the order number
     const orderNumber = orderName.replace(/^#/, '')
