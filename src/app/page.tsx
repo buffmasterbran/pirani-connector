@@ -1516,7 +1516,16 @@ export default function Home() {
         body: JSON.stringify(body),
       })
       const text = await res.text()
-      const data = JSON.parse(text)
+      let data: any
+      try {
+        data = JSON.parse(text)
+      } catch {
+        throw new Error(
+          res.status === 504 || text.includes('timed out') || text.includes('An error o')
+            ? `Request timed out (${res.status}). The chunk may be too large for the serverless function limit.`
+            : `Server returned non-JSON response (${res.status}): ${text.slice(0, 150)}`
+        )
+      }
       if (!res.ok || !data.success) {
         throw new Error(data.error || `HTTP ${res.status}`)
       }
@@ -1524,33 +1533,14 @@ export default function Home() {
     }
 
     try {
-      // Step 1: Prepare -- find out how many chunks
-      const prep = await callApi({ action: 'prepare' })
-
-      if (prep.alreadyCreated) {
-        setNetsuitePreviewDialog({ isOpen: false, payoutId: null, previewData: null, isLoading: false })
-        alert(`Deposit already created: ${prep.depositId}`)
-        return
-      }
-
-      const totalChunks: number = prep.totalChunks
-      const totalItems: number = prep.totalItems
-      console.log(`Deposit plan: ${totalItems} items in ${totalChunks} chunks`)
-
-      // Step 2: Create deposit with first chunk
-      const createResult = await callApi({ action: 'create' })
-      const depositId: string = createResult.depositId
-      console.log(`Deposit created: ${depositId} (chunk 1/${totalChunks}, ${createResult.itemsAdded} items)`)
-
-      // Step 3: Patch remaining chunks
-      for (let i = 1; i < totalChunks; i++) {
-        console.log(`Patching chunk ${i + 1}/${totalChunks}...`)
-        const patchResult = await callApi({ action: 'patch', depositId, chunkIndex: i })
-        console.log(`Chunk ${i + 1}/${totalChunks}: ${patchResult.itemsAccumulated} items accumulated`)
-      }
-
+      const result = await callApi({})
       setNetsuitePreviewDialog({ isOpen: false, payoutId: null, previewData: null, isLoading: false })
-      alert(`Successfully created NetSuite deposit!\n\nDeposit ID: ${depositId}\nTotal items: ${totalItems}\nChunks: ${totalChunks}`)
+
+      if (result.message === 'Deposit already created') {
+        alert(`Deposit already created: ${result.depositId}`)
+      } else {
+        alert(`Successfully created NetSuite deposit!\n\nDeposit ID: ${result.depositId}\nTotal items: ${result.totalItems}`)
+      }
       fetchSavedPayouts()
     } catch (error) {
       console.error('Error creating NetSuite deposit:', error)
