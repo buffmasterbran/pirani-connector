@@ -73,6 +73,7 @@ export default function ProductsTab() {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
   const [loading, setLoading] = useState(false)
   const [pulling, setPulling] = useState(false)
+  const [pullingMR, setPullingMR] = useState(false)
   const [pushingAll, setPushingAll] = useState(false)
   const [pushProgress, setPushProgress] = useState<string | null>(null)
   const [syncingSku, setSyncingSku] = useState<string | null>(null)
@@ -147,6 +148,30 @@ export default function ProductsTab() {
       console.error('Pull failed:', err)
     } finally {
       setPulling(false)
+    }
+  }
+
+  const handlePullMR = async () => {
+    setPullingMR(true)
+    setPushProgress(null)
+    try {
+      const res = await fetch('/api/product-sync/trigger-mr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'inventory_sync' }),
+      })
+      const data = await res.json()
+      if (!res.ok || data.error) {
+        setPushProgress(`Error: ${data.error || 'Failed to trigger M/R'}`)
+      } else {
+        setPushProgress('Inventory sync triggered. Data will arrive in 1-2 minutes.')
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err)
+      setPushProgress(`Error: ${message}`)
+    } finally {
+      setPullingMR(false)
+      setTimeout(() => setPushProgress(null), 10000)
     }
   }
 
@@ -345,6 +370,10 @@ export default function ProductsTab() {
           <Button variant="outline" size="sm" onClick={handlePull} disabled={pulling}>
             {pulling ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
             Pull from NetSuite
+          </Button>
+          <Button variant="outline" size="sm" onClick={handlePullMR} disabled={pullingMR}>
+            {pullingMR ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
+            Pull from NetSuite (MR)
           </Button>
           <Button size="sm" onClick={handlePushAll} disabled={pushingAll}>
             {pushingAll ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <ArrowUp className="h-3.5 w-3.5 mr-1.5" />}

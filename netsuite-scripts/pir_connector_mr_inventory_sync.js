@@ -5,58 +5,81 @@
  *
  * Pirani Connector — Inventory & Price Sync (Map/Reduce)
  *
- * Runs on a schedule. Pulls all flagged items with current quantity and price,
- * then POSTs them to the Pirani Connector webapp. The webapp diffs against
- * last-pushed values and only updates Shopify when something changed.
+ * Fetches its configuration from the webapp at runtime, then pulls all
+ * flagged items with current quantity and price from NetSuite and POSTs
+ * them back to the webapp webhook. The webapp diffs against last-pushed
+ * values and only updates Shopify when something changed.
  *
- * DEPLOYMENT:
- *   1. Upload to File Cabinet > SuiteScripts > PiraniConnector
- *   2. Create Script: Customization > Scripting > Scripts > New
- *      - Type: Map/Reduce, Script File: this file
- *   3. Deploy:
- *      - Status = Released
- *      - Schedule: every 15 min (or as desired)
- *
- * SCRIPT PARAMETERS (set on Script record):
- *   custscript_pir_inv_flag_field    — Custom item field ID (e.g., "custitem_fa_shopify_flag01")
- *   custscript_pir_inv_price_level   — Price level internal ID (e.g., 5)
- *   custscript_pir_inv_location_ids  — Comma-separated location IDs (optional)
- *   custscript_pir_inv_webapp_url    — Webapp webhook URL (e.g., "https://pirani-connector.vercel.app/api/webhooks/inventory-update")
- *   custscript_pir_inv_webhook_secret — Shared secret for auth
- *   custscript_pir_inv_store_id      — Store identifier (e.g., "dtc")
+ * SCRIPT PARAMETERS (only 2 needed):
+ *   custscript_pir_webapp_url   — Base URL of the Pirani Connector webapp
+ *                                  (e.g., "https://pirani-connector-mpdh.vercel.app")
+ *   custscript_pir_auth_token   — Shared auth token for webapp API calls
  */
 define(['N/search', 'N/https', 'N/runtime', 'N/log'], (search, https, runtime, log) => {
 
   const BATCH_SIZE = 100
 
-  function getParams() {
+  function getScriptParams() {
     const script = runtime.getCurrentScript()
     return {
-      flagFieldId: script.getParameter({ name: 'custscript_pir_inv_flag_field' }),
-      priceLevelId: script.getParameter({ name: 'custscript_pir_inv_price_level' }),
-      locationIds: script.getParameter({ name: 'custscript_pir_inv_location_ids' }),
-      webappUrl: script.getParameter({ name: 'custscript_pir_inv_webapp_url' }),
-      webhookSecret: script.getParameter({ name: 'custscript_pir_inv_webhook_secret' }),
-      storeId: script.getParameter({ name: 'custscript_pir_inv_store_id' }) || 'default',
+      webappUrl: script.getParameter({ name: 'custscript_pir_webapp_url' }),
+      authToken: script.getParameter({ name: 'custscript_pir_auth_token' }),
     }
   }
 
   /**
-   * getInputData — Saved search for all flagged items.
-   * Returns a search object that NetSuite pages through automatically.
+   * Fetch sync configuration from the webapp API.
+   * Returns { flagFieldId, priceLevelId, locationIds, webhookUrl, storeId, fieldMappings }
+   */
+  function fetchConfig(webappUrl, authToken) {
+    const configUrl = webappUrl.replace(/\/+$/, '') + '/api/sync-config'
+
+    log.audit('PiraniInventorySync', `Fetching config from ${configUrl}`)
+
+    const response = https.get({
+      url: configUrl,
+      headers: {
+        'Authorization': 'Bearer ' + (authToken || ''),
+        'Accept': 'application/json',
+      },
+    })
+
+    if (response.code !== 200) {
+      log.error('PiraniInventorySync', `Config fetch failed: HTTP ${response.code} — ${response.body?.substring(0, 500)}`)
+      return null
+    }
+
+    try {
+      const config = JSON.parse(response.body)
+      log.audit('PiraniInventorySync', `Config loaded: flag=${config.flagFieldId}, priceLevel=${config.priceLevelId}, locations=${config.locationIds}, storeId=${config.storeId}`)
+      return config
+    } catch (e) {
+      log.error('PiraniInventorySync', `Failed to parse config response: ${e.message}`)
+      return null
+    }
+  }
+
+  /**
+   * getInputData — Fetch config from webapp, then build and return a saved search.
    */
   function getInputData() {
-    const params = getParams()
-    const flagFieldId = params.flagFieldId
-    if (!flagFieldId) {
-      log.error('PiraniInventorySync', 'Missing custscript_pir_inv_flag_field parameter')
+    const { webappUrl, authToken } = getScriptParams()
+
+    if (!webappUrl) {
+      log.error('PiraniInventorySync', 'Missing custscript_pir_webapp_url parameter')
       return []
     }
 
-    log.audit('PiraniInventorySync', `Starting inventory sync: flag=${flagFieldId}, priceLevel=${params.priceLevelId}, locations=${params.locationIds}`)
+    const config = fetchConfig(webappUrl, authToken)
+    if (!config || !config.flagFieldId) {
+      log.error('PiraniInventorySync', 'Could not load config or missing flagFieldId')
+      return []
+    }
+
+    log.audit('PiraniInventorySync', `Starting inventory sync for store "${config.storeId}"`)
 
     const filters = [
-      [flagFieldId, 'is', '1'],
+      [config.flagFieldId, 'is', '1'],
       'AND',
       ['isinactive', 'is', 'F'],
       'AND',
@@ -72,24 +95,24 @@ define(['N/search', 'N/https', 'N/runtime', 'N/log'], (search, https, runtime, l
       search.createColumn({ name: 'locationquantityonhand', summary: search.Summary.SUM }),
     ]
 
-    if (params.locationIds) {
-      const locIds = params.locationIds.split(',').map(id => id.trim())
-      filters.push('AND')
-      filters.push(['inventorylocation', 'anyof', ...locIds])
+    if (config.locationIds) {
+      const locIds = String(config.locationIds).split(',').map(id => id.trim()).filter(Boolean)
+      if (locIds.length > 0) {
+        filters.push('AND')
+        filters.push(['inventorylocation', 'anyof', ...locIds])
+      }
     }
 
-    if (params.priceLevelId) {
+    if (config.priceLevelId) {
       columns.push(
         search.createColumn({
           name: 'unitprice',
           join: 'pricing',
-          summary: search.Summary.GROUP,
+          summary: search.Summary.MAX,
         })
       )
       filters.push('AND')
-      filters.push(['pricing.pricelevel', 'is', parseInt(params.priceLevelId, 10)])
-      filters.push('AND')
-      filters.push(['pricing.quantity', 'is', '1'])
+      filters.push(['pricing.pricelevel', 'is', parseInt(config.priceLevelId, 10)])
     }
 
     return search.create({
@@ -101,7 +124,6 @@ define(['N/search', 'N/https', 'N/runtime', 'N/log'], (search, https, runtime, l
 
   /**
    * map — Extract item data from each search result.
-   * Emits {key: sku, value: itemPayload} for the reduce stage.
    */
   function map(context) {
     const result = JSON.parse(context.value)
@@ -115,7 +137,7 @@ define(['N/search', 'N/https', 'N/runtime', 'N/log'], (search, https, runtime, l
     const qtyOnHand = parseFloat(values['SUM(locationquantityonhand)']) || 0
 
     let price = null
-    const priceVal = values['GROUP(unitprice.pricing)']
+    const priceVal = values['MAX(unitprice.pricing)']
     if (priceVal !== undefined && priceVal !== null && priceVal !== '') {
       price = parseFloat(priceVal)
     }
@@ -134,22 +156,32 @@ define(['N/search', 'N/https', 'N/runtime', 'N/log'], (search, https, runtime, l
   }
 
   /**
-   * reduce — Deduplicate by SKU (shouldn't happen, but safety net).
-   * Passes through the item data unchanged.
+   * reduce — Deduplicate by SKU (safety net).
    */
   function reduce(context) {
-    // Take the first value per SKU
     context.write({ key: context.key, value: context.values[0] })
   }
 
   /**
-   * summarize — Batch all items and POST to webapp.
+   * summarize — Collect all items, re-fetch config, and POST to webapp webhook.
    */
   function summarize(context) {
-    const params = getParams()
+    const { webappUrl, authToken } = getScriptParams()
 
-    if (!params.webappUrl) {
-      log.error('PiraniInventorySync', 'Missing custscript_pir_inv_webapp_url — cannot push to webapp')
+    if (!webappUrl) {
+      log.error('PiraniInventorySync', 'Missing custscript_pir_webapp_url — cannot push')
+      return
+    }
+
+    const config = fetchConfig(webappUrl, authToken)
+    if (!config) {
+      log.error('PiraniInventorySync', 'Could not load config in summarize — cannot push')
+      return
+    }
+
+    const webhookUrl = config.webhookUrl
+    if (!webhookUrl) {
+      log.error('PiraniInventorySync', 'No webhookUrl in config — cannot push')
       return
     }
 
@@ -171,7 +203,6 @@ define(['N/search', 'N/https', 'N/runtime', 'N/log'], (search, https, runtime, l
       return
     }
 
-    // POST in batches
     let batchNum = 0
     let totalPushed = 0
     let totalErrors = 0
@@ -181,17 +212,17 @@ define(['N/search', 'N/https', 'N/runtime', 'N/log'], (search, https, runtime, l
       const batch = allItems.slice(i, i + BATCH_SIZE)
 
       const payload = {
-        storeId: params.storeId,
+        storeId: config.storeId || 'default',
         items: batch,
         timestamp: new Date().toISOString(),
       }
 
       try {
         const response = https.post({
-          url: params.webappUrl,
+          url: webhookUrl,
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + (params.webhookSecret || ''),
+            'Authorization': 'Bearer ' + (authToken || ''),
           },
           body: JSON.stringify(payload),
         })
@@ -208,7 +239,6 @@ define(['N/search', 'N/https', 'N/runtime', 'N/log'], (search, https, runtime, l
         log.error('PiraniInventorySync', `Batch ${batchNum}: network error — ${e.message}`)
       }
 
-      // Check remaining governance
       const remaining = runtime.getCurrentScript().getRemainingUsage()
       if (remaining < 200) {
         log.audit('PiraniInventorySync', `Low governance (${remaining} remaining) — stopping after batch ${batchNum}`)
@@ -218,7 +248,6 @@ define(['N/search', 'N/https', 'N/runtime', 'N/log'], (search, https, runtime, l
 
     log.audit('PiraniInventorySync', `Done. ${totalPushed} pushed, ${totalErrors} errors, ${batchNum} batches`)
 
-    // Log any M/R errors
     if (context.inputSummary.error) {
       log.error('PiraniInventorySync:input', context.inputSummary.error)
     }
