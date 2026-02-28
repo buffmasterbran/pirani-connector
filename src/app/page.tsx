@@ -1480,64 +1480,58 @@ export default function Home() {
 
   const handleCreateNetSuiteDeposit = async () => {
     if (!netsuitePreviewDialog.payoutId) return
+    const payoutId = netsuitePreviewDialog.payoutId
+    const apiUrl = `/api/payouts/${payoutId}/create-deposit`
 
     setNetsuitePreviewDialog(prev => ({ ...prev, isLoading: true }))
 
-    try {
-      const response = await fetch(`/api/payouts/${netsuitePreviewDialog.payoutId}/create-deposit`, {
+    const callApi = async (body: any): Promise<any> => {
+      const res = await fetch(apiUrl, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
       })
+      const text = await res.text()
+      const data = JSON.parse(text)
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || `HTTP ${res.status}`)
+      }
+      return data
+    }
 
-      let data
-      try {
-        data = await response.json()
-      } catch (parseError) {
-        const text = await response.text()
-        console.error('❌ Failed to parse response:', parseError, 'Response text:', text)
-        setNetsuitePreviewDialog({
-          isOpen: false,
-          payoutId: null,
-          previewData: null,
-          isLoading: false,
-        })
-        alert(`Failed to parse response:\n\n${text}`)
+    try {
+      // Step 1: Prepare -- find out how many chunks
+      const prep = await callApi({ action: 'prepare' })
+
+      if (prep.alreadyCreated) {
+        setNetsuitePreviewDialog({ isOpen: false, payoutId: null, previewData: null, isLoading: false })
+        alert(`Deposit already created: ${prep.depositId}`)
         return
       }
 
-      setNetsuitePreviewDialog({
-        isOpen: false,
-        payoutId: null,
-        previewData: null,
-        isLoading: false,
-      })
+      const totalChunks: number = prep.totalChunks
+      const totalItems: number = prep.totalItems
+      console.log(`Deposit plan: ${totalItems} items in ${totalChunks} chunks`)
 
-      if (response.ok && data.success) {
-        console.log(`✅ Successfully created NetSuite deposit:`, data)
-        const fullResponse = JSON.stringify(data, null, 2)
-        alert(`✅ Successfully created NetSuite deposit!\n\nFull Response:\n${fullResponse}`)
-        
-        // Refresh payouts to show the new deposit ID
-        fetchSavedPayouts()
-      } else {
-        console.error('❌ Failed to create NetSuite deposit:', data)
-        const fullResponse = JSON.stringify(data, null, 2)
-        alert(`Failed to create NetSuite deposit:\n\nFull Response:\n${fullResponse}`)
+      // Step 2: Create deposit with first chunk
+      const createResult = await callApi({ action: 'create' })
+      const depositId: string = createResult.depositId
+      console.log(`Deposit created: ${depositId} (chunk 1/${totalChunks}, ${createResult.itemsAdded} items)`)
+
+      // Step 3: Patch remaining chunks
+      for (let i = 1; i < totalChunks; i++) {
+        console.log(`Patching chunk ${i + 1}/${totalChunks}...`)
+        const patchResult = await callApi({ action: 'patch', depositId, chunkIndex: i })
+        console.log(`Chunk ${i + 1}/${totalChunks}: ${patchResult.itemsAccumulated} items accumulated`)
       }
+
+      setNetsuitePreviewDialog({ isOpen: false, payoutId: null, previewData: null, isLoading: false })
+      alert(`Successfully created NetSuite deposit!\n\nDeposit ID: ${depositId}\nTotal items: ${totalItems}\nChunks: ${totalChunks}`)
+      fetchSavedPayouts()
     } catch (error) {
-      console.error('❌ Error creating NetSuite deposit:', error)
-      const errorDetails = error instanceof Error 
-        ? JSON.stringify({ message: error.message, stack: error.stack }, null, 2)
-        : JSON.stringify(error, null, 2)
-      setNetsuitePreviewDialog({
-        isOpen: false,
-        payoutId: null,
-        previewData: null,
-        isLoading: false,
-      })
-      alert(`Error creating NetSuite deposit:\n\n${errorDetails}`)
+      console.error('Error creating NetSuite deposit:', error)
+      setNetsuitePreviewDialog({ isOpen: false, payoutId: null, previewData: null, isLoading: false })
+      alert(`Error creating NetSuite deposit:\n\n${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
