@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { TransactionsTable } from "@/components/TransactionsTable"
 import { AddNetSuiteTransactionDialog } from "@/components/AddNetSuiteTransactionDialog"
+import { SplitTransactionDialog } from "@/components/SplitTransactionDialog"
 import { Download, Loader2, Database, Check, X, Search } from "lucide-react"
 import { Input } from "@/components/ui/input"
 
@@ -35,6 +36,14 @@ interface TransactionsDialogProps {
     otherFeesDescription?: string | null
     amountDescription?: string | null
     feeDescription?: string | null
+    parentTransactionId?: string | null
+    children?: Array<{
+      id: string
+      netsuiteTransactionId: string | null
+      netsuiteTransactionName: string | null
+      netsuiteAmount: number | null
+      amount: number
+    }>
   }>
   payoutTotalAmount?: number | null
   payoutCurrency?: string
@@ -86,6 +95,8 @@ export function TransactionsDialog({
   const [webOrderFilter, setWebOrderFilter] = useState<'all' | 'web' | 'non-web'>('all')
   const [addNetSuiteDialogOpen, setAddNetSuiteDialogOpen] = useState(false)
   const [selectedTransactionForAdd, setSelectedTransactionForAdd] = useState<typeof transactions[0] | null>(null)
+  const [splitDialogOpen, setSplitDialogOpen] = useState(false)
+  const [selectedTransactionForSplit, setSelectedTransactionForSplit] = useState<typeof transactions[0] | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   // Calculate grouped fee items (Shopify Fees, Shop Ads, etc.)
   const [groupedFeeItems, setGroupedFeeItems] = useState<Array<{ description: string; shopifyAmount: number; netsuiteAmount: number }>>([])
@@ -317,8 +328,11 @@ export function TransactionsDialog({
     return amount || 0
   }
 
+  // Separate top-level (Shopify-visible) from child (split) transactions
+  const topLevelTransactions = localTransactions.filter(t => !t.parentTransactionId)
+
   // Calculate Shopify summary breakdown (matching Shopify payout format)
-  const includedTransactions = localTransactions.filter(t => t.includeInNetSuite !== false)
+  const includedTransactions = topLevelTransactions.filter(t => t.includeInNetSuite !== false)
   
   const totalCharges = includedTransactions
     .filter(t => {
@@ -351,10 +365,8 @@ export function TransactionsDialog({
       return sum + (amount || 0)
     }, 0)
 
-  // Sum all fees (they're stored as positive in DB, but should be negative for display/calculation)
-  // Fees should be included from ALL transactions in the payout, not just included ones
-  // IMPORTANT: Fees are only on charge transactions, not on refunds/adjustments/marketplace sales tax
-  const totalFeesRaw = localTransactions.reduce((sum, t) => {
+  // Sum all fees from top-level transactions only (children don't carry fees)
+  const totalFeesRaw = topLevelTransactions.reduce((sum, t) => {
     const fee = typeof t.fee === 'string' ? parseFloat(t.fee) : (t.fee ?? 0)
     // Fees can be positive or negative in DB, but we want absolute value for summing
     // Then we'll make it negative for display
@@ -724,33 +736,100 @@ export function TransactionsDialog({
 
     setIsFetchingNS(true)
     try {
-      const response = await fetch(`/api/payouts/${payoutId}/netsuite-transactions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      })
-
-      const data = await response.json()
-
-      if (response.ok && data.success) {
-        const updatedCount = data.updated || 0
-        const errorCount = data.errors?.length || 0
-        
-        if (data.errors && data.errors.length > 0) {
-          const errorMessage = data.errors.slice(0, 5).join('\n')
-          const moreErrors = data.errors.length > 5 ? `\n... and ${data.errors.length - 5} more` : ''
-          alert(`Updated ${updatedCount} transaction(s) with NetSuite IDs.\n\nAmount mismatches:\n${errorMessage}${moreErrors}`)
-        } else {
-          alert(`Successfully fetched NetSuite IDs for ${updatedCount} transaction(s).`)
-        }
-
-        // Refresh transactions to show the newly fetched NetSuite IDs
-        safeRefreshTransactions()
-      } else {
-        console.error('Error fetching NetSuite transactions:', data.error)
-        alert(`Error fetching NetSuite transactions: ${data.error || 'Unknown error'}`)
+      const apiUrl = `/api/payouts/${payoutId}/netsuite-transactions`
+      const postJson = async (body: any) => {
+        const res = await fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+        const text = await res.text()
+        try { return { ok: res.ok, data: JSON.parse(text) } }
+        catch { return { ok: false, data: { error: text.slice(0, 200) } } }
       }
+
+      // Phase 1: Prepare - get batch plan
+      console.log('Phase 1: Preparing NS fetch...')
+      const prepRes = await postJson({ action: 'prepare' })
+      if (!prepRes.ok || !prepRes.data.success) {
+        throw new Error(prepRes.data.error || 'Prepare failed')
+      }
+      const { nsBatchCount, cashSalesCount, refundsCount, paymentsCount } = prepRes.data
+      console.log(`Plan: ${nsBatchCount} NS batch(es) for ${cashSalesCount} CS, ${refundsCount} RF, ${paymentsCount} PM`)
+
+      // Phase 2: Fetch each NS batch one at a time
+      const allNsResults = { cashsales: [] as any[], refunds: [] as any[], payments: [] as any[] }
+      for (let i = 0; i < nsBatchCount; i++) {
+        console.log(`Phase 2: Fetching NS batch ${i + 1}/${nsBatchCount}...`)
+        const fetchRes = await postJson({ action: 'fetch', batchIndex: i })
+        if (!fetchRes.ok || !fetchRes.data.success) {
+          console.error(`NS batch ${i + 1} failed:`, fetchRes.data.error)
+          throw new Error(`NS batch ${i + 1} failed: ${fetchRes.data.error}`)
+        }
+        const r = fetchRes.data.results
+        allNsResults.cashsales.push(...(r.cashsales || []))
+        allNsResults.refunds.push(...(r.refunds || []))
+        allNsResults.payments.push(...(r.payments || []))
+        console.log(`  Accumulated: ${allNsResults.cashsales.length} CS, ${allNsResults.refunds.length} RF, ${allNsResults.payments.length} PM`)
+      }
+
+      // Phase 3: Save in batches of 2000 NS results at a time
+      const SAVE_BATCH = 2000
+      let totalUpdated = 0
+      const allErrors: string[] = []
+      const totalNsItems = allNsResults.cashsales.length + allNsResults.refunds.length + allNsResults.payments.length
+
+      if (totalNsItems === 0) {
+        alert('No matching NetSuite transactions found.')
+        safeRefreshTransactions()
+        return
+      }
+
+      // Split NS results into save-sized chunks, keeping type separation
+      const csBatches = []
+      for (let i = 0; i < allNsResults.cashsales.length; i += SAVE_BATCH) {
+        csBatches.push(allNsResults.cashsales.slice(i, i + SAVE_BATCH))
+      }
+      const rfBatches = []
+      for (let i = 0; i < allNsResults.refunds.length; i += SAVE_BATCH) {
+        rfBatches.push(allNsResults.refunds.slice(i, i + SAVE_BATCH))
+      }
+      const pmBatches = []
+      for (let i = 0; i < allNsResults.payments.length; i += SAVE_BATCH) {
+        pmBatches.push(allNsResults.payments.slice(i, i + SAVE_BATCH))
+      }
+
+      const maxBatches = Math.max(csBatches.length, rfBatches.length, pmBatches.length, 1)
+
+      for (let i = 0; i < maxBatches; i++) {
+        const batchResults = {
+          cashsales: csBatches[i] || [],
+          refunds: rfBatches[i] || [],
+          payments: pmBatches[i] || [],
+        }
+        const batchTotal = batchResults.cashsales.length + batchResults.refunds.length + batchResults.payments.length
+        if (batchTotal === 0) continue
+
+        console.log(`Phase 3: Save batch ${i + 1}/${maxBatches} (${batchTotal} NS items)...`)
+        const saveRes = await postJson({ action: 'save', results: batchResults })
+        if (saveRes.ok && saveRes.data.success) {
+          totalUpdated += saveRes.data.updated || 0
+          if (saveRes.data.errors) allErrors.push(...saveRes.data.errors)
+          console.log(`  Saved: ${saveRes.data.updated} matched`)
+        } else {
+          console.error(`Save batch ${i + 1} failed:`, saveRes.data.error)
+        }
+      }
+
+      if (allErrors.length > 0) {
+        const errorMessage = allErrors.slice(0, 5).join('\n')
+        const moreErrors = allErrors.length > 5 ? `\n... and ${allErrors.length - 5} more` : ''
+        alert(`Updated ${totalUpdated} transaction(s) with NetSuite IDs.\n\nAmount mismatches:\n${errorMessage}${moreErrors}`)
+      } else {
+        alert(`Successfully fetched NetSuite IDs for ${totalUpdated} transaction(s).`)
+      }
+
+      safeRefreshTransactions()
     } catch (error) {
       console.error('Error fetching NetSuite transactions:', error)
       alert(`Error fetching NetSuite transactions: ${error instanceof Error ? error.message : 'Unknown error'}`)
@@ -1521,6 +1600,10 @@ export function TransactionsDialog({
             onUpdateAmountDescription={handleUpdateAmountDescription}
             onUpdateFeeDescription={handleUpdateFeeDescription}
             onMergeTransactions={handleMergeTransactions}
+            onSplitTransaction={(transaction) => {
+              setSelectedTransactionForSplit(transaction as any)
+              setSplitDialogOpen(true)
+            }}
           />
         </div>
       </DialogContent>
@@ -1547,6 +1630,34 @@ export function TransactionsDialog({
           onSave={handleSaveNetSuite}
         />
       )}
+
+      <SplitTransactionDialog
+        isOpen={splitDialogOpen}
+        onClose={() => {
+          setSplitDialogOpen(false)
+          setSelectedTransactionForSplit(null)
+        }}
+        transaction={selectedTransactionForSplit ? {
+          id: selectedTransactionForSplit.id,
+          source_order_id: selectedTransactionForSplit.source_order_id,
+          order_name: selectedTransactionForSplit.order_name,
+          amount: typeof selectedTransactionForSplit.amount === 'string'
+            ? parseFloat(selectedTransactionForSplit.amount)
+            : selectedTransactionForSplit.amount || 0,
+          fee: typeof selectedTransactionForSplit.fee === 'string'
+            ? parseFloat(selectedTransactionForSplit.fee)
+            : selectedTransactionForSplit.fee || 0,
+          net: typeof selectedTransactionForSplit.net === 'string'
+            ? parseFloat(selectedTransactionForSplit.net)
+            : selectedTransactionForSplit.net || 0,
+          type: selectedTransactionForSplit.type,
+          currency: selectedTransactionForSplit.currency || 'USD',
+          children: selectedTransactionForSplit.children,
+        } : null}
+        onSaved={() => {
+          if (onRefreshTransactions) onRefreshTransactions()
+        }}
+      />
     </Dialog>
   )
 }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
-export const maxDuration = 300
+export const maxDuration = 60
 
 export async function POST(request: NextRequest) {
   try {
@@ -16,55 +16,64 @@ export async function POST(request: NextRequest) {
 
     const payoutId = String(payout.id)
 
-    const payoutData = {
-      status: payout.status ?? null,
-      currency: payout.currency ?? null,
-      totalAmount: payout.amount !== undefined ? Number(payout.amount) : null,
-      payoutDate: payout.date ? new Date(payout.date) : payout.arrival_date ? new Date(payout.arrival_date) : null,
-      type: payout.type ?? payout.payout_type ?? null,
-    }
+    const payoutDate = payout.date ? new Date(payout.date) : payout.arrival_date ? new Date(payout.arrival_date) : null
 
     await prisma.payout.upsert({
       where: { id: payoutId },
-      update: payoutData,
-      create: { id: payoutId, ...payoutData },
+      update: {
+        status: payout.status ?? null,
+        currency: payout.currency ?? null,
+        totalAmount: payout.amount !== undefined ? Number(payout.amount) : null,
+        payoutDate,
+        type: payout.type ?? payout.payout_type ?? null,
+      },
+      create: {
+        id: payoutId,
+        status: payout.status ?? null,
+        currency: payout.currency ?? null,
+        totalAmount: payout.amount !== undefined ? Number(payout.amount) : null,
+        payoutDate,
+        type: payout.type ?? payout.payout_type ?? null,
+      },
     })
 
-    const validTransactions = Array.isArray(transactions)
-      ? transactions.filter((t: any) => t?.source_order_id)
-      : []
+    const allTransactions = Array.isArray(transactions) ? transactions.filter((t: any) => t?.id) : []
 
-    if (validTransactions.length === 0) {
+    if (allTransactions.length === 0) {
       return NextResponse.json({ success: true, payoutId, transactionsProcessed: 0 })
     }
 
     // Batch lookup: get all order line IDs in one query
     const allShopifyOrderIds = [
       ...new Set(
-        validTransactions
+        allTransactions
           .map((t: any) => String(t.source_order_id || t.sourceOrderId || ''))
-          .filter(Boolean)
+          .filter((id: string) => id && id !== '0')
       ),
     ]
 
-    const orderLines = await prisma.orderLine.findMany({
-      where: { shopifyOrderId: { in: allShopifyOrderIds }, isDeleted: false },
-      select: { id: true, shopifyOrderId: true },
-      distinct: ['shopifyOrderId'],
-    })
-
     const orderLineMap = new Map<string, number>()
-    for (const ol of orderLines) {
-      orderLineMap.set(ol.shopifyOrderId, ol.id)
+    if (allShopifyOrderIds.length > 0) {
+      const orderLines = await prisma.orderLine.findMany({
+        where: { shopifyOrderId: { in: allShopifyOrderIds }, isDeleted: false },
+        select: { id: true, shopifyOrderId: true },
+        distinct: ['shopifyOrderId'],
+      })
+      for (const ol of orderLines) {
+        orderLineMap.set(ol.shopifyOrderId, ol.id)
+      }
     }
 
-    // Process in batches of 500 using $transaction
+    // Bulk upsert using raw SQL for speed
     const BATCH_SIZE = 500
     let transactionsProcessed = 0
 
-    for (let i = 0; i < validTransactions.length; i += BATCH_SIZE) {
-      const batch = validTransactions.slice(i, i + BATCH_SIZE)
-      const ops: any[] = []
+    for (let i = 0; i < allTransactions.length; i += BATCH_SIZE) {
+      const batch = allTransactions.slice(i, i + BATCH_SIZE)
+
+      const values: string[] = []
+      const params: any[] = []
+      let paramIdx = 1
 
       for (const transaction of batch) {
         const transactionId = String(transaction.id)
@@ -77,38 +86,53 @@ export async function POST(request: NextRequest) {
         const net = transaction.net !== undefined ? Number(transaction.net) : null
         const fee = transaction.fee !== undefined ? Number(transaction.fee) : null
         const processedAtRaw = transaction.processed_at ?? transaction.processedAt ?? null
-        const processedAt = processedAtRaw ? new Date(processedAtRaw) : payoutData.payoutDate ?? null
+        const processedAt = processedAtRaw ? new Date(processedAtRaw).toISOString() : payoutDate?.toISOString() ?? null
         const adjustmentReason = transaction.adjustment_reason ? String(transaction.adjustment_reason) : null
-
+        const type = transaction.type ?? null
+        const currency = transaction.currency ?? payout.currency ?? null
         const orderLineId = shopifyOrderId ? (orderLineMap.get(shopifyOrderId) ?? null) : null
 
-        const txData = {
-          payoutId,
-          shopifyOrderId,
-          orderLineId,
-          amount,
-          net,
-          fee,
-          type: transaction.type ?? null,
-          currency: transaction.currency ?? payout.currency ?? null,
-          processedAt,
-          adjustmentReason,
-        }
-
-        ops.push(
-          prisma.payoutTransaction.upsert({
-            where: { id: transactionId },
-            update: txData,
-            create: { id: transactionId, ...txData },
-          })
+        values.push(`($${paramIdx}, $${paramIdx + 1}, $${paramIdx + 2}, $${paramIdx + 3}, $${paramIdx + 4}, $${paramIdx + 5}, $${paramIdx + 6}, $${paramIdx + 7}, $${paramIdx + 8}, $${paramIdx + 9}::timestamptz, $${paramIdx + 10})`)
+        params.push(
+          transactionId,      // id
+          payoutId,           // payoutId
+          shopifyOrderId,     // shopifyOrderId
+          orderLineId,        // orderLineId
+          amount,             // amount
+          net,                // net
+          fee,                // fee
+          type,               // type
+          currency,           // currency
+          processedAt,        // processedAt
+          adjustmentReason,   // adjustmentReason
         )
+        paramIdx += 11
       }
 
-      await prisma.$transaction(ops)
+      const sql = `
+        INSERT INTO "PayoutTransaction" (
+          "id", "payoutId", "shopifyOrderId", "orderLineId",
+          "amount", "net", "fee", "type", "currency", "processedAt", "adjustmentReason"
+        )
+        VALUES ${values.join(', ')}
+        ON CONFLICT ("id") DO UPDATE SET
+          "payoutId" = EXCLUDED."payoutId",
+          "shopifyOrderId" = EXCLUDED."shopifyOrderId",
+          "orderLineId" = EXCLUDED."orderLineId",
+          "amount" = EXCLUDED."amount",
+          "net" = EXCLUDED."net",
+          "fee" = EXCLUDED."fee",
+          "type" = EXCLUDED."type",
+          "currency" = EXCLUDED."currency",
+          "processedAt" = EXCLUDED."processedAt",
+          "adjustmentReason" = EXCLUDED."adjustmentReason"
+      `
+
+      await prisma.$executeRawUnsafe(sql, ...params)
       transactionsProcessed += batch.length
 
-      if ((i / BATCH_SIZE + 1) % 5 === 0 || i + BATCH_SIZE >= validTransactions.length) {
-        console.log(`💾 Saved ${transactionsProcessed}/${validTransactions.length} transactions`)
+      if ((i / BATCH_SIZE + 1) % 5 === 0 || i + BATCH_SIZE >= allTransactions.length) {
+        console.log(`💾 Saved ${transactionsProcessed}/${allTransactions.length} transactions`)
       }
     }
 

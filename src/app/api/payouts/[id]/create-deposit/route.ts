@@ -93,7 +93,9 @@ function buildDepositData(payout: any) {
     .filter((item, idx, arr) => idx === arr.findIndex((t) => t.id === item.id))
 
   const includedTransactions = payout.transactions.filter((txn: any) => txn.includeInNetSuite !== false)
-  const totalFees = includedTransactions.reduce((sum: number, txn: any) => sum + (txn.fee || 0), 0)
+  // Fees come from top-level (Shopify-visible) transactions only, including split parents
+  const topLevelTransactions = payout.transactions.filter((txn: any) => !txn.parentTransactionId)
+  const totalFees = topLevelTransactions.reduce((sum: number, txn: any) => sum + (txn.fee || 0), 0)
 
   return { depositItems, totalFees, includedTransactions, transactionsWithNS }
 }

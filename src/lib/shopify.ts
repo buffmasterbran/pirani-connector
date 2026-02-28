@@ -339,6 +339,41 @@ export async function fetchShopifyPayoutTransactions(payoutId: string) {
   return { transactions: allTransactions }
 }
 
+export async function fetchShopifyPayoutTransactionsPage(
+  payoutId: string,
+  cursor?: string,
+): Promise<{ transactions: any[]; nextCursor: string | null }> {
+  const creds = await getShopifyCredentials()
+  if (!creds) return { transactions: [], nextCursor: null }
+
+  const url = cursor || `/shopify_payments/balance/transactions.json?payout_id=${payoutId}&limit=250`
+
+  const { data, headers } = await shopifyFetchWithHeaders<{ transactions: any[] }>(url)
+  const transactions = data.transactions ?? []
+
+  let nextCursor: string | null = null
+  const linkHeader = headers.get('link')
+  if (linkHeader) {
+    const nextMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/)
+    if (nextMatch) {
+      let extractedUrl = nextMatch[1]
+      if (extractedUrl.startsWith('http')) {
+        try {
+          const urlObj = new URL(extractedUrl)
+          extractedUrl = urlObj.pathname + urlObj.search
+          extractedUrl = extractedUrl.replace(/^\/admin\/api\/[^/]+/, '')
+        } catch {
+          const pathMatch = extractedUrl.match(/\/admin\/api\/[^/]+(\/.*)/)
+          extractedUrl = pathMatch ? pathMatch[1] : extractedUrl.replace(/^\/admin\/api\/[^/]+/, '')
+        }
+      }
+      nextCursor = extractedUrl
+    }
+  }
+
+  return { transactions, nextCursor }
+}
+
 /**
  * Fetches all saved addresses for a customer from Shopify
  */

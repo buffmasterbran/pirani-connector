@@ -103,14 +103,18 @@ model PayoutTransaction {
   otherFeesDescription    String?
   amountDescription       String?
   feeDescription          String?
+  parentTransactionId     String?
   createdAt               DateTime  @default(now())
 
-  payout    Payout     @relation(fields: [payoutId], references: [id], onDelete: Cascade)
-  orderLine OrderLine? @relation(fields: [orderLineId], references: [id])
+  payout    Payout              @relation(fields: [payoutId], references: [id], onDelete: Cascade)
+  orderLine OrderLine?          @relation(fields: [orderLineId], references: [id])
+  parent    PayoutTransaction?  @relation("TransactionSplits", fields: [parentTransactionId], references: [id], onDelete: Cascade)
+  children  PayoutTransaction[] @relation("TransactionSplits")
 
   @@index([payoutId])
   @@index([shopifyOrderId])
   @@index([adjustmentReason])
+  @@index([parentTransactionId])
 }
 
 model PayoutMapping {

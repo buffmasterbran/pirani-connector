@@ -101,6 +101,7 @@ interface SavedPayout {
   status: string
   netsuiteDepositNumber: string | null
   netsuiteDepositId: string | null
+  transactionCount?: number
   transactions: Array<{
     id: string
     source_order_id: string
@@ -1339,49 +1340,72 @@ export default function Home() {
       return
     }
     
+    const SAVE_BATCH_SIZE = 1000
+
     for (const payout of payoutsToProcess) {
       console.log(`💾 Processing payout ${payout.id}...`)
       try {
-        // Fetch transactions for this payout from Shopify
-        console.log(`📡 Fetching transactions for payout ${payout.id} from Shopify...`)
-        const transactionsResponse = await fetch(`/api/shopify/payouts/${payout.id}/transactions`)
-        const transactionsData = await transactionsResponse.json()
-        
-        console.log(`📦 Transactions response for ${payout.id}:`, {
-          ok: transactionsResponse.ok,
-          status: transactionsResponse.status,
-          transactionsCount: transactionsData.transactions?.length || 0
-        })
-        
-        if (transactionsResponse.ok) {
-          // Save payout with transactions to database
-          console.log(`💾 Saving payout ${payout.id} to database...`)
+        // Fetch transactions page-by-page from Shopify to avoid 60s timeout
+        console.log(`📡 Fetching transactions for payout ${payout.id} from Shopify (paginated)...`)
+        const allTransactions: any[] = []
+        let cursor: string | null = null
+        let pageNum = 0
+
+        while (true) {
+          pageNum++
+          const fetchUrl: string = cursor
+            ? `/api/shopify/payouts/${payout.id}/transactions?paginated=true&cursor=${encodeURIComponent(cursor)}`
+            : `/api/shopify/payouts/${payout.id}/transactions?paginated=true`
+
+          const pageRes = await fetch(fetchUrl)
+          if (!pageRes.ok) {
+            console.error(`❌ Failed to fetch transactions page ${pageNum} for payout ${payout.id}`)
+            break
+          }
+
+          const pageData = await pageRes.json()
+          const pageTxns = pageData.transactions || []
+          allTransactions.push(...pageTxns)
+
+          if (pageNum % 5 === 0) {
+            console.log(`📦 Fetched page ${pageNum}: ${allTransactions.length} transactions so far...`)
+          }
+
+          if (!pageData.nextCursor || pageTxns.length === 0) break
+          cursor = pageData.nextCursor
+        }
+
+        console.log(`📦 Total transactions fetched for payout ${payout.id}: ${allTransactions.length} (${pageNum} pages)`)
+
+        if (allTransactions.length === 0) {
+          console.warn(`⚠️ No transactions found for payout ${payout.id}`)
+          continue
+        }
+
+        // Save in batches to stay within serverless timeout
+        for (let i = 0; i < allTransactions.length; i += SAVE_BATCH_SIZE) {
+          const batch = allTransactions.slice(i, i + SAVE_BATCH_SIZE)
+          const batchNum = Math.floor(i / SAVE_BATCH_SIZE) + 1
+          const totalBatches = Math.ceil(allTransactions.length / SAVE_BATCH_SIZE)
+
+          console.log(`💾 Saving batch ${batchNum}/${totalBatches} (${batch.length} transactions) for payout ${payout.id}...`)
+
           const saveResponse = await fetch('/api/payouts/save', {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              payout,
-              transactions: transactionsData.transactions || [],
-            }),
-          })
-
-          console.log(`📤 Save response for ${payout.id}:`, {
-            ok: saveResponse.ok,
-            status: saveResponse.status
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ payout, transactions: batch }),
           })
 
           if (saveResponse.ok) {
-            console.log(`✅ Successfully saved payout ${payout.id} to database`)
+            const saveData = await saveResponse.json()
+            console.log(`✅ Batch ${batchNum}/${totalBatches}: saved ${saveData.transactionsProcessed} transactions`)
           } else {
-            const errorData = await saveResponse.json()
-            console.error(`❌ Failed to save payout ${payout.id}:`, errorData)
-            console.error(`❌ Error details:`, errorData.details || 'No details provided')
+            const errorData = await saveResponse.json().catch(() => ({ error: 'Unknown' }))
+            console.error(`❌ Batch ${batchNum}/${totalBatches} failed:`, errorData)
           }
-        } else {
-          console.error(`❌ Failed to fetch transactions for payout ${payout.id}`)
         }
+
+        console.log(`✅ Successfully saved payout ${payout.id} (${allTransactions.length} transactions)`)
       } catch (error) {
         console.error(`❌ Error processing payout ${payout.id}:`, error)
       }
@@ -2861,13 +2885,15 @@ export default function Home() {
   })), ...payouts.filter(p => !p.inDatabase)]
 
   // Helper function to check if a payout has transactions with issues (missing cash sales, etc.)
+  // Note: this checks the currently-loaded transactions dialog data, not the payouts list
   const hasMissingCashSale = (payout: typeof allPayouts[0]): boolean => {
-    // Find the saved payout with transactions
     const savedPayout = savedPayouts.find(sp => String(sp.id) === String(payout.id))
-    if (!savedPayout || !savedPayout.transactions) return false
+    if (!savedPayout) return false
+
+    const txns = savedPayout.transactions ?? []
+    if (txns.length === 0) return false
     
-    // Check if any transaction has an order_name but no netsuiteTransactionName
-    return savedPayout.transactions.some((transaction: any) => {
+    return txns.some((transaction: any) => {
       const hasOrderName = transaction.order_name && 
                           transaction.order_name !== '—' && 
                           transaction.order_name !== 'N/A'
@@ -2962,7 +2988,7 @@ export default function Home() {
               <Card className="p-6 bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200">
                 <div className="text-center">
                   <div className="text-3xl font-bold text-slate-600 mb-2">
-                    {savedPayouts.reduce((sum, p) => sum + p.transactions.length, 0)}
+                    {savedPayouts.reduce((sum, p) => sum + (p.transactionCount ?? p.transactions?.length ?? 0), 0)}
                   </div>
                   <div className="text-sm text-slate-700">Total Transactions</div>
                 </div>

@@ -8,10 +8,10 @@ import {
 } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Trash2, Users, GripVertical, Plus, GitMerge } from "lucide-react"
+import { Trash2, Users, GripVertical, Plus, GitMerge, Split, ChevronDown, ChevronRight } from "lucide-react"
 import { Checkbox } from "@/components/ui/checkbox"
 import { safeFormatDate } from "@/lib/dateUtils"
-import { useState, type ReactNode, useEffect } from "react"
+import React, { useState, type ReactNode, useEffect } from "react"
 import { MergeTransactionsDialog } from "@/components/MergeTransactionsDialog"
 import {
   DndContext,
@@ -51,6 +51,14 @@ interface Transaction {
   otherFeesDescription?: string | null
   amountDescription?: string | null
   feeDescription?: string | null
+  parentTransactionId?: string | null
+  children?: Array<{
+    id: string
+    netsuiteTransactionId: string | null
+    netsuiteTransactionName: string | null
+    netsuiteAmount: number | null
+    amount: number
+  }>
 }
 
 interface OrderSourceMapping {
@@ -74,6 +82,7 @@ interface TransactionsTableProps {
   onUpdateFeeDescription?: (transactionId: string, description: string | null) => Promise<void>
   onToggleInclude?: (transactionId: string, include: boolean) => Promise<void>
   onMergeTransactions?: (sourceTransactionIds: string[], targetTransactionId: string) => Promise<void>
+  onSplitTransaction?: (transaction: Transaction) => void
 }
 
 // Helper function to get NetSuite URL based on transaction type
@@ -341,7 +350,8 @@ export function TransactionsTable({
   onUpdateAmountDescription,
   onUpdateFeeDescription,
   onToggleInclude,
-  onMergeTransactions
+  onMergeTransactions,
+  onSplitTransaction
 }: TransactionsTableProps) {
   
   // Helper function to get friendly name for order source
@@ -386,6 +396,7 @@ export function TransactionsTable({
   const [showMergeDialog, setShowMergeDialog] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(50)
+  const [expandedSplits, setExpandedSplits] = useState<Set<string>>(new Set())
 
   // Fetch fees description options from payout mappings
   useEffect(() => {
@@ -705,8 +716,8 @@ export function TransactionsTable({
               : null
 
             return (
+              <React.Fragment key={transaction.id}>
               <DroppableRow
-                key={transaction.id}
                 transaction={transaction}
                 isDraggingOver={draggedTransactionId === transaction.id}
                 rowIndex={idx}
@@ -941,13 +952,41 @@ export function TransactionsTable({
               <TableCell>
                   {hideSensitiveData ? (
                     <span className="text-gray-500">••••••</span>
+                  ) : transaction.children && transaction.children.length > 0 ? (
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-1.5 text-purple-600 hover:text-purple-800 hover:bg-purple-50 text-xs font-medium"
+                        onClick={() => setExpandedSplits(prev => {
+                          const next = new Set(prev)
+                          if (next.has(transaction.id)) next.delete(transaction.id)
+                          else next.add(transaction.id)
+                          return next
+                        })}
+                      >
+                        {expandedSplits.has(transaction.id) ? <ChevronDown className="h-3 w-3 mr-0.5" /> : <ChevronRight className="h-3 w-3 mr-0.5" />}
+                        {transaction.children.length} NS txns
+                      </Button>
+                      {onSplitTransaction && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0 text-purple-600 hover:text-purple-800 hover:bg-purple-50"
+                          onClick={() => onSplitTransaction(transaction)}
+                          title="Edit split transactions"
+                        >
+                          <Split className="h-3 w-3" />
+                        </Button>
+                      )}
+                    </div>
                   ) : transaction.netsuiteTransactionId ? (
                     <DraggableNetSuiteId
                       transaction={transaction}
                       onDeleteNetSuiteId={onDeleteNetSuiteId}
                     />
                   ) : (
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1">
                       <span className="text-muted-foreground">—</span>
                       {onAddNetSuite && (
                         <Button
@@ -955,9 +994,20 @@ export function TransactionsTable({
                           size="sm"
                           className="h-6 w-6 p-0 text-blue-600 hover:text-blue-800 hover:bg-blue-50"
                           onClick={() => onAddNetSuite(transaction.id)}
-                          title="Add NetSuite transaction"
+                          title="Add single NetSuite transaction"
                         >
                           <Plus className="h-3 w-3" />
+                        </Button>
+                      )}
+                      {onSplitTransaction && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0 text-purple-600 hover:text-purple-800 hover:bg-purple-50"
+                          onClick={() => onSplitTransaction(transaction)}
+                          title="Split into multiple NS transactions"
+                        >
+                          <Split className="h-3 w-3" />
                         </Button>
                       )}
                     </div>
@@ -967,6 +1017,45 @@ export function TransactionsTable({
                   {transaction.processedAt ? safeFormatDate(transaction.processedAt, 'MMM dd, yyyy HH:mm') : '—'}
                 </TableCell>
               </DroppableRow>
+              {/* Expandable child rows for split transactions */}
+              {transaction.children && transaction.children.length > 0 && expandedSplits.has(transaction.id) && (
+                transaction.children.map((child, childIdx) => (
+                  <TableRow key={child.id} className="bg-purple-50/50 border-l-2 border-l-purple-300">
+                    <TableCell colSpan={5} className="pl-8 text-xs text-muted-foreground italic">
+                      Split {childIdx + 1}/{transaction.children!.length}
+                    </TableCell>
+                    <TableCell className="text-xs font-mono">
+                      {child.amount != null ? `${transaction.currency} ${Number(child.amount).toFixed(2)}` : '—'}
+                    </TableCell>
+                    <TableCell className="text-xs">—</TableCell>
+                    <TableCell className="text-xs font-mono">
+                      {child.amount != null ? `${transaction.currency} ${Number(child.amount).toFixed(2)}` : '—'}
+                    </TableCell>
+                    <TableCell className="text-xs font-mono">
+                      {child.netsuiteAmount != null ? (
+                        <span className="text-green-600">{transaction.currency} {Number(child.netsuiteAmount).toFixed(2)}</span>
+                      ) : '—'}
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {child.netsuiteTransactionId && (
+                        <div className="flex items-center gap-1">
+                          <a
+                            href={getNetSuiteUrl(child.netsuiteTransactionId, transaction.type, child.netsuiteTransactionName)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-green-700 hover:text-green-900 hover:underline font-mono"
+                          >
+                            {child.netsuiteTransactionName || child.netsuiteTransactionId}
+                          </a>
+                          <span className="text-muted-foreground">ID: {child.netsuiteTransactionId}</span>
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell></TableCell>
+                  </TableRow>
+                ))
+              )}
+              </React.Fragment>
             )
           })}
         </TableBody>
