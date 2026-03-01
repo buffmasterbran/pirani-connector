@@ -1497,7 +1497,9 @@ export default function Home() {
         )
       }
       if (!res.ok || !data.success) {
-        throw new Error(data.error || `HTTP ${res.status}`)
+        const err = new Error(data.error || `HTTP ${res.status}`) as any
+        err.debug = data.debug || null
+        throw err
       }
       return data
     }
@@ -1512,10 +1514,22 @@ export default function Home() {
         alert(`Successfully created NetSuite deposit!\n\nDeposit ID: ${result.depositId}\nTotal items: ${result.totalItems}`)
       }
       fetchSavedPayouts()
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating NetSuite deposit:', error)
       setNetsuitePreviewDialog({ isOpen: false, payoutId: null, previewData: null, isLoading: false })
-      alert(`Error creating NetSuite deposit:\n\n${error instanceof Error ? error.message : 'Unknown error'}`)
+      let msg = `Error creating NetSuite deposit:\n\n${error?.message || 'Unknown error'}`
+      if (error?.debug) {
+        const d = error.debug
+        msg += `\n\n--- Debug Info ---`
+        msg += `\nDate: ${d.trandate}`
+        msg += `\nDeposit items (${d.depositItemCount}): ${(d.depositItemIds || []).join(', ')}`
+        msg += `\nOther items: ${d.otherItemCount}`
+        if (d.transactions?.length) {
+          msg += `\n\nTransactions:`
+          d.transactions.forEach((t: any) => { msg += `\n  ${t.nsName} (ID: ${t.nsId})` })
+        }
+      }
+      alert(msg)
     }
   }
 
