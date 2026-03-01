@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getShopifyCredentials, flattenShopifyOrder, saveCustomerAndAddresses } from '@/lib/shopify'
 
-export const maxDuration = 300
 
 const CONCURRENCY = 4
 const BATCH_DELAY_MS = 600

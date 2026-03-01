@@ -17,7 +17,6 @@
  */
 define(['N/search', 'N/https', 'N/runtime', 'N/log'], (search, https, runtime, log) => {
 
-  const BATCH_SIZE = 100
 
   function getScriptParams() {
     const script = runtime.getCurrentScript()
@@ -232,50 +231,38 @@ define(['N/search', 'N/https', 'N/runtime', 'N/log'], (search, https, runtime, l
       return
     }
 
-    let batchNum = 0
+    const payload = {
+      storeId: config.storeId || 'default',
+      items: allItems,
+      timestamp: new Date().toISOString(),
+    }
+
     let totalPushed = 0
     let totalErrors = 0
 
-    for (let i = 0; i < allItems.length; i += BATCH_SIZE) {
-      batchNum++
-      const batch = allItems.slice(i, i + BATCH_SIZE)
+    try {
+      const response = https.post({
+        url: webhookUrl,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + (authToken || ''),
+        },
+        body: JSON.stringify(payload),
+      })
 
-      const payload = {
-        storeId: config.storeId || 'default',
-        items: batch,
-        timestamp: new Date().toISOString(),
+      if (response.code === 200) {
+        totalPushed = allItems.length
+        log.audit('PiraniInventorySync', `Pushed all ${allItems.length} items in single request (HTTP ${response.code})`)
+      } else {
+        totalErrors = allItems.length
+        log.error('PiraniInventorySync', `Push failed: HTTP ${response.code} — ${response.body?.substring(0, 500)}`)
       }
-
-      try {
-        const response = https.post({
-          url: webhookUrl,
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + (authToken || ''),
-          },
-          body: JSON.stringify(payload),
-        })
-
-        if (response.code === 200) {
-          totalPushed += batch.length
-          log.audit('PiraniInventorySync', `Batch ${batchNum}: pushed ${batch.length} items (HTTP ${response.code})`)
-        } else {
-          totalErrors += batch.length
-          log.error('PiraniInventorySync', `Batch ${batchNum}: HTTP ${response.code} — ${response.body?.substring(0, 500)}`)
-        }
-      } catch (e) {
-        totalErrors += batch.length
-        log.error('PiraniInventorySync', `Batch ${batchNum}: network error — ${e.message}`)
-      }
-
-      const remaining = runtime.getCurrentScript().getRemainingUsage()
-      if (remaining < 200) {
-        log.audit('PiraniInventorySync', `Low governance (${remaining} remaining) — stopping after batch ${batchNum}`)
-        break
-      }
+    } catch (e) {
+      totalErrors = allItems.length
+      log.error('PiraniInventorySync', `Push network error: ${e.message}`)
     }
 
-    log.audit('PiraniInventorySync', `Done. ${totalPushed} pushed, ${totalErrors} errors, ${batchNum} batches`)
+    log.audit('PiraniInventorySync', `Done. ${totalPushed} pushed, ${totalErrors} errors`)
 
     if (context.inputSummary.error) {
       log.error('PiraniInventorySync:input', context.inputSummary.error)

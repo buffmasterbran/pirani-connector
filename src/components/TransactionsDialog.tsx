@@ -737,96 +737,37 @@ export function TransactionsDialog({
     setIsFetchingNS(true)
     try {
       const apiUrl = `/api/payouts/${payoutId}/netsuite-transactions`
-      const postJson = async (body: any) => {
-        const res = await fetch(apiUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        })
-        const text = await res.text()
-        try { return { ok: res.ok, data: JSON.parse(text) } }
-        catch { return { ok: false, data: { error: text.slice(0, 200) } } }
+
+      console.log('Fetching all NetSuite transactions in a single call...')
+      const res = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      const text = await res.text()
+      let data: any
+      try { data = JSON.parse(text) }
+      catch { throw new Error(`Invalid response: ${text.slice(0, 200)}`) }
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'NetSuite fetch failed')
       }
 
-      // Phase 1: Prepare - get batch plan
-      console.log('Phase 1: Preparing NS fetch...')
-      const prepRes = await postJson({ action: 'prepare' })
-      if (!prepRes.ok || !prepRes.data.success) {
-        throw new Error(prepRes.data.error || 'Prepare failed')
-      }
-      const { nsBatchCount, cashSalesCount, refundsCount, paymentsCount } = prepRes.data
-      console.log(`Plan: ${nsBatchCount} NS batch(es) for ${cashSalesCount} CS, ${refundsCount} RF, ${paymentsCount} PM`)
+      const { updated, cashSalesMatched, refundsMatched, paymentsMatched, errors: nsErrors } = data
+      console.log(`Done: ${updated} updated (${cashSalesMatched} CS, ${refundsMatched} RF, ${paymentsMatched} PM)`)
 
-      // Phase 2: Fetch each NS batch one at a time
-      const allNsResults = { cashsales: [] as any[], refunds: [] as any[], payments: [] as any[] }
-      for (let i = 0; i < nsBatchCount; i++) {
-        console.log(`Phase 2: Fetching NS batch ${i + 1}/${nsBatchCount}...`)
-        const fetchRes = await postJson({ action: 'fetch', batchIndex: i })
-        if (!fetchRes.ok || !fetchRes.data.success) {
-          console.error(`NS batch ${i + 1} failed:`, fetchRes.data.error)
-          throw new Error(`NS batch ${i + 1} failed: ${fetchRes.data.error}`)
-        }
-        const r = fetchRes.data.results
-        allNsResults.cashsales.push(...(r.cashsales || []))
-        allNsResults.refunds.push(...(r.refunds || []))
-        allNsResults.payments.push(...(r.payments || []))
-        console.log(`  Accumulated: ${allNsResults.cashsales.length} CS, ${allNsResults.refunds.length} RF, ${allNsResults.payments.length} PM`)
-      }
-
-      // Phase 3: Save in batches of 2000 NS results at a time
-      const SAVE_BATCH = 2000
-      let totalUpdated = 0
-      const allErrors: string[] = []
-      const totalNsItems = allNsResults.cashsales.length + allNsResults.refunds.length + allNsResults.payments.length
-
-      if (totalNsItems === 0) {
+      if (updated === 0) {
         alert('No matching NetSuite transactions found.')
         safeRefreshTransactions()
         return
       }
 
-      // Split NS results into save-sized chunks, keeping type separation
-      const csBatches = []
-      for (let i = 0; i < allNsResults.cashsales.length; i += SAVE_BATCH) {
-        csBatches.push(allNsResults.cashsales.slice(i, i + SAVE_BATCH))
-      }
-      const rfBatches = []
-      for (let i = 0; i < allNsResults.refunds.length; i += SAVE_BATCH) {
-        rfBatches.push(allNsResults.refunds.slice(i, i + SAVE_BATCH))
-      }
-      const pmBatches = []
-      for (let i = 0; i < allNsResults.payments.length; i += SAVE_BATCH) {
-        pmBatches.push(allNsResults.payments.slice(i, i + SAVE_BATCH))
-      }
-
-      const maxBatches = Math.max(csBatches.length, rfBatches.length, pmBatches.length, 1)
-
-      for (let i = 0; i < maxBatches; i++) {
-        const batchResults = {
-          cashsales: csBatches[i] || [],
-          refunds: rfBatches[i] || [],
-          payments: pmBatches[i] || [],
-        }
-        const batchTotal = batchResults.cashsales.length + batchResults.refunds.length + batchResults.payments.length
-        if (batchTotal === 0) continue
-
-        console.log(`Phase 3: Save batch ${i + 1}/${maxBatches} (${batchTotal} NS items)...`)
-        const saveRes = await postJson({ action: 'save', results: batchResults })
-        if (saveRes.ok && saveRes.data.success) {
-          totalUpdated += saveRes.data.updated || 0
-          if (saveRes.data.errors) allErrors.push(...saveRes.data.errors)
-          console.log(`  Saved: ${saveRes.data.updated} matched`)
-        } else {
-          console.error(`Save batch ${i + 1} failed:`, saveRes.data.error)
-        }
-      }
-
-      if (allErrors.length > 0) {
-        const errorMessage = allErrors.slice(0, 5).join('\n')
-        const moreErrors = allErrors.length > 5 ? `\n... and ${allErrors.length - 5} more` : ''
-        alert(`Updated ${totalUpdated} transaction(s) with NetSuite IDs.\n\nAmount mismatches:\n${errorMessage}${moreErrors}`)
+      if (nsErrors && nsErrors.length > 0) {
+        const errorMessage = nsErrors.slice(0, 5).join('\n')
+        const moreErrors = nsErrors.length > 5 ? `\n... and ${nsErrors.length - 5} more` : ''
+        alert(`Updated ${updated} transaction(s) with NetSuite IDs.\n\nAmount mismatches:\n${errorMessage}${moreErrors}`)
       } else {
-        alert(`Successfully fetched NetSuite IDs for ${totalUpdated} transaction(s).`)
+        alert(`Successfully fetched NetSuite IDs for ${updated} transaction(s).`)
       }
 
       safeRefreshTransactions()

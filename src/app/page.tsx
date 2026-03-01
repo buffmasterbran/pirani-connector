@@ -1340,72 +1340,42 @@ export default function Home() {
       return
     }
     
-    const SAVE_BATCH_SIZE = 1000
-
     for (const payout of payoutsToProcess) {
       console.log(`💾 Processing payout ${payout.id}...`)
       try {
-        // Fetch transactions page-by-page from Shopify to avoid 60s timeout
-        console.log(`📡 Fetching transactions for payout ${payout.id} from Shopify (paginated)...`)
-        const allTransactions: any[] = []
-        let cursor: string | null = null
-        let pageNum = 0
-
-        while (true) {
-          pageNum++
-          const fetchUrl: string = cursor
-            ? `/api/shopify/payouts/${payout.id}/transactions?paginated=true&cursor=${encodeURIComponent(cursor)}`
-            : `/api/shopify/payouts/${payout.id}/transactions?paginated=true`
-
-          const pageRes = await fetch(fetchUrl)
-          if (!pageRes.ok) {
-            console.error(`❌ Failed to fetch transactions page ${pageNum} for payout ${payout.id}`)
-            break
-          }
-
-          const pageData = await pageRes.json()
-          const pageTxns = pageData.transactions || []
-          allTransactions.push(...pageTxns)
-
-          if (pageNum % 5 === 0) {
-            console.log(`📦 Fetched page ${pageNum}: ${allTransactions.length} transactions so far...`)
-          }
-
-          if (!pageData.nextCursor || pageTxns.length === 0) break
-          cursor = pageData.nextCursor
+        // Fetch all transactions from Shopify in one call
+        console.log(`📡 Fetching all transactions for payout ${payout.id} from Shopify...`)
+        const fetchRes = await fetch(`/api/shopify/payouts/${payout.id}/transactions`)
+        if (!fetchRes.ok) {
+          console.error(`❌ Failed to fetch transactions for payout ${payout.id}`)
+          continue
         }
 
-        console.log(`📦 Total transactions fetched for payout ${payout.id}: ${allTransactions.length} (${pageNum} pages)`)
+        const fetchData = await fetchRes.json()
+        const allTransactions = fetchData.transactions || []
+
+        console.log(`📦 Total transactions fetched for payout ${payout.id}: ${allTransactions.length}`)
 
         if (allTransactions.length === 0) {
           console.warn(`⚠️ No transactions found for payout ${payout.id}`)
           continue
         }
 
-        // Save in batches to stay within serverless timeout
-        for (let i = 0; i < allTransactions.length; i += SAVE_BATCH_SIZE) {
-          const batch = allTransactions.slice(i, i + SAVE_BATCH_SIZE)
-          const batchNum = Math.floor(i / SAVE_BATCH_SIZE) + 1
-          const totalBatches = Math.ceil(allTransactions.length / SAVE_BATCH_SIZE)
+        // Save all transactions in one call
+        console.log(`💾 Saving ${allTransactions.length} transactions for payout ${payout.id}...`)
+        const saveResponse = await fetch('/api/payouts/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ payout, transactions: allTransactions }),
+        })
 
-          console.log(`💾 Saving batch ${batchNum}/${totalBatches} (${batch.length} transactions) for payout ${payout.id}...`)
-
-          const saveResponse = await fetch('/api/payouts/save', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ payout, transactions: batch }),
-          })
-
-          if (saveResponse.ok) {
-            const saveData = await saveResponse.json()
-            console.log(`✅ Batch ${batchNum}/${totalBatches}: saved ${saveData.transactionsProcessed} transactions`)
-          } else {
-            const errorData = await saveResponse.json().catch(() => ({ error: 'Unknown' }))
-            console.error(`❌ Batch ${batchNum}/${totalBatches} failed:`, errorData)
-          }
+        if (saveResponse.ok) {
+          const saveData = await saveResponse.json()
+          console.log(`✅ Saved ${saveData.transactionsProcessed} transactions for payout ${payout.id}`)
+        } else {
+          const errorData = await saveResponse.json().catch(() => ({ error: 'Unknown' }))
+          console.error(`❌ Failed to save payout ${payout.id}:`, errorData)
         }
-
-        console.log(`✅ Successfully saved payout ${payout.id} (${allTransactions.length} transactions)`)
       } catch (error) {
         console.error(`❌ Error processing payout ${payout.id}:`, error)
       }

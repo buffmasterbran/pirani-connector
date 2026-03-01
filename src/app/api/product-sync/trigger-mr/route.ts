@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { generateOAuthHeader } from '@/lib/netsuite'
 
-export const maxDuration = 30
 
 const NETSUITE_ACCOUNT_ID = process.env.NETSUITE_ACCOUNT_ID || '7913744'
 const TRIGGER_SCRIPT_ID = process.env.NETSUITE_TRIGGER_SCRIPT_ID

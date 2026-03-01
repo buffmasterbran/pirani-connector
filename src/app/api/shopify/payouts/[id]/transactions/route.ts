@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { fetchShopifyPayoutTransactions, fetchShopifyPayoutTransactionsPage } from '@/lib/shopify'
 
-export const maxDuration = 60
 
 export async function GET(
   request: NextRequest,

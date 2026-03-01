@@ -44,7 +44,6 @@ export async function GET(request: NextRequest) {
       .join(',')
 
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL
-      || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
       || (request.headers.get('host') ? `https://${request.headers.get('host')}` : null)
 
     const webhookUrl = baseUrl
