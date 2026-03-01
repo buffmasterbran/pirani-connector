@@ -112,22 +112,47 @@ define(['N/search', 'N/https', 'N/runtime', 'N/log'], (search, https, runtime, l
         })
       )
       filters.push('AND')
-      filters.push(['pricing.pricelevel', 'is', parseInt(config.priceLevelId, 10)])
+      filters.push(['pricing.pricelevel', 'anyof', parseInt(config.priceLevelId, 10)])
     }
 
-    return search.create({
-      type: search.Type.ITEM,
-      filters: filters,
-      columns: columns,
-    })
+    log.audit('PiraniInventorySync', `Search filters: ${JSON.stringify(filters)}`)
+    log.audit('PiraniInventorySync', `Search columns: ${columns.length} columns`)
+
+    try {
+      const searchObj = search.create({
+        type: search.Type.ITEM,
+        filters: filters,
+        columns: columns,
+      })
+      // Run a quick count to verify the search works before returning it
+      const preview = searchObj.run().getRange({ start: 0, end: 1 })
+      log.audit('PiraniInventorySync', `Search created OK — preview returned ${preview.length} result(s)`)
+      // Re-create the search since getRange consumed the first result
+      return search.create({
+        type: search.Type.ITEM,
+        filters: filters,
+        columns: columns,
+      })
+    } catch (e) {
+      log.error('PiraniInventorySync', `Search creation FAILED: ${e.message}\nFilters: ${JSON.stringify(filters)}`)
+      return []
+    }
   }
 
   /**
    * map — Extract item data from each search result.
    */
+  let mapLogCount = 0
+
   function map(context) {
     const result = JSON.parse(context.value)
     const values = result.values
+
+    // Log the first few raw results so we can see the actual column keys
+    if (mapLogCount < 3) {
+      log.audit('PiraniInventorySync:map', `Raw keys for result: ${JSON.stringify(Object.keys(values))}`)
+      mapLogCount++
+    }
 
     const sku = values['GROUP(itemid)']
     const name = values['GROUP(displayname)']
@@ -137,9 +162,13 @@ define(['N/search', 'N/https', 'N/runtime', 'N/log'], (search, https, runtime, l
     const qtyOnHand = parseFloat(values['SUM(locationquantityonhand)']) || 0
 
     let price = null
+    // NetSuite may return the pricing join column under different key formats
     const priceVal = values['MAX(unitprice.pricing)']
+      ?? values['MAX(unitprice)']
+      ?? values['MAX(pricing.unitprice)']
     if (priceVal !== undefined && priceVal !== null && priceVal !== '') {
       price = parseFloat(priceVal)
+      if (isNaN(price)) price = null
     }
 
     const item = {

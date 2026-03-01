@@ -25,7 +25,18 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const authorization = generateOAuthHeader('POST', restletUrl)
+    console.info(`[trigger-mr] Calling RESTlet: ${restletUrl} with action=${action}`)
+
+    let authorization: string
+    try {
+      authorization = generateOAuthHeader('POST', restletUrl)
+    } catch (oauthErr) {
+      console.error('[trigger-mr] OAuth header generation failed:', oauthErr)
+      return NextResponse.json(
+        { error: oauthErr instanceof Error ? oauthErr.message : 'OAuth header generation failed' },
+        { status: 500 },
+      )
+    }
 
     const res = await fetch(restletUrl, {
       method: 'POST',
@@ -38,19 +49,22 @@ export async function POST(request: NextRequest) {
     })
 
     const text = await res.text()
+    console.info(`[trigger-mr] NetSuite responded: HTTP ${res.status}, body=${text.slice(0, 300)}`)
+
     let data: any
     try {
       data = JSON.parse(text)
     } catch {
       return NextResponse.json(
-        { error: `NetSuite returned non-JSON response (${res.status}): ${text.slice(0, 200)}` },
+        { error: `NetSuite returned non-JSON response (HTTP ${res.status}): ${text.slice(0, 300)}` },
         { status: 502 },
       )
     }
 
     if (!res.ok) {
+      const errMsg = data.error?.message || data.error || JSON.stringify(data)
       return NextResponse.json(
-        { error: data.error?.message || data.error || `NetSuite HTTP ${res.status}` },
+        { error: `NetSuite HTTP ${res.status}: ${errMsg}` },
         { status: res.status },
       )
     }

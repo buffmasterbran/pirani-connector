@@ -46,6 +46,8 @@ define(['N/task', 'N/runtime', 'N/log'], (task, runtime, log) => {
       return { error: 'Missing custscript_pir_trig_inv_script parameter' }
     }
 
+    log.audit('PiraniTrigger', `Attempting to submit M/R task: scriptId=${scriptId}, deploymentId=${deploymentId}`)
+
     try {
       const mrTask = task.create({
         taskType: task.TaskType.MAP_REDUCE,
@@ -63,7 +65,7 @@ define(['N/task', 'N/runtime', 'N/log'], (task, runtime, log) => {
         message: `Inventory sync triggered (task ${taskId})`,
       }
     } catch (e) {
-      log.error('PiraniTrigger', `Failed to submit inventory_sync: ${e.message}`)
+      log.error('PiraniTrigger', `Failed to submit inventory_sync: ${e.name}: ${e.message} (script=${scriptId}, deploy=${deploymentId})`)
       return {
         error: `Failed to trigger inventory sync: ${e.message}`,
       }

@@ -162,9 +162,9 @@ export default function ProductsTab() {
       })
       const data = await res.json()
       if (!res.ok || data.error) {
-        setPushProgress(`Error: ${data.error || 'Failed to trigger M/R'}`)
+        setPushProgress(`Error (${res.status}): ${data.error || 'Failed to trigger M/R'}`)
       } else {
-        setPushProgress('Inventory sync triggered. Data will arrive in 1-2 minutes.')
+        setPushProgress(`Inventory sync triggered (task: ${data.taskId || 'unknown'}). Data will arrive in 1-2 minutes.`)
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err)
