@@ -158,17 +158,27 @@ export async function POST(
     const payoutDate = payout.payoutDate || new Date()
     const memo = `Shopify payout ${payoutId.slice(-8)}`
 
-    console.log(`💰 Creating deposit for payout ${payoutId}: ${depositItems.length} items, all in one POST`)
+    // Log transaction details for debugging
+    console.log(`💰 Creating deposit for payout ${payoutId}:`)
+    console.log(`   ${depositItems.length} payment items, ${otherItems.length} other items`)
+    console.log(`   Payment item IDs: ${depositItems.map(i => i.id).join(', ')}`)
+    console.log(`   Transactions used:`, transactionsWithNS.map((t: any) => ({
+      nsId: t.netsuiteTransactionId,
+      nsName: t.netsuiteTransactionName,
+      amount: t.amount,
+    })))
 
     const createBody: any = {
       account: { id: '217' },
-      trandate: payoutDate.toISOString(),
+      trandate: payoutDate.toISOString().split('T')[0],
       memo,
       payment: { items: depositItems },
     }
     if (otherItems.length > 0) {
       createBody.other = { items: otherItems }
     }
+
+    console.log(`   Full payload:`, JSON.stringify(createBody, null, 2))
 
     const authorization = generateOAuthHeader('POST', NETSUITE_API_URL)
     const res = await fetch(NETSUITE_API_URL, {
@@ -185,8 +195,22 @@ export async function POST(
 
     if (!res.ok) {
       console.error('NetSuite POST error:', { status: res.status, body: text })
+      console.error('NetSuite POST payload was:', JSON.stringify(createBody))
       return NextResponse.json(
-        { success: false, error: `NetSuite API error ${res.status}: ${text || res.statusText}` },
+        {
+          success: false,
+          error: `NetSuite API error ${res.status}: ${text || res.statusText}`,
+          debug: {
+            depositItemIds: depositItems.map(i => i.id),
+            depositItemCount: depositItems.length,
+            otherItemCount: otherItems.length,
+            trandate: createBody.trandate,
+            transactions: transactionsWithNS.map((t: any) => ({
+              nsId: t.netsuiteTransactionId,
+              nsName: t.netsuiteTransactionName,
+            })),
+          },
+        },
         { status: 500 },
       )
     }
