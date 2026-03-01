@@ -231,35 +231,45 @@ define(['N/search', 'N/https', 'N/runtime', 'N/log'], (search, https, runtime, l
       return
     }
 
-    const payload = {
-      storeId: config.storeId || 'default',
-      items: allItems,
-      timestamp: new Date().toISOString(),
-    }
-
+    // NetSuite SuiteScript caps outbound HTTP response time (~45s).
+    // The webhook processes each item against Shopify (rate-limited),
+    // so we batch to stay within NetSuite's HTTP timeout.
+    const BATCH_SIZE = 50
     let totalPushed = 0
     let totalErrors = 0
+    const totalBatches = Math.ceil(allItems.length / BATCH_SIZE)
 
-    try {
-      const response = https.post({
-        url: webhookUrl,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + (authToken || ''),
-        },
-        body: JSON.stringify(payload),
-      })
+    for (let i = 0; i < allItems.length; i += BATCH_SIZE) {
+      const batch = allItems.slice(i, i + BATCH_SIZE)
+      const batchNum = Math.floor(i / BATCH_SIZE) + 1
 
-      if (response.code === 200) {
-        totalPushed = allItems.length
-        log.audit('PiraniInventorySync', `Pushed all ${allItems.length} items in single request (HTTP ${response.code})`)
-      } else {
-        totalErrors = allItems.length
-        log.error('PiraniInventorySync', `Push failed: HTTP ${response.code} — ${response.body?.substring(0, 500)}`)
+      const payload = {
+        storeId: config.storeId || 'default',
+        items: batch,
+        timestamp: new Date().toISOString(),
       }
-    } catch (e) {
-      totalErrors = allItems.length
-      log.error('PiraniInventorySync', `Push network error: ${e.message}`)
+
+      try {
+        const response = https.post({
+          url: webhookUrl,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + (authToken || ''),
+          },
+          body: JSON.stringify(payload),
+        })
+
+        if (response.code === 200) {
+          totalPushed += batch.length
+          log.audit('PiraniInventorySync', `Batch ${batchNum}/${totalBatches}: pushed ${batch.length} items (HTTP ${response.code})`)
+        } else {
+          totalErrors += batch.length
+          log.error('PiraniInventorySync', `Batch ${batchNum}/${totalBatches} failed: HTTP ${response.code} — ${response.body?.substring(0, 500)}`)
+        }
+      } catch (e) {
+        totalErrors += batch.length
+        log.error('PiraniInventorySync', `Batch ${batchNum}/${totalBatches} network error: ${e.message}`)
+      }
     }
 
     log.audit('PiraniInventorySync', `Done. ${totalPushed} pushed, ${totalErrors} errors`)
