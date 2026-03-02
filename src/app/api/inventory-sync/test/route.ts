@@ -80,6 +80,7 @@ export async function GET(request: NextRequest) {
       SELECT DISTINCT TransactionLine.item AS itemid,
              BUILTIN.DF(TransactionLine.item) AS itemname,
              Item.itemtype,
+             Transaction.tranid,
              Transaction.type AS trantype,
              BUILTIN.DF(Transaction.type) AS trantypename,
              Transaction.trandate,
