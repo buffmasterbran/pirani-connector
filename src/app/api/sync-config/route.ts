@@ -40,6 +40,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch field mappings: store-specific + global (storeConfigId is null)
+    // Store-specific mappings override global ones for the same shopifyField.
     const allFieldMappings = await prisma.productSyncFieldMapping.findMany({
       where: {
         isEnabled: true,
@@ -49,6 +50,16 @@ export async function GET(request: NextRequest) {
         ],
       },
     })
+
+    // Deduplicate: store-specific wins over global
+    const fieldMap = new Map<string, typeof allFieldMappings[0]>()
+    for (const fm of allFieldMappings) {
+      const existing = fieldMap.get(fm.shopifyField)
+      if (!existing || (fm.storeConfigId && !existing.storeConfigId)) {
+        fieldMap.set(fm.shopifyField, fm)
+      }
+    }
+    const deduplicatedMappings = Array.from(fieldMap.values())
 
     const locationIds = storeConfig.locationMappings
       .map(lm => String(lm.netsuiteLocationId))
@@ -70,7 +81,7 @@ export async function GET(request: NextRequest) {
       locationIds,
       webhookUrl,
       includeNonInventory: storeConfig.includeNonInventory,
-      fieldMappings: allFieldMappings.map(fm => ({
+      fieldMappings: deduplicatedMappings.map(fm => ({
         shopifyField: fm.shopifyField,
         netsuiteFieldId: fm.netsuiteFieldId,
         mappingType: fm.mappingType,
