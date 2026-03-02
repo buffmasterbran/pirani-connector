@@ -75,6 +75,7 @@ export default function ProductsTab() {
   const [pulling, setPulling] = useState(false)
   const [pullingSuiteQL, setPullingSuiteQL] = useState(false)
   const [suiteQLResult, setSuiteQLResult] = useState<any>(null)
+  const [suiteQLHours, setSuiteQLHours] = useState('24')
   const [pullingMR, setPullingMR] = useState(false)
   const [pushingAll, setPushingAll] = useState(false)
   const [pushProgress, setPushProgress] = useState<string | null>(null)
@@ -153,19 +154,28 @@ export default function ProductsTab() {
     }
   }
 
+  const SUITEQL_WINDOW_OPTIONS = [
+    { value: '24', label: '24 hours' },
+    { value: '12', label: '12 hours' },
+    { value: '1', label: '1 hour' },
+    { value: '0.25', label: '15 min' },
+    { value: '0.05', label: '3 min' },
+  ]
+
   const handlePullSuiteQL = async () => {
     setPullingSuiteQL(true)
     setSuiteQLResult(null)
     setPushProgress(null)
+    const windowLabel = SUITEQL_WINDOW_OPTIONS.find((o) => o.value === suiteQLHours)?.label || `${suiteQLHours}h`
     try {
-      const res = await fetch('/api/inventory-sync/test?hours=24')
+      const res = await fetch(`/api/inventory-sync/test?hours=${suiteQLHours}`)
       const data = await res.json()
       if (!res.ok || !data.success) {
         setPushProgress(`SuiteQL Error: ${data.error || `HTTP ${res.status}`}`)
         setSuiteQLResult(null)
       } else {
         setSuiteQLResult(data)
-        setPushProgress(`SuiteQL: Found ${data.summary?.itemsWithRecentTransactions || 0} items with changes in last 24h (out of ${data.summary?.totalActiveItems || '?'} total)`)
+        setPushProgress(`SuiteQL (${windowLabel}): Found ${data.summary?.itemsWithRecentTransactions || 0} items with changes (out of ${data.summary?.totalActiveItems || '?'} total)`)
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err)
@@ -391,10 +401,22 @@ export default function ProductsTab() {
         </div>
 
         <div className="flex items-center gap-2 ml-auto">
-          <Button variant="outline" size="sm" onClick={handlePullSuiteQL} disabled={pullingSuiteQL}>
-            {pullingSuiteQL ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Search className="h-3.5 w-3.5 mr-1.5" />}
-            Pull from NetSuite (SuiteQL)
-          </Button>
+          <div className="flex items-center">
+            <Button variant="outline" size="sm" onClick={handlePullSuiteQL} disabled={pullingSuiteQL} className="rounded-r-none border-r-0">
+              {pullingSuiteQL ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Search className="h-3.5 w-3.5 mr-1.5" />}
+              SuiteQL
+            </Button>
+            <select
+              value={suiteQLHours}
+              onChange={(e) => setSuiteQLHours(e.target.value)}
+              disabled={pullingSuiteQL}
+              className="h-8 border border-gray-200 rounded-r-md bg-white text-xs px-1.5 focus:outline-none focus:ring-1 focus:ring-slate-300"
+            >
+              {SUITEQL_WINDOW_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
           <Button variant="outline" size="sm" onClick={handlePullMR} disabled={pullingMR}>
             {pullingMR ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
             Pull from NetSuite (MR)
