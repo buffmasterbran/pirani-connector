@@ -231,10 +231,9 @@ define(['N/search', 'N/https', 'N/runtime', 'N/log'], (search, https, runtime, l
       return
     }
 
-    // NetSuite SuiteScript caps outbound HTTP response time (~45s).
-    // The webhook processes each item against Shopify (rate-limited),
-    // so we batch to stay within NetSuite's HTTP timeout.
-    const BATCH_SIZE = 50
+    // Webhook now only writes to the database (no Shopify calls),
+    // so we can send larger batches without hitting timeouts.
+    const BATCH_SIZE = 500
     let totalPushed = 0
     let totalErrors = 0
     const totalBatches = Math.ceil(allItems.length / BATCH_SIZE)

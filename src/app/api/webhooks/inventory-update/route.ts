@@ -1,11 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
-import {
-  getShopifyStore,
-  findVariantBySku,
-  updateVariantPrices,
-  setInventoryQuantities,
-} from '@/lib/product-sync/shopify-graphql'
 import { logWebhook } from '@/lib/webhook-logger'
 
 function verifyAuth(request: NextRequest): boolean {
@@ -31,6 +25,13 @@ interface InventoryPayload {
   timestamp?: string
 }
 
+/**
+ * POST /api/webhooks/inventory-update
+ *
+ * DB-only ingest: receives inventory data from NetSuite M/R script
+ * and updates ProductSyncMapping records. Does NOT push to Shopify —
+ * that's handled separately by /api/inventory-sync/push-shopify.
+ */
 export async function POST(request: NextRequest) {
   const startTime = Date.now()
 
@@ -53,41 +54,51 @@ export async function POST(request: NextRequest) {
 
   const storeConfig = await prisma.productSyncStoreConfig.findFirst({
     where: { isActive: true },
-    include: { locationMappings: { where: { isActive: true } } },
   })
 
   if (!storeConfig) {
     return NextResponse.json({ error: 'No active store configured' }, { status: 404 })
   }
 
-  const store = await getShopifyStore(storeConfig.id)
-
-  let priceUpdates = 0
-  let quantityUpdates = 0
-  let skipped = 0
-  let newUnmatched = 0
+  let updated = 0
+  let created = 0
+  let unchanged = 0
   let errors = 0
   const errorDetails: Array<{ sku: string; error: string }> = []
 
   for (const item of payload.items) {
     try {
-      let existing = await prisma.productSyncMapping.findUnique({
+      const existing = await prisma.productSyncMapping.findUnique({
         where: { storeConfigId_netsuiteSku: { storeConfigId: storeConfig.id, netsuiteSku: item.sku } },
       })
 
       if (existing) {
+        const currentPrice = item.price != null ? item.price : null
+        const currentQty = Math.max(0, item.quantity)
+        const lastPrice = existing.netsuiteCurrentPrice ? Number(existing.netsuiteCurrentPrice) : null
+        const lastQty = existing.netsuiteCurrentQty ?? null
+
+        const priceChanged = currentPrice !== null && (lastPrice === null || Math.abs(currentPrice - lastPrice) >= 0.01)
+        const qtyChanged = lastQty === null || currentQty !== lastQty
+
+        if (!priceChanged && !qtyChanged) {
+          unchanged++
+          continue
+        }
+
         await prisma.productSyncMapping.update({
           where: { id: existing.id },
           data: {
             netsuiteCurrentPrice: item.price != null ? item.price : undefined,
-            netsuiteCurrentQty: item.quantity,
+            netsuiteCurrentQty: Math.max(0, item.quantity),
             netsuiteName: item.name || existing.netsuiteName,
             netsuiteItemType: item.itemType || existing.netsuiteItemType,
             updatedAt: new Date(),
           },
         })
+        updated++
       } else {
-        existing = await prisma.productSyncMapping.create({
+        await prisma.productSyncMapping.create({
           data: {
             storeConfigId: storeConfig.id,
             netsuiteItemId: item.netsuiteId,
@@ -95,99 +106,12 @@ export async function POST(request: NextRequest) {
             netsuiteName: item.name || null,
             netsuiteItemType: item.itemType || null,
             netsuiteCurrentPrice: item.price != null ? item.price : undefined,
-            netsuiteCurrentQty: item.quantity,
+            netsuiteCurrentQty: Math.max(0, item.quantity),
             matchStatus: 'unmatched',
             netsuiteFlagValue: '1',
           },
         })
-      }
-
-      const currentPrice = item.price != null ? item.price : null
-      const currentQty = Math.max(0, item.quantity)
-      const lastPrice = existing?.lastSyncedPrice ? Number(existing.lastSyncedPrice) : null
-      const lastQty = existing?.lastSyncedQuantity ?? null
-
-      const priceChanged = currentPrice !== null && (lastPrice === null || Math.abs(currentPrice - lastPrice) >= 0.01)
-      const qtyChanged = lastQty === null || currentQty !== lastQty
-
-      if (!priceChanged && !qtyChanged) {
-        skipped++
-        continue
-      }
-
-      const matches = await findVariantBySku(store, item.sku)
-      if (matches.length === 0) {
-        await prisma.productSyncMapping.update({
-          where: { id: existing.id },
-          data: {
-            matchStatus: 'unmatched',
-            lastSyncError: 'SKU not found in Shopify',
-          },
-        })
-        newUnmatched++
-        continue
-      }
-      if (matches.length > 1) {
-        await prisma.productSyncMapping.update({
-          where: { id: existing.id },
-          data: {
-            matchStatus: 'multiple_matches',
-            lastSyncError: `Multiple Shopify variants found (${matches.length})`,
-          },
-        })
-        errorDetails.push({ sku: item.sku, error: `Multiple Shopify variants found (${matches.length})` })
-        errors++
-        continue
-      }
-
-      const variant = matches[0]
-      const updateData: Record<string, any> = {
-        matchStatus: 'matched',
-        shopifyVariantId: variant.variantId,
-        shopifyProductId: variant.productId,
-        shopifyInventoryItemId: variant.inventoryItemId,
-        shopifyProductTitle: variant.productTitle,
-        shopifyProductHandle: variant.productHandle,
-        lastSyncError: null,
-      }
-
-      if (priceChanged && currentPrice !== null) {
-        const priceResult = await updateVariantPrices(store, variant.productId, [
-          { id: variant.variantId, price: currentPrice.toFixed(2) },
-        ])
-        if (priceResult.success) {
-          priceUpdates++
-          updateData.lastSyncedPrice = currentPrice
-          updateData.lastSyncAt = new Date()
-        } else {
-          errorDetails.push({ sku: item.sku, error: `Price update failed: ${priceResult.errors.join(', ')}` })
-          errors++
-        }
-      }
-
-      if (qtyChanged && storeConfig.locationMappings.length > 0) {
-        const quantities = storeConfig.locationMappings.map(lm => ({
-          inventoryItemId: variant.inventoryItemId,
-          locationId: lm.shopifyLocationId,
-          quantity: currentQty,
-        }))
-
-        const invResult = await setInventoryQuantities(store, quantities)
-        if (invResult.success) {
-          quantityUpdates++
-          updateData.lastSyncedQuantity = currentQty
-          updateData.lastSyncAt = new Date()
-        } else {
-          errorDetails.push({ sku: item.sku, error: `Inventory update failed: ${invResult.errors.join(', ')}` })
-          errors++
-        }
-      }
-
-      if (existing && Object.keys(updateData).length > 0) {
-        await prisma.productSyncMapping.update({
-          where: { id: existing.id },
-          data: { ...updateData, lastSyncStatus: 'success', lastSyncError: null },
-        })
+        created++
       }
     } catch (err: any) {
       errors++
@@ -198,15 +122,14 @@ export async function POST(request: NextRequest) {
 
   const summary = {
     received: payload.items.length,
-    priceUpdates,
-    quantityUpdates,
-    skipped,
-    newUnmatched,
+    updated,
+    created,
+    unchanged,
     errors,
     errorDetails: errorDetails.length > 0 ? errorDetails.slice(0, 20) : undefined,
   }
 
-  console.info(`[webhook:inventory] Done. Prices: ${priceUpdates}, Qty: ${quantityUpdates}, Skipped: ${skipped}, Unmatched: ${newUnmatched}, Errors: ${errors}`)
+  console.info(`[webhook:inventory] Done. Updated: ${updated}, Created: ${created}, Unchanged: ${unchanged}, Errors: ${errors}`)
 
   await logWebhook({
     endpoint: '/api/webhooks/inventory-update',
@@ -216,7 +139,7 @@ export async function POST(request: NextRequest) {
     durationMs: Date.now() - startTime,
     source: request.headers.get('user-agent') || 'unknown',
     itemCount: payload.items.length,
-    summary: `Prices: ${priceUpdates}, Qty: ${quantityUpdates}, Skipped: ${skipped}, Unmatched: ${newUnmatched}, Errors: ${errors}`,
+    summary: `Updated: ${updated}, Created: ${created}, Unchanged: ${unchanged}, Errors: ${errors}`,
   })
 
   return NextResponse.json(summary, { status: 200 })

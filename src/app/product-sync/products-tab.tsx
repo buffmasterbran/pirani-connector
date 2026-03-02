@@ -78,6 +78,7 @@ export default function ProductsTab() {
   const [suiteQLHours, setSuiteQLHours] = useState('24')
   const [pullingMR, setPullingMR] = useState(false)
   const [pushingAll, setPushingAll] = useState(false)
+  const [pushingDirty, setPushingDirty] = useState(false)
   const [pushProgress, setPushProgress] = useState<string | null>(null)
   const [syncingSku, setSyncingSku] = useState<string | null>(null)
   const [pullingSku, setPullingSku] = useState<string | null>(null)
@@ -232,6 +233,29 @@ export default function ProductsTab() {
     } finally {
       setPushingAll(false)
       setTimeout(() => setPushProgress(null), 5000)
+    }
+  }
+
+  const handlePushDirty = async () => {
+    setPushingDirty(true)
+    setPushProgress('Pushing dirty items to Shopify...')
+    try {
+      const res = await fetch('/api/inventory-sync/push-shopify', { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        setPushProgress(`Push Error: ${data.error || `HTTP ${res.status}`}`)
+      } else {
+        setPushProgress(
+          `Pushed ${data.dirty} items: ${data.priceUpdates} prices, ${data.qtyUpdates} qty, ${data.unmatched} unmatched, ${data.errors} errors — ${data.elapsed_ms}ms`
+        )
+        await loadProducts()
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err)
+      setPushProgress(`Error: ${message}`)
+    } finally {
+      setPushingDirty(false)
+      setTimeout(() => setPushProgress(null), 10000)
     }
   }
 
@@ -423,7 +447,11 @@ export default function ProductsTab() {
             {pullingMR ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
             Pull from NetSuite (MR)
           </Button>
-          <Button size="sm" onClick={handlePushAll} disabled={pushingAll}>
+          <Button size="sm" onClick={handlePushDirty} disabled={pushingDirty}>
+            {pushingDirty ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <ArrowUp className="h-3.5 w-3.5 mr-1.5" />}
+            Push to Shopify
+          </Button>
+          <Button variant="outline" size="sm" onClick={handlePushAll} disabled={pushingAll}>
             {pushingAll ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <ArrowUp className="h-3.5 w-3.5 mr-1.5" />}
             Push All to Shopify
           </Button>
