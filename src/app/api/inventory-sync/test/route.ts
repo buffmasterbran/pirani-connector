@@ -83,14 +83,14 @@ export async function GET(request: NextRequest) {
              Transaction.type AS trantype,
              BUILTIN.DF(Transaction.type) AS trantypename,
              Transaction.trandate,
-             Transaction.lastmodifieddate
+             TO_CHAR(Transaction.lastmodifieddate, 'YYYY-MM-DD HH24:MI:SS') AS lastmodified
       FROM TransactionLine
       JOIN Transaction ON Transaction.id = TransactionLine.transaction
       JOIN Item ON Item.id = TransactionLine.item
       WHERE Transaction.lastmodifieddate >= SYSDATE - (${hours}/24)
       AND Transaction.type IN ('CashSale','CashRfnd','InvAdjst','InvTrnfr','ItemShip','ItemRcpt')
       AND Item.itemtype IN (${INVENTORY_TYPES})
-      ORDER BY Transaction.lastmodifieddate DESC
+      ORDER BY lastmodified DESC
     `
     const step1 = await runStep(
       'Delta Detect',
