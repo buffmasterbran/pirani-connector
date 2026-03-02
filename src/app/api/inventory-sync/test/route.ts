@@ -34,38 +34,48 @@ export async function GET(request: NextRequest) {
   try {
     const hours = parseInt(request.nextUrl.searchParams.get('hours') || '24', 10)
 
+    // Only sync item types that carry inventory
+    const INVENTORY_TYPES = "'InvtPart','Kit'"
+
     // Step 1: Find items with inventory-affecting transactions in the last N hours
+    // JOIN to Item to filter by type so we exclude shipping items, discounts, etc.
     const changedItemsQuery = `
       SELECT DISTINCT TransactionLine.item AS itemid,
              BUILTIN.DF(TransactionLine.item) AS itemname,
+             Item.itemtype,
              Transaction.type AS trantype,
              BUILTIN.DF(Transaction.type) AS trantypename,
              Transaction.trandate,
              Transaction.lastmodifieddate
       FROM TransactionLine
       JOIN Transaction ON Transaction.id = TransactionLine.transaction
+      JOIN Item ON Item.id = TransactionLine.item
       WHERE Transaction.lastmodifieddate >= SYSDATE - (${hours}/24)
       AND Transaction.type IN ('CashSale','CashRfnd','InvAdjst','InvTrnfr','ItemShip','ItemRcpt')
+      AND Item.itemtype IN (${INVENTORY_TYPES})
       ORDER BY Transaction.lastmodifieddate DESC
     `
 
-    console.log(`🔍 Testing SuiteQL: items with inventory transactions in last ${hours} hours`)
+    console.log(`🔍 SuiteQL: items with inventory transactions in last ${hours} hours`)
     const changedResult = await runSuiteQL(changedItemsQuery)
     const changedItems = changedResult.items || []
 
     // Get unique item IDs
     const uniqueItemIds = [...new Set(changedItems.map((r: any) => r.itemid))]
 
-    // Step 2: If we found changed items, get their current qty/price
+    // Step 2: Get current qty + base price for changed items
     let currentData: any[] = []
-    if (uniqueItemIds.length > 0 && uniqueItemIds.length <= 200) {
+    if (uniqueItemIds.length > 0 && uniqueItemIds.length <= 500) {
       const idList = uniqueItemIds.join(',')
       const qtyQuery = `
-        SELECT Item.id, Item.itemid AS sku, Item.displayname,
-               Item.quantityavailable AS qty_available,
-               Item.quantityonhand AS qty_on_hand
+        SELECT Item.id, Item.itemid AS sku, Item.itemtype, Item.displayname,
+               Item.totalquantityonhand AS qty_on_hand,
+               Pricing.unitprice AS baseprice
         FROM Item
+        LEFT JOIN Pricing ON Pricing.item = Item.id
+          AND Pricing.pricelevel = 1 AND Pricing.quantity = 1
         WHERE Item.id IN (${idList})
+        AND Item.itemtype IN (${INVENTORY_TYPES})
       `
 
       try {
@@ -76,18 +86,19 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Step 3: Count ALL active items for comparison
+    // Step 3: Count ALL active inventory items for comparison
     const totalQuery = `
       SELECT COUNT(*) AS total
       FROM Item
       WHERE Item.isinactive = 'F'
+      AND Item.itemtype IN (${INVENTORY_TYPES})
     `
     const totalResult = await runSuiteQL(totalQuery)
     const totalItems = totalResult.items?.[0]?.total || '?'
 
     return NextResponse.json({
       success: true,
-      test: `Items with inventory transactions in last ${hours} hours`,
+      test: `Inventory items with transactions in last ${hours} hours`,
       summary: {
         totalActiveItems: totalItems,
         itemsWithRecentTransactions: uniqueItemIds.length,

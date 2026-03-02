@@ -454,7 +454,8 @@ export default function ProductsTab() {
                 <thead className="sticky top-0">
                   <tr className="bg-gray-50 border-b">
                     <th className="px-3 py-2 text-left font-medium text-gray-600">Item</th>
-                    <th className="px-3 py-2 text-left font-medium text-gray-600">Transaction Type</th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-600">Type</th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-600">Transaction</th>
                     <th className="px-3 py-2 text-left font-medium text-gray-600">Date</th>
                     <th className="px-3 py-2 text-left font-medium text-gray-600">Modified</th>
                   </tr>
@@ -463,6 +464,7 @@ export default function ProductsTab() {
                   {suiteQLResult.changedItems.map((item: any, i: number) => (
                     <tr key={i} className="border-b hover:bg-gray-50">
                       <td className="px-3 py-1.5 font-mono">{item.itemname || item.itemid}</td>
+                      <td className="px-3 py-1.5 text-gray-500">{item.itemtype}</td>
                       <td className="px-3 py-1.5">{item.trantypename || item.trantype}</td>
                       <td className="px-3 py-1.5 text-gray-500">{item.trandate}</td>
                       <td className="px-3 py-1.5 text-gray-500">{item.lastmodifieddate}</td>
@@ -485,8 +487,9 @@ export default function ProductsTab() {
                     <tr className="bg-gray-50 border-b">
                       <th className="px-3 py-2 text-left font-medium text-gray-600">SKU</th>
                       <th className="px-3 py-2 text-left font-medium text-gray-600">Name</th>
-                      <th className="px-3 py-2 text-right font-medium text-gray-600">Qty Available</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-600">Type</th>
                       <th className="px-3 py-2 text-right font-medium text-gray-600">Qty On Hand</th>
+                      <th className="px-3 py-2 text-right font-medium text-gray-600">Base Price</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -494,8 +497,9 @@ export default function ProductsTab() {
                       <tr key={i} className="border-b hover:bg-gray-50">
                         <td className="px-3 py-1.5 font-mono">{item.sku || item.id}</td>
                         <td className="px-3 py-1.5">{item.displayname || '—'}</td>
-                        <td className="px-3 py-1.5 text-right font-mono">{item.qty_available ?? '—'}</td>
+                        <td className="px-3 py-1.5 text-gray-500">{item.itemtype}</td>
                         <td className="px-3 py-1.5 text-right font-mono">{item.qty_on_hand ?? '—'}</td>
+                        <td className="px-3 py-1.5 text-right font-mono">{item.baseprice ? `$${Number(item.baseprice).toFixed(2)}` : '—'}</td>
                       </tr>
                     ))}
                   </tbody>
