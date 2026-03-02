@@ -72,7 +72,7 @@ export async function GET(request: NextRequest) {
   const steps: SuiteQLStep[] = []
 
   try {
-    const hours = parseInt(request.nextUrl.searchParams.get('hours') || '24', 10)
+    const hours = parseFloat(request.nextUrl.searchParams.get('hours') || '24')
     const INVENTORY_TYPES = "'InvtPart','Kit'"
 
     // ── Step 1: Delta detect ──
