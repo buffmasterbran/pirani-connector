@@ -14,24 +14,41 @@ interface SuiteQLStep {
   error?: string
 }
 
-async function runSuiteQL(query: string) {
-  const authorization = generateOAuthHeader('POST', SUITEQL_URL)
-  const res = await fetch(SUITEQL_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Prefer: 'transient',
-      Authorization: authorization,
-      Accept: 'application/json',
-    },
-    body: JSON.stringify({ q: query }),
-  })
+async function runSuiteQL(query: string): Promise<{ items: any[]; totalResults?: number; pages?: number }> {
+  const allItems: any[] = []
+  let offset = 0
+  let pages = 0
+  let totalResults: number | undefined
 
-  const text = await res.text()
-  if (!res.ok) {
-    throw new Error(`SuiteQL error ${res.status}: ${text.slice(0, 500)}`)
+  while (true) {
+    const url = offset === 0 ? SUITEQL_URL : `${SUITEQL_URL}?offset=${offset}`
+    const authorization = generateOAuthHeader('POST', url)
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Prefer: 'transient',
+        Authorization: authorization,
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({ q: query }),
+    })
+
+    const text = await res.text()
+    if (!res.ok) {
+      throw new Error(`SuiteQL error ${res.status}: ${text.slice(0, 500)}`)
+    }
+
+    const data = JSON.parse(text)
+    pages++
+    if (data.totalResults !== undefined) totalResults = data.totalResults
+    allItems.push(...(data.items || []))
+
+    if (!data.hasMore) break
+    offset += data.items?.length || 1000
   }
-  return JSON.parse(text)
+
+  return { items: allItems, totalResults, pages }
 }
 
 async function runStep(name: string, description: string, query: string): Promise<SuiteQLStep> {
