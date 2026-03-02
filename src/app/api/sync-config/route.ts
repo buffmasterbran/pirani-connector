@@ -39,6 +39,17 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'No active store configured' }, { status: 404 })
     }
 
+    // Fetch field mappings: store-specific + global (storeConfigId is null)
+    const allFieldMappings = await prisma.productSyncFieldMapping.findMany({
+      where: {
+        isEnabled: true,
+        OR: [
+          { storeConfigId: storeConfig.id },
+          { storeConfigId: null },
+        ],
+      },
+    })
+
     const locationIds = storeConfig.locationMappings
       .map(lm => String(lm.netsuiteLocationId))
       .join(',')
@@ -59,7 +70,7 @@ export async function GET(request: NextRequest) {
       locationIds,
       webhookUrl,
       includeNonInventory: storeConfig.includeNonInventory,
-      fieldMappings: storeConfig.fieldMappings.map(fm => ({
+      fieldMappings: allFieldMappings.map(fm => ({
         shopifyField: fm.shopifyField,
         netsuiteFieldId: fm.netsuiteFieldId,
         mappingType: fm.mappingType,
