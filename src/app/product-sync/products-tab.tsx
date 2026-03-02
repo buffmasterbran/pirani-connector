@@ -422,92 +422,7 @@ export default function ProductsTab() {
 
       {/* SuiteQL Results Panel */}
       {suiteQLResult && (
-        <div className="bg-white border rounded-lg overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 bg-slate-50 border-b">
-            <div className="flex items-center gap-2">
-              <Search className="h-4 w-4 text-slate-500" />
-              <span className="font-medium text-sm text-slate-700">SuiteQL Delta Results</span>
-              <span className="text-xs text-slate-500">
-                {suiteQLResult.summary?.itemsWithRecentTransactions} changed items / {suiteQLResult.summary?.totalActiveItems} total
-              </span>
-            </div>
-            <button
-              onClick={() => setSuiteQLResult(null)}
-              className="text-slate-400 hover:text-slate-600 text-sm"
-            >
-              Dismiss
-            </button>
-          </div>
-
-          {/* Summary */}
-          <div className="px-4 py-3 border-b bg-blue-50/50">
-            <p className="text-sm text-slate-700">{suiteQLResult.summary?.message}</p>
-            <p className="text-xs text-slate-500 mt-1">
-              {suiteQLResult.summary?.transactionLines} transaction lines across {suiteQLResult.summary?.itemsWithRecentTransactions} unique items
-            </p>
-          </div>
-
-          {/* Changed Items Table */}
-          {suiteQLResult.changedItems?.length > 0 && (
-            <div className="overflow-x-auto max-h-80 overflow-y-auto">
-              <table className="w-full text-xs">
-                <thead className="sticky top-0">
-                  <tr className="bg-gray-50 border-b">
-                    <th className="px-3 py-2 text-left font-medium text-gray-600">Item</th>
-                    <th className="px-3 py-2 text-left font-medium text-gray-600">Type</th>
-                    <th className="px-3 py-2 text-left font-medium text-gray-600">Transaction</th>
-                    <th className="px-3 py-2 text-left font-medium text-gray-600">Date</th>
-                    <th className="px-3 py-2 text-left font-medium text-gray-600">Modified</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {suiteQLResult.changedItems.map((item: any, i: number) => (
-                    <tr key={i} className="border-b hover:bg-gray-50">
-                      <td className="px-3 py-1.5 font-mono">{item.itemname || item.itemid}</td>
-                      <td className="px-3 py-1.5 text-gray-500">{item.itemtype}</td>
-                      <td className="px-3 py-1.5">{item.trantypename || item.trantype}</td>
-                      <td className="px-3 py-1.5 text-gray-500">{item.trandate}</td>
-                      <td className="px-3 py-1.5 text-gray-500">{item.lastmodifieddate}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* Current Inventory */}
-          {suiteQLResult.currentInventory?.length > 0 && (
-            <>
-              <div className="px-4 py-2 bg-slate-50 border-t border-b">
-                <span className="text-xs font-medium text-slate-600">Current Inventory for Changed Items</span>
-              </div>
-              <div className="overflow-x-auto max-h-60 overflow-y-auto">
-                <table className="w-full text-xs">
-                  <thead className="sticky top-0">
-                    <tr className="bg-gray-50 border-b">
-                      <th className="px-3 py-2 text-left font-medium text-gray-600">SKU</th>
-                      <th className="px-3 py-2 text-left font-medium text-gray-600">Name</th>
-                      <th className="px-3 py-2 text-left font-medium text-gray-600">Type</th>
-                      <th className="px-3 py-2 text-right font-medium text-gray-600">Qty On Hand</th>
-                      <th className="px-3 py-2 text-right font-medium text-gray-600">Base Price</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {suiteQLResult.currentInventory.map((item: any, i: number) => (
-                      <tr key={i} className="border-b hover:bg-gray-50">
-                        <td className="px-3 py-1.5 font-mono">{item.sku || item.id}</td>
-                        <td className="px-3 py-1.5">{item.displayname || '—'}</td>
-                        <td className="px-3 py-1.5 text-gray-500">{item.itemtype}</td>
-                        <td className="px-3 py-1.5 text-right font-mono">{item.qty_on_hand ?? '—'}</td>
-                        <td className="px-3 py-1.5 text-right font-mono">{item.baseprice ? `$${Number(item.baseprice).toFixed(2)}` : '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-        </div>
+        <SuiteQLResultsPanel result={suiteQLResult} onDismiss={() => setSuiteQLResult(null)} />
       )}
 
       {/* Products Table */}
@@ -835,6 +750,179 @@ function ProductRowComponent({
       )}
     </>
   )
+}
+
+function SuiteQLResultsPanel({ result, onDismiss }: { result: any; onDismiss: () => void }) {
+  const [expandedSteps, setExpandedSteps] = useState<Set<number>>(new Set())
+
+  const toggleStep = (idx: number) => {
+    setExpandedSteps((prev) => {
+      const next = new Set(prev)
+      if (next.has(idx)) next.delete(idx)
+      else next.add(idx)
+      return next
+    })
+  }
+
+  const expandAll = () => {
+    setExpandedSteps(new Set((result.steps || []).map((_: any, i: number) => i)))
+  }
+  const collapseAll = () => setExpandedSteps(new Set())
+
+  const steps = result.steps || []
+
+  return (
+    <div className="bg-white border rounded-lg overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 bg-slate-50 border-b">
+        <div className="flex items-center gap-3">
+          <Search className="h-4 w-4 text-slate-500" />
+          <span className="font-medium text-sm text-slate-700">SuiteQL Delta Sync</span>
+          <span className="text-xs bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full">
+            {result.elapsed_ms}ms total
+          </span>
+          <span className="text-xs text-slate-500">
+            {steps.length} steps
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={expandAll} className="text-xs text-blue-600 hover:text-blue-800">Expand all</button>
+          <span className="text-slate-300">|</span>
+          <button onClick={collapseAll} className="text-xs text-blue-600 hover:text-blue-800">Collapse all</button>
+          <span className="text-slate-300">|</span>
+          <button onClick={onDismiss} className="text-xs text-slate-400 hover:text-slate-600">Dismiss</button>
+        </div>
+      </div>
+
+      {/* Summary bar */}
+      <div className="px-4 py-2.5 border-b bg-blue-50/50 text-sm text-slate-700">
+        {result.summary?.message}
+      </div>
+
+      {/* Steps */}
+      <div className="divide-y">
+        {steps.map((step: any, idx: number) => (
+          <SuiteQLStepCard
+            key={idx}
+            step={step}
+            index={idx}
+            expanded={expandedSteps.has(idx)}
+            onToggle={() => toggleStep(idx)}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function SuiteQLStepCard({ step, index, expanded, onToggle }: {
+  step: any
+  index: number
+  expanded: boolean
+  onToggle: () => void
+}) {
+  const [showQuery, setShowQuery] = useState(false)
+
+  const hasError = !!step.error
+  const statusColor = hasError ? 'text-red-600' : 'text-green-600'
+  const bgColor = hasError ? 'bg-red-50' : ''
+
+  // Auto-detect column headers from data
+  const columns = step.data?.length > 0 ? Object.keys(step.data[0]).filter((k) => k !== 'links') : []
+
+  return (
+    <div className={bgColor}>
+      {/* Step header — always visible */}
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors"
+      >
+        <span className="flex items-center justify-center w-5 h-5 rounded-full bg-slate-200 text-xs font-bold text-slate-600 flex-shrink-0">
+          {index + 1}
+        </span>
+        {expanded ? <ChevronDown className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />}
+        <span className="font-medium text-sm text-slate-800">{step.name}</span>
+        <span className="text-xs text-slate-500 flex-1">{step.description}</span>
+        <span className={`text-xs font-mono ${statusColor}`}>
+          {hasError ? 'ERROR' : `${step.rowCount} rows`}
+        </span>
+        <span className="text-xs font-mono text-slate-400">
+          {step.elapsed_ms}ms
+        </span>
+      </button>
+
+      {/* Expanded content */}
+      {expanded && (
+        <div className="px-4 pb-3">
+          {/* Query toggle */}
+          <div className="mb-2">
+            <button
+              onClick={(e) => { e.stopPropagation(); setShowQuery(!showQuery) }}
+              className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+            >
+              {showQuery ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+              {showQuery ? 'Hide query' : 'Show query'}
+            </button>
+            {showQuery && (
+              <pre className="mt-1 bg-gray-900 text-green-400 rounded p-2.5 text-xs font-mono overflow-x-auto whitespace-pre-wrap">
+                {step.query}
+              </pre>
+            )}
+          </div>
+
+          {/* Error message */}
+          {hasError && (
+            <div className="mb-2 p-2 bg-red-100 border border-red-200 rounded text-xs text-red-700">
+              {step.error}
+            </div>
+          )}
+
+          {/* Data table */}
+          {step.data?.length > 0 && columns.length > 0 && (
+            <div className="overflow-x-auto max-h-72 overflow-y-auto border rounded">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0">
+                  <tr className="bg-gray-100 border-b">
+                    {columns.map((col: string) => (
+                      <th key={col} className="px-2.5 py-1.5 text-left font-medium text-gray-600 whitespace-nowrap">
+                        {col}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {step.data.slice(0, 100).map((row: any, i: number) => (
+                    <tr key={i} className="border-b hover:bg-gray-50">
+                      {columns.map((col: string) => (
+                        <td key={col} className="px-2.5 py-1 font-mono whitespace-nowrap">
+                          {formatCellValue(row[col])}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {step.data.length > 100 && (
+                <div className="px-2.5 py-1.5 bg-gray-50 text-xs text-slate-500 border-t">
+                  Showing 100 of {step.data.length} rows
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function formatCellValue(value: any): string {
+  if (value === null || value === undefined) return '—'
+  if (typeof value === 'object' && Array.isArray(value)) {
+    // Kit components array — render inline
+    return value.map((c: any) => `${c.component}: ${c.available}/${c.required}`).join(', ')
+  }
+  if (typeof value === 'object') return JSON.stringify(value)
+  return String(value)
 }
 
 function timeAgo(dateStr: string): string {
