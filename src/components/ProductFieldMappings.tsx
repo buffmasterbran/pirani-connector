@@ -352,7 +352,6 @@ export default function ProductFieldMappings() {
 
   const deleteMapping = async (index: number) => {
     const mapping = mappings[index]
-    if (mapping.isRequired) return
     if (mapping.id) {
       await fetch('/api/product-sync/config/field-mappings', {
         method: 'POST',
