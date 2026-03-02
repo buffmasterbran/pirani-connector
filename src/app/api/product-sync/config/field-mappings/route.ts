@@ -133,6 +133,46 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true })
     }
 
+    if (action === 'dedup') {
+      // Find shopifyField values that have BOTH a global (storeConfigId=null) AND store-specific mapping.
+      // Delete the global duplicate for those fields.
+      const allMappings = await prisma.productSyncFieldMapping.findMany({
+        select: { id: true, shopifyField: true, storeConfigId: true },
+      })
+
+      const globalByField = new Map<string, string>() // shopifyField -> id
+      const storeSpecificFields = new Set<string>()
+
+      for (const m of allMappings) {
+        if (m.storeConfigId) {
+          storeSpecificFields.add(m.shopifyField)
+        } else {
+          globalByField.set(m.shopifyField, m.id)
+        }
+      }
+
+      const idsToDelete: string[] = []
+      for (const [field, globalId] of globalByField.entries()) {
+        if (storeSpecificFields.has(field)) {
+          idsToDelete.push(globalId)
+        }
+      }
+
+      if (idsToDelete.length > 0) {
+        await prisma.productSyncFieldMapping.deleteMany({
+          where: { id: { in: idsToDelete } },
+        })
+      }
+
+      return NextResponse.json({
+        message: `Deleted ${idsToDelete.length} global duplicates`,
+        deleted: idsToDelete.length,
+        fields: Array.from(globalByField.entries())
+          .filter(([field]) => storeSpecificFields.has(field))
+          .map(([field]) => field),
+      })
+    }
+
     if (action === 'bulk_save') {
       const { mappings } = data as { mappings: Array<Record<string, unknown>> }
       if (!Array.isArray(mappings)) {
