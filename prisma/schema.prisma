@@ -439,6 +439,7 @@ model ProductSyncMapping {
   lastSyncStatus         ProductSyncStatus      @default(pending)
   lastSyncError          String?
   netsuiteFlagValue      String?
+  netsuiteExtraFields    Json?
   createdAt              DateTime               @default(now())
   updatedAt              DateTime               @updatedAt
 

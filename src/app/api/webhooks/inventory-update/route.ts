@@ -17,6 +17,7 @@ interface InventoryItem {
   quantity: number
   quantityOnHand?: number
   price?: number | null
+  extraFields?: Record<string, unknown> | null
 }
 
 interface InventoryPayload {
@@ -93,6 +94,9 @@ export async function POST(request: NextRequest) {
             netsuiteCurrentQty: Math.max(0, item.quantity),
             netsuiteName: item.name || existing.netsuiteName,
             netsuiteItemType: item.itemType || existing.netsuiteItemType,
+            netsuiteExtraFields: item.extraFields && Object.keys(item.extraFields).length > 0
+              ? item.extraFields
+              : undefined,
             updatedAt: new Date(),
           },
         })
@@ -107,6 +111,9 @@ export async function POST(request: NextRequest) {
             netsuiteItemType: item.itemType || null,
             netsuiteCurrentPrice: item.price != null ? item.price : undefined,
             netsuiteCurrentQty: Math.max(0, item.quantity),
+            netsuiteExtraFields: item.extraFields && Object.keys(item.extraFields).length > 0
+              ? item.extraFields
+              : undefined,
             matchStatus: 'unmatched',
             netsuiteFlagValue: '1',
           },

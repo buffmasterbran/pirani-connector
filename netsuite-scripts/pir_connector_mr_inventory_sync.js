@@ -182,6 +182,8 @@ define(['N/search', 'N/https', 'N/runtime', 'N/log'], (search, https, runtime, l
     ]
 
     // ── Run both searches and combine results ──
+    // IMPORTANT: Module-scope variables (_columnKeyMap) do NOT survive between
+    // M/R phases. We embed columnKeyMap in each result row so map() can access it.
     const allResults = []
 
     try {
@@ -189,7 +191,7 @@ define(['N/search', 'N/https', 'N/runtime', 'N/log'], (search, https, runtime, l
       const invtSearch = search.create({ type: search.Type.ITEM, filters: invtFilters, columns: invtColumns })
       let invtCount = 0
       invtSearch.run().each(result => {
-        allResults.push({ type: 'invtpart', id: result.id, values: result.toJSON().values })
+        allResults.push({ type: 'invtpart', id: result.id, values: result.toJSON().values, columnKeyMap: columnKeyMap })
         invtCount++
         return true
       })
@@ -203,7 +205,7 @@ define(['N/search', 'N/https', 'N/runtime', 'N/log'], (search, https, runtime, l
       const kitSearch = search.create({ type: search.Type.ITEM, filters: kitFilters, columns: kitColumns })
       let kitCount = 0
       kitSearch.run().each(result => {
-        allResults.push({ type: 'kit', id: result.id, values: result.toJSON().values })
+        allResults.push({ type: 'kit', id: result.id, values: result.toJSON().values, columnKeyMap: columnKeyMap })
         kitCount++
         return true
       })
@@ -227,9 +229,11 @@ define(['N/search', 'N/https', 'N/runtime', 'N/log'], (search, https, runtime, l
     const result = JSON.parse(context.value)
     const values = result.values
     const resultType = result.type // 'invtpart' or 'kit'
+    // columnKeyMap is embedded in each result row (module-scope vars don't survive between M/R phases)
+    const columnKeyMap = result.columnKeyMap || _columnKeyMap || {}
 
     if (mapLogCount < 5) {
-      log.audit('PiraniInventorySync:map', `type=${resultType}, keys=${JSON.stringify(Object.keys(values))}`)
+      log.audit('PiraniInventorySync:map', `type=${resultType}, columnKeyMap=${JSON.stringify(columnKeyMap)}, keys=${JSON.stringify(Object.keys(values))}`)
       mapLogCount++
     }
 
@@ -249,12 +253,10 @@ define(['N/search', 'N/https', 'N/runtime', 'N/log'], (search, https, runtime, l
 
     // Extract extra fields from config-driven column keys
     const extraFields = {}
-    if (_columnKeyMap) {
-      for (const [shopifyField, columnKey] of Object.entries(_columnKeyMap)) {
-        const val = values[columnKey]
-        if (val !== undefined && val !== null && val !== '') {
-          extraFields[shopifyField] = typeof val === 'object' ? (val.text || val.value || val) : val
-        }
+    for (const [shopifyField, columnKey] of Object.entries(columnKeyMap)) {
+      const val = values[columnKey]
+      if (val !== undefined && val !== null && val !== '') {
+        extraFields[shopifyField] = typeof val === 'object' ? (val.text || val.value || val) : val
       }
     }
 
