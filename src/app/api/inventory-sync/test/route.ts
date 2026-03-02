@@ -77,20 +77,18 @@ export async function GET(request: NextRequest) {
 
     // ── Step 1: Delta detect ──
     const deltaQuery = `
-      SELECT DISTINCT TransactionLine.item AS itemid,
-             BUILTIN.DF(TransactionLine.item) AS itemname,
+      SELECT TransactionLine.item AS itemid,
+             MAX(BUILTIN.DF(TransactionLine.item)) AS itemname,
              Item.itemtype,
-             Transaction.tranid,
-             Transaction.type AS trantype,
-             BUILTIN.DF(Transaction.type) AS trantypename,
-             Transaction.trandate,
-             TO_CHAR(Transaction.lastmodifieddate, 'YYYY-MM-DD HH24:MI:SS') AS lastmodified
+             COUNT(DISTINCT Transaction.id) AS transaction_count,
+             MAX(TO_CHAR(Transaction.lastmodifieddate, 'YYYY-MM-DD HH24:MI:SS')) AS lastmodified
       FROM TransactionLine
       JOIN Transaction ON Transaction.id = TransactionLine.transaction
       JOIN Item ON Item.id = TransactionLine.item
       WHERE Transaction.lastmodifieddate >= SYSDATE - (${hours}/24)
       AND Transaction.type IN ('SalesOrd','CashSale','CashRfnd','InvAdjst','InvTrnfr','ItemShip','ItemRcpt')
       AND Item.itemtype IN (${INVENTORY_TYPES})
+      GROUP BY TransactionLine.item, Item.itemtype
       ORDER BY lastmodified DESC
     `
     const step1 = await runStep(
