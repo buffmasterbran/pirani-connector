@@ -155,6 +155,8 @@ export default function ProductsTab() {
   }
 
   const SUITEQL_WINDOW_OPTIONS = [
+    { value: '720', label: '30 days' },
+    { value: '168', label: '7 days' },
     { value: '24', label: '24 hours' },
     { value: '12', label: '12 hours' },
     { value: '1', label: '1 hour' },
