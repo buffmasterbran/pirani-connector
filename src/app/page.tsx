@@ -1499,6 +1499,7 @@ export default function Home() {
       if (!res.ok || !data.success) {
         const err = new Error(data.error || `HTTP ${res.status}`) as any
         err.debug = data.debug || null
+        err.skipped = data.skipped || null
         throw err
       }
       return data
@@ -1511,23 +1512,28 @@ export default function Home() {
       if (result.message === 'Deposit already created') {
         alert(`Deposit already created: ${result.depositId}`)
       } else {
-        alert(`Successfully created NetSuite deposit!\n\nDeposit ID: ${result.depositId}\nTotal items: ${result.totalItems}`)
+        let msg = `Successfully created NetSuite deposit!\n\nDeposit ID: ${result.depositId}\nTotal items: ${result.totalItems}`
+        if (result.skipped?.length) {
+          msg += `\n\n⚠️ ${result.skipped.length} transaction(s) skipped:`
+          result.skipped.forEach((s: any) => { msg += `\n  ${s.tranid || s.id}: ${s.reason}` })
+        }
+        alert(msg)
       }
       fetchSavedPayouts()
     } catch (error: any) {
       console.error('Error creating NetSuite deposit:', error)
       setNetsuitePreviewDialog({ isOpen: false, payoutId: null, previewData: null, isLoading: false })
       let msg = `Error creating NetSuite deposit:\n\n${error?.message || 'Unknown error'}`
+      if (error?.skipped?.length) {
+        msg += `\n\n⚠️ ${error.skipped.length} transaction(s) were pre-filtered:`
+        error.skipped.forEach((s: any) => { msg += `\n  ${s.tranid || s.id}: ${s.reason}` })
+      }
       if (error?.debug) {
         const d = error.debug
         msg += `\n\n--- Debug Info ---`
         msg += `\nDate: ${d.trandate}`
         msg += `\nDeposit items (${d.depositItemCount}): ${(d.depositItemIds || []).join(', ')}`
         msg += `\nOther items: ${d.otherItemCount}`
-        if (d.transactions?.length) {
-          msg += `\n\nTransactions:`
-          d.transactions.forEach((t: any) => { msg += `\n  ${t.nsName} (ID: ${t.nsId})` })
-        }
       }
       alert(msg)
     }
