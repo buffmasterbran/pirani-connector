@@ -88,7 +88,7 @@ export async function GET(request: NextRequest) {
       JOIN Transaction ON Transaction.id = TransactionLine.transaction
       JOIN Item ON Item.id = TransactionLine.item
       WHERE Transaction.lastmodifieddate >= SYSDATE - (${hours}/24)
-      AND Transaction.type IN ('CashSale','CashRfnd','InvAdjst','InvTrnfr','ItemShip','ItemRcpt')
+      AND Transaction.type IN ('SalesOrd','CashSale','CashRfnd','InvAdjst','InvTrnfr','ItemShip','ItemRcpt')
       AND Item.itemtype IN (${INVENTORY_TYPES})
       ORDER BY lastmodified DESC
     `
