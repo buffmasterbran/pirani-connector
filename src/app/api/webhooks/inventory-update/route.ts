@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
+import { Prisma } from '@prisma/client'
 import { logWebhook } from '@/lib/webhook-logger'
 
 function verifyAuth(request: NextRequest): boolean {
@@ -95,7 +96,7 @@ export async function POST(request: NextRequest) {
             netsuiteName: item.name || existing.netsuiteName,
             netsuiteItemType: item.itemType || existing.netsuiteItemType,
             netsuiteExtraFields: item.extraFields && Object.keys(item.extraFields).length > 0
-              ? item.extraFields
+              ? (item.extraFields as Prisma.InputJsonValue)
               : undefined,
             updatedAt: new Date(),
           },
@@ -112,7 +113,7 @@ export async function POST(request: NextRequest) {
             netsuiteCurrentPrice: item.price != null ? item.price : undefined,
             netsuiteCurrentQty: Math.max(0, item.quantity),
             netsuiteExtraFields: item.extraFields && Object.keys(item.extraFields).length > 0
-              ? item.extraFields
+              ? (item.extraFields as Prisma.InputJsonValue)
               : undefined,
             matchStatus: 'unmatched',
             netsuiteFlagValue: '1',
