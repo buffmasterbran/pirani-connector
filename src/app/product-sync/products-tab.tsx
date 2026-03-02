@@ -73,6 +73,8 @@ export default function ProductsTab() {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
   const [loading, setLoading] = useState(false)
   const [pulling, setPulling] = useState(false)
+  const [pullingSuiteQL, setPullingSuiteQL] = useState(false)
+  const [suiteQLResult, setSuiteQLResult] = useState<any>(null)
   const [pullingMR, setPullingMR] = useState(false)
   const [pushingAll, setPushingAll] = useState(false)
   const [pushProgress, setPushProgress] = useState<string | null>(null)
@@ -148,6 +150,28 @@ export default function ProductsTab() {
       console.error('Pull failed:', err)
     } finally {
       setPulling(false)
+    }
+  }
+
+  const handlePullSuiteQL = async () => {
+    setPullingSuiteQL(true)
+    setSuiteQLResult(null)
+    setPushProgress(null)
+    try {
+      const res = await fetch('/api/inventory-sync/test?hours=24')
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        setPushProgress(`SuiteQL Error: ${data.error || `HTTP ${res.status}`}`)
+        setSuiteQLResult(null)
+      } else {
+        setSuiteQLResult(data)
+        setPushProgress(`SuiteQL: Found ${data.summary?.itemsWithRecentTransactions || 0} items with changes in last 24h (out of ${data.summary?.totalActiveItems || '?'} total)`)
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err)
+      setPushProgress(`SuiteQL Error: ${message}`)
+    } finally {
+      setPullingSuiteQL(false)
     }
   }
 
@@ -367,9 +391,9 @@ export default function ProductsTab() {
         </div>
 
         <div className="flex items-center gap-2 ml-auto">
-          <Button variant="outline" size="sm" onClick={handlePull} disabled={pulling}>
-            {pulling ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
-            Pull from NetSuite
+          <Button variant="outline" size="sm" onClick={handlePullSuiteQL} disabled={pullingSuiteQL}>
+            {pullingSuiteQL ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Search className="h-3.5 w-3.5 mr-1.5" />}
+            Pull from NetSuite (SuiteQL)
           </Button>
           <Button variant="outline" size="sm" onClick={handlePullMR} disabled={pullingMR}>
             {pullingMR ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
@@ -388,11 +412,97 @@ export default function ProductsTab() {
       {/* Push Progress Banner */}
       {pushProgress && (
         <div className={`px-4 py-2 rounded-lg text-sm ${
-          pushProgress.startsWith('Error') ? 'bg-red-50 text-red-700' :
+          pushProgress.includes('Error') ? 'bg-red-50 text-red-700' :
           pushProgress.startsWith('Done') ? 'bg-green-50 text-green-700' :
           'bg-blue-50 text-blue-700'
         }`}>
           {pushProgress}
+        </div>
+      )}
+
+      {/* SuiteQL Results Panel */}
+      {suiteQLResult && (
+        <div className="bg-white border rounded-lg overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 bg-slate-50 border-b">
+            <div className="flex items-center gap-2">
+              <Search className="h-4 w-4 text-slate-500" />
+              <span className="font-medium text-sm text-slate-700">SuiteQL Delta Results</span>
+              <span className="text-xs text-slate-500">
+                {suiteQLResult.summary?.itemsWithRecentTransactions} changed items / {suiteQLResult.summary?.totalActiveItems} total
+              </span>
+            </div>
+            <button
+              onClick={() => setSuiteQLResult(null)}
+              className="text-slate-400 hover:text-slate-600 text-sm"
+            >
+              Dismiss
+            </button>
+          </div>
+
+          {/* Summary */}
+          <div className="px-4 py-3 border-b bg-blue-50/50">
+            <p className="text-sm text-slate-700">{suiteQLResult.summary?.message}</p>
+            <p className="text-xs text-slate-500 mt-1">
+              {suiteQLResult.summary?.transactionLines} transaction lines across {suiteQLResult.summary?.itemsWithRecentTransactions} unique items
+            </p>
+          </div>
+
+          {/* Changed Items Table */}
+          {suiteQLResult.changedItems?.length > 0 && (
+            <div className="overflow-x-auto max-h-80 overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0">
+                  <tr className="bg-gray-50 border-b">
+                    <th className="px-3 py-2 text-left font-medium text-gray-600">Item</th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-600">Transaction Type</th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-600">Date</th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-600">Modified</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {suiteQLResult.changedItems.map((item: any, i: number) => (
+                    <tr key={i} className="border-b hover:bg-gray-50">
+                      <td className="px-3 py-1.5 font-mono">{item.itemname || item.itemid}</td>
+                      <td className="px-3 py-1.5">{item.trantypename || item.trantype}</td>
+                      <td className="px-3 py-1.5 text-gray-500">{item.trandate}</td>
+                      <td className="px-3 py-1.5 text-gray-500">{item.lastmodifieddate}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Current Inventory */}
+          {suiteQLResult.currentInventory?.length > 0 && (
+            <>
+              <div className="px-4 py-2 bg-slate-50 border-t border-b">
+                <span className="text-xs font-medium text-slate-600">Current Inventory for Changed Items</span>
+              </div>
+              <div className="overflow-x-auto max-h-60 overflow-y-auto">
+                <table className="w-full text-xs">
+                  <thead className="sticky top-0">
+                    <tr className="bg-gray-50 border-b">
+                      <th className="px-3 py-2 text-left font-medium text-gray-600">SKU</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-600">Name</th>
+                      <th className="px-3 py-2 text-right font-medium text-gray-600">Qty Available</th>
+                      <th className="px-3 py-2 text-right font-medium text-gray-600">Qty On Hand</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {suiteQLResult.currentInventory.map((item: any, i: number) => (
+                      <tr key={i} className="border-b hover:bg-gray-50">
+                        <td className="px-3 py-1.5 font-mono">{item.sku || item.id}</td>
+                        <td className="px-3 py-1.5">{item.displayname || '—'}</td>
+                        <td className="px-3 py-1.5 text-right font-mono">{item.qty_available ?? '—'}</td>
+                        <td className="px-3 py-1.5 text-right font-mono">{item.qty_on_hand ?? '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </div>
       )}
 
