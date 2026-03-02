@@ -62,29 +62,25 @@ export async function GET(request: NextRequest) {
       const idList = uniqueItemIds.join(',')
       const qtyQuery = `
         SELECT Item.id, Item.itemid AS sku, Item.displayname,
-               SUM(IL.quantityavailable) AS qty_available,
-               SUM(IL.quantityonhand) AS qty_on_hand
+               Item.quantityavailable AS qty_available,
+               Item.quantityonhand AS qty_on_hand
         FROM Item
-        JOIN InventoryBalance IL ON IL.item = Item.id
         WHERE Item.id IN (${idList})
-        GROUP BY Item.id, Item.itemid, Item.displayname
       `
 
       try {
         const qtyResult = await runSuiteQL(qtyQuery)
         currentData = qtyResult.items || []
       } catch (e) {
-        // InventoryBalance might not work for all item types, that's OK
         currentData = [{ error: `Qty query failed: ${e instanceof Error ? e.message : String(e)}` }]
       }
     }
 
-    // Step 3: Count ALL flagged items for comparison
+    // Step 3: Count ALL active items for comparison
     const totalQuery = `
       SELECT COUNT(*) AS total
       FROM Item
       WHERE Item.isinactive = 'F'
-      AND Item.type IN ('InvtPart', 'Kit', 'NonInvtPart')
     `
     const totalResult = await runSuiteQL(totalQuery)
     const totalItems = totalResult.items?.[0]?.total || '?'
