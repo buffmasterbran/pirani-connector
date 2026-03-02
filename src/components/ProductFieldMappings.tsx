@@ -700,16 +700,14 @@ export default function ProductFieldMappings() {
 
         {/* Delete */}
         <td className="px-3 py-3 w-10">
-          {!mapping.isRequired && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 text-slate-400 hover:text-red-500"
-              onClick={() => deleteMapping(globalIndex)}
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-slate-400 hover:text-red-500"
+            onClick={() => deleteMapping(globalIndex)}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
         </td>
       </tr>
     )
