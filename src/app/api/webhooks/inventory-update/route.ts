@@ -14,11 +14,24 @@ interface InventoryItem {
   netsuiteId: number
   sku: string
   name?: string | null
-  itemType?: string | null
+  itemType?: unknown
   quantity: number
   quantityOnHand?: number
   price?: number | null
   extraFields?: Record<string, unknown> | null
+}
+
+/** Normalize itemType which may arrive as string, {text,value} object, or array */
+function normalizeItemType(val: unknown): string | null {
+  if (!val) return null
+  if (typeof val === 'string') return val
+  if (Array.isArray(val)) return normalizeItemType(val[0])
+  if (typeof val === 'object' && val !== null) {
+    const obj = val as Record<string, unknown>
+    return (typeof obj.value === 'string' ? obj.value : null)
+      || (typeof obj.text === 'string' ? obj.text : null)
+  }
+  return null
 }
 
 interface InventoryPayload {
@@ -94,7 +107,7 @@ export async function POST(request: NextRequest) {
             netsuiteCurrentPrice: item.price != null ? item.price : undefined,
             netsuiteCurrentQty: Math.max(0, item.quantity),
             netsuiteName: item.name || existing.netsuiteName,
-            netsuiteItemType: item.itemType || existing.netsuiteItemType,
+            netsuiteItemType: normalizeItemType(item.itemType) || existing.netsuiteItemType,
             netsuiteExtraFields: item.extraFields && Object.keys(item.extraFields).length > 0
               ? (item.extraFields as Prisma.InputJsonValue)
               : undefined,
@@ -109,7 +122,7 @@ export async function POST(request: NextRequest) {
             netsuiteItemId: item.netsuiteId,
             netsuiteSku: item.sku,
             netsuiteName: item.name || null,
-            netsuiteItemType: item.itemType || null,
+            netsuiteItemType: normalizeItemType(item.itemType) || null,
             netsuiteCurrentPrice: item.price != null ? item.price : undefined,
             netsuiteCurrentQty: Math.max(0, item.quantity),
             netsuiteExtraFields: item.extraFields && Object.keys(item.extraFields).length > 0
