@@ -326,6 +326,7 @@ async function syncItems(
     }> = []
 
     for (const m of productMappings) {
+      if (m.netsuiteItemId == null) continue
       const nsPrice = priceMap.get(m.netsuiteItemId)
       const nsComparePrice = comparePriceMap.get(m.netsuiteItemId)
 
@@ -427,7 +428,7 @@ async function syncItems(
     }> = []
 
     for (const m of resolvedMappings) {
-      if (!m.shopifyInventoryItemId) continue
+      if (!m.shopifyInventoryItemId || m.netsuiteItemId == null) continue
       const rawQty = itemQtyMap.get(m.netsuiteItemId)
       if (rawQty === undefined) continue
       const nsQty = Math.max(0, rawQty)
@@ -518,7 +519,7 @@ async function syncItems(
       )
 
       if (applicableFieldMappings.length > 0) {
-        const nsItemIds = [...new Set(resolvedMappings.map((m) => m.netsuiteItemId))]
+        const nsItemIds = [...new Set(resolvedMappings.map((m) => m.netsuiteItemId).filter((id): id is number => id != null))]
 
         try {
           const nsModule = await import('./netsuite')
@@ -554,7 +555,7 @@ async function syncItems(
 
           const productFieldsByProduct = new Map<string, Record<string, string>>()
           for (const m of resolvedMappings) {
-            if (!m.shopifyProductId) continue
+            if (!m.shopifyProductId || m.netsuiteItemId == null) continue
             const nsData = itemFieldData.get(m.netsuiteItemId)
             if (!nsData || Object.keys(nsData).length === 0) continue
             productFieldsByProduct.set(m.shopifyProductId, nsData)
