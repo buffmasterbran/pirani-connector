@@ -5,6 +5,8 @@ import { generateOAuthHeader } from '@/lib/netsuite'
 const NETSUITE_ACCOUNT_ID = process.env.NETSUITE_ACCOUNT_ID || '7913744'
 const TRIGGER_SCRIPT_ID = process.env.NETSUITE_TRIGGER_SCRIPT_ID
 const TRIGGER_DEPLOY_ID = process.env.NETSUITE_TRIGGER_DEPLOY_ID || '1'
+const MR_SCRIPT_ID = process.env.NETSUITE_MR_SCRIPT_ID || 'customscript_pir_con_inventory_sync'
+const MR_DEPLOY_ID = process.env.NETSUITE_MR_DEPLOY_ID || 'customdeploy_pir_con_inventory_sync'
 
 function getRestletUrl(): string | null {
   if (!TRIGGER_SCRIPT_ID) return null
@@ -44,7 +46,7 @@ export async function POST(request: NextRequest) {
         Authorization: authorization,
         Accept: 'application/json',
       },
-      body: JSON.stringify({ action }),
+      body: JSON.stringify({ action, scriptId: MR_SCRIPT_ID, deployId: MR_DEPLOY_ID }),
     })
 
     const text = await res.text()
