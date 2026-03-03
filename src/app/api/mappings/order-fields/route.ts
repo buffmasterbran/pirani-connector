@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { handleApiError } from '@/lib/api-helpers'
 
 // GET - Fetch all order field mappings from database
 export async function GET() {
@@ -66,16 +67,7 @@ export async function GET() {
 
     return NextResponse.json({ success: true, data: formattedMappings })
   } catch (error) {
-    console.error('Error fetching order field mappings:', error)
-    console.error('Error details:', error instanceof Error ? error.message : String(error))
-    return NextResponse.json(
-      { 
-        success: false, 
-        error: 'Failed to fetch order field mappings',
-        details: error instanceof Error ? error.message : String(error)
-      },
-      { status: 500 }
-    )
+    return handleApiError(error, 'GET orderFieldMapping')
   }
 }
 
@@ -126,11 +118,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: formattedMapping })
   } catch (error) {
-    console.error('Error creating order field mapping:', error)
-    return NextResponse.json(
-      { success: false, error: 'Failed to create order field mapping' },
-      { status: 500 }
-    )
+    return handleApiError(error, 'POST orderFieldMapping')
   }
 }
 
@@ -280,17 +268,6 @@ export async function PUT(request: NextRequest) {
       results,
     })
   } catch (error) {
-    console.error('Error batch saving order field mappings:', error)
-    console.error('Error details:', error instanceof Error ? error.stack : String(error))
-    console.error('Error message:', error instanceof Error ? error.message : String(error))
-    
-    return NextResponse.json(
-      { 
-        success: false, 
-        error: 'Failed to save order field mappings',
-        details: error instanceof Error ? error.message : String(error)
-      },
-      { status: 500 }
-    )
+    return handleApiError(error, 'PUT orderFieldMapping')
   }
 }

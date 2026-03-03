@@ -1,31 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { handleApiError } from '@/lib/api-helpers'
+import { getMappings } from '@/lib/mapping-crud'
 
 export async function GET() {
-  try {
-    const mappings = await prisma.orderSourceMapping.findMany({
-      orderBy: [
-        { friendlyName: 'asc' },
-        { id: 'asc' },
-      ],
-    })
-
-    return NextResponse.json({
-      success: true,
-      data: mappings,
-    })
-  } catch (error) {
-    console.error('Error fetching order source mappings:', error)
-    const errorMessage = error instanceof Error ? error.message : String(error)
-    return NextResponse.json(
-      {
-        success: false,
-        error: 'Failed to fetch order source mappings',
-        details: errorMessage,
-      },
-      { status: 500 }
-    )
-  }
+  return getMappings(prisma.orderSourceMapping, 'orderSourceMapping', {
+    orderBy: [
+      { friendlyName: 'asc' },
+      { id: 'asc' },
+    ],
+  })
 }
 
 export async function POST(request: NextRequest) {
@@ -83,18 +67,6 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: mapping })
   } catch (error) {
-    console.error('Error creating order source mapping:', error)
-    const errorMessage = error instanceof Error ? error.message : String(error)
-    return NextResponse.json(
-      {
-        success: false,
-        error: 'Failed to create order source mapping',
-        details: errorMessage,
-      },
-      { status: 500 }
-    )
+    return handleApiError(error, 'POST orderSourceMapping')
   }
 }
-
-
-

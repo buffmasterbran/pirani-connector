@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { handleApiError } from '@/lib/api-helpers'
 
 export async function GET() {
   try {
@@ -31,18 +32,7 @@ export async function GET() {
       })
     })
   } catch (error) {
-    console.error('Error fetching payout mappings:', error)
-    const errorMessage = error instanceof Error ? error.message : String(error)
-    const errorStack = error instanceof Error ? error.stack : undefined
-    console.error('Error stack:', errorStack)
-    return NextResponse.json(
-      { 
-        success: false, 
-        error: 'Failed to fetch payout mappings', 
-        details: errorMessage 
-      },
-      { status: 500 }
-    )
+    return handleApiError(error, 'GET payoutMapping')
   }
 }
 
@@ -118,11 +108,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: mapping })
   } catch (error) {
-    console.error('Error creating payout mapping:', error)
-    return NextResponse.json(
-      { success: false, error: 'Failed to create payout mapping', details: error instanceof Error ? error.message : String(error) },
-      { status: 500 }
-    )
+    return handleApiError(error, 'POST payoutMapping')
   }
 }
 

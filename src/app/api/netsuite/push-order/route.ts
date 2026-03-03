@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { buildNetSuiteSalesOrderPayload, createNetSuiteSalesOrder } from '@/lib/netsuite-sales-order'
+import { buildNetSuiteSalesOrderPayload, createNetSuiteSalesOrder } from '@/lib/netsuite'
 import { prisma } from '@/lib/prisma'
 
 /**

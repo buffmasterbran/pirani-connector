@@ -29,6 +29,13 @@ export { findNetSuiteCustomerByEmail } from './customer'
 // Address
 export { findNetSuiteAddressesByCustomerId, matchShopifyAddressToNetSuite } from './address'
 
+// Sales Order
+export {
+  buildNetSuiteSalesOrderPayload,
+  createNetSuiteSalesOrder,
+} from './sales-order'
+export type { NetSuiteSalesOrderPayload } from './sales-order'
+
 // Types
 export type {
   NetSuiteCashSale,

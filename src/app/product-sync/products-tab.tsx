@@ -1,353 +1,98 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { useStoreContext } from '@/lib/product-sync/store-context'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
-import { Checkbox } from '@/components/ui/checkbox'
-import {
-  Loader2,
-  RefreshCw,
-  Upload,
-  Download as DownloadIcon,
-  ExternalLink,
-  ChevronDown,
-  ChevronRight,
-  CheckCircle2,
-  AlertTriangle,
-  XCircle,
-  Clock,
-  Search,
-  ArrowUpDown,
-  ArrowUp,
-  AlertCircle,
-  HelpCircle,
-} from 'lucide-react'
+import { useProductSync } from './useProductSync'
+import type { FilterMode } from './useProductSync'
+import ProductsTable from './ProductsTable'
+import ProductActions from './ProductActions'
 
-interface ProductRow {
-  id: string
-  netsuiteSku: string
-  netsuiteName: string | null
-  netsuiteColor: string | null
-  netsuiteSize: string | null
-  netsuiteItemType: string | null
-  netsuiteItemId: number
-  shopifyProductId: string | null
-  shopifyVariantId: string | null
-  shopifyProductTitle: string | null
-  matchStatus: string
-  lastSyncStatus: string
-  lastSyncAt: string | null
-  lastSyncError: string | null
-  netsuiteFlagValue: string | null
-  netsuiteCurrentPrice: number | null
-  netsuiteCurrentQty: number | null
-  lastSyncedPrice: number | null
-  lastSyncedQuantity: number | null
-  lastSyncedComparePrice: number | null
+// ---------- Utility ----------
+
+function timeAgo(dateStr: string): string {
+  const now = Date.now()
+  const then = new Date(dateStr).getTime()
+  const diff = now - then
+
+  if (diff < 0) {
+    const absDiff = Math.abs(diff)
+    if (absDiff < 60_000) return `in ${Math.round(absDiff / 1000)}s`
+    if (absDiff < 3_600_000) return `in ${Math.round(absDiff / 60_000)}m`
+    return `in ${Math.round(absDiff / 3_600_000)}h`
+  }
+
+  if (diff < 60_000) return `${Math.round(diff / 1000)}s ago`
+  if (diff < 3_600_000) return `${Math.round(diff / 60_000)}m ago`
+  if (diff < 86_400_000) return `${Math.round(diff / 3_600_000)}h ago`
+  return `${Math.round(diff / 86_400_000)}d ago`
 }
 
-interface Summary {
-  total: number
-  matched: number
-  unmatched: number
-  multipleMatches: number
-  errors: number
-  lastFullSync: string | null
-  nextSync: string | null
+// ---------- Sub-components ----------
+
+function StatCard({ label, value, color }: { label: string; value: string | number; color?: string }) {
+  const colorClasses: Record<string, string> = {
+    green: 'text-green-600',
+    yellow: 'text-yellow-600',
+    orange: 'text-orange-600',
+    red: 'text-red-600',
+  }
+
+  return (
+    <div className="bg-white border rounded-lg p-3 text-center">
+      <p className="text-xs text-gray-500">{label}</p>
+      <p className={`text-lg font-semibold ${color ? colorClasses[color] || '' : 'text-gray-900'}`}>
+        {value}
+      </p>
+    </div>
+  )
 }
 
-type FilterMode = 'all' | 'synced' | 'pending' | 'errors' | 'unmatched' | 'flagged'
+// ---------- Main orchestrator ----------
 
 export default function ProductsTab() {
-  const { activeStore } = useStoreContext()
-  const [products, setProducts] = useState<ProductRow[]>([])
-  const [summary, setSummary] = useState<Summary | null>(null)
-  const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(1)
-  const [pageSize] = useState(50)
-  const [search, setSearch] = useState('')
-  const [filterMode, setFilterMode] = useState<FilterMode>('all')
-  const [sortBy, setSortBy] = useState('netsuiteSku')
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
-  const [loading, setLoading] = useState(false)
-  const [pulling, setPulling] = useState(false)
-  const [pullingSuiteQL, setPullingSuiteQL] = useState(false)
-  const [suiteQLResult, setSuiteQLResult] = useState<any>(null)
-  const [suiteQLHours, setSuiteQLHours] = useState('24')
-  const [pullingMR, setPullingMR] = useState(false)
-  const [pushingAll, setPushingAll] = useState(false)
-  const [pushingDirty, setPushingDirty] = useState(false)
-  const [pushProgress, setPushProgress] = useState<string | null>(null)
-  const [syncingSku, setSyncingSku] = useState<string | null>(null)
-  const [pullingSku, setPullingSku] = useState<string | null>(null)
-  const [pullLog, setPullLog] = useState<Record<string, string[]>>({})
-  const [expandedRow, setExpandedRow] = useState<string | null>(null)
-  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set())
+  const hook = useProductSync()
 
-  const storeId = activeStore?.id
-  const loadProducts = useCallback(async () => {
-    if (!storeId) return
-    setLoading(true)
-    try {
-      const params = new URLSearchParams({
-        storeConfigId: storeId,
-        page: String(page),
-        pageSize: String(pageSize),
-        sortBy,
-        sortOrder,
-      })
-      if (search) params.set('search', search)
-
-      if (filterMode === 'synced') params.set('syncStatus', 'success')
-      else if (filterMode === 'pending') params.set('syncStatus', 'pending')
-      else if (filterMode === 'errors') {
-        params.set('syncStatus', 'error')
-      }
-      else if (filterMode === 'unmatched') params.set('matchStatus', 'unmatched')
-      else if (filterMode === 'flagged') params.set('flagged', 'true')
-
-      const res = await fetch(`/api/product-sync/products?${params}`)
-      const data = await res.json()
-      setProducts(data.items || [])
-      setTotal(data.total || 0)
-      setSummary(data.summary || null)
-    } catch (err) {
-      console.error('Failed to load products:', err)
-    } finally {
-      setLoading(false)
-    }
-  }, [storeId, page, pageSize, search, filterMode, sortBy, sortOrder])
-
-  useEffect(() => { loadProducts() }, [loadProducts])
-
-  const handlePull = async () => {
-    if (!activeStore) return
-    setPulling(true)
-    try {
-      const pullRes = await fetch('/api/product-sync/sync/pull', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ storeConfigId: activeStore.id }),
-      })
-      const pullData = await pullRes.json()
-      console.log('Pull result:', pullData)
-
-      // Auto-match after pull (only if Shopify is connected)
-      if (activeStore.shopifyDomain) {
-        try {
-          await fetch('/api/product-sync/sync/match', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ storeConfigId: activeStore.id }),
-          })
-        } catch {
-          // Match is non-fatal if Shopify isn't connected
-        }
-      }
-
-      await loadProducts()
-    } catch (err) {
-      console.error('Pull failed:', err)
-    } finally {
-      setPulling(false)
-    }
-  }
-
-  const SUITEQL_WINDOW_OPTIONS = [
-    { value: '720', label: '30 days' },
-    { value: '168', label: '7 days' },
-    { value: '24', label: '24 hours' },
-    { value: '12', label: '12 hours' },
-    { value: '1', label: '1 hour' },
-    { value: '0.25', label: '15 min' },
-    { value: '0.05', label: '3 min' },
-  ]
-
-  const handlePullSuiteQL = async () => {
-    setPullingSuiteQL(true)
-    setSuiteQLResult(null)
-    setPushProgress(null)
-    const windowLabel = SUITEQL_WINDOW_OPTIONS.find((o) => o.value === suiteQLHours)?.label || `${suiteQLHours}h`
-    try {
-      const res = await fetch(`/api/inventory-sync/test?hours=${suiteQLHours}`)
-      const data = await res.json()
-      if (!res.ok || !data.success) {
-        setPushProgress(`SuiteQL Error: ${data.error || `HTTP ${res.status}`}`)
-        setSuiteQLResult(null)
-      } else {
-        setSuiteQLResult(data)
-        setPushProgress(`SuiteQL (${windowLabel}): Found ${data.summary?.itemsWithRecentTransactions || 0} items with changes (out of ${data.summary?.totalActiveItems || '?'} total)`)
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err)
-      setPushProgress(`SuiteQL Error: ${message}`)
-    } finally {
-      setPullingSuiteQL(false)
-    }
-  }
-
-  const handlePullMR = async () => {
-    setPullingMR(true)
-    setPushProgress(null)
-    try {
-      const res = await fetch('/api/product-sync/trigger-mr', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'inventory_sync' }),
-      })
-      const data = await res.json()
-      if (!res.ok || data.error) {
-        setPushProgress(`Error (${res.status}): ${data.error || 'Failed to trigger M/R'}`)
-      } else {
-        setPushProgress(`Inventory sync triggered (task: ${data.taskId || 'unknown'}). Data will arrive in 1-2 minutes.`)
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err)
-      setPushProgress(`Error: ${message}`)
-    } finally {
-      setPullingMR(false)
-      setTimeout(() => setPushProgress(null), 10000)
-    }
-  }
-
-  const handlePushAll = async () => {
-    if (!activeStore) return
-    setPushingAll(true)
-    setPushProgress('Starting push...')
-    try {
-      const res = await fetch('/api/product-sync/sync/trigger', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ storeConfigId: activeStore.id, syncType: 'full' }),
-      })
-      const data = await res.json()
-      setPushProgress(
-        `Done: ${data.updated || 0} updated, ${data.errors || 0} errors`
-      )
-      await loadProducts()
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err)
-      setPushProgress(`Error: ${message}`)
-    } finally {
-      setPushingAll(false)
-      setTimeout(() => setPushProgress(null), 5000)
-    }
-  }
-
-  const handlePushDirty = async () => {
-    setPushingDirty(true)
-    setPushProgress('Pushing dirty items to Shopify...')
-    try {
-      const res = await fetch('/api/inventory-sync/push-shopify', { method: 'POST' })
-      const data = await res.json()
-      if (!res.ok || !data.success) {
-        setPushProgress(`Push Error: ${data.error || `HTTP ${res.status}`}`)
-      } else {
-        setPushProgress(
-          `Pushed ${data.dirty} items: ${data.priceUpdates} prices, ${data.qtyUpdates} qty, ${data.unmatched} unmatched, ${data.errors} errors — ${data.elapsed_ms}ms`
-        )
-        await loadProducts()
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err)
-      setPushProgress(`Error: ${message}`)
-    } finally {
-      setPushingDirty(false)
-      setTimeout(() => setPushProgress(null), 10000)
-    }
-  }
-
-  const syncSingleItem = async (sku: string) => {
-    if (!activeStore) return
-    setSyncingSku(sku)
-    try {
-      await fetch('/api/product-sync/sync/trigger', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ storeConfigId: activeStore.id, syncType: 'single', itemSku: sku }),
-      })
-      await loadProducts()
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err)
-      console.error(`Sync failed for ${sku}:`, message)
-    } finally {
-      setSyncingSku(null)
-    }
-  }
-
-  const pullSingleItem = async (id: string, sku: string, netsuiteItemId: number) => {
-    if (!activeStore) return
-    setPullingSku(sku)
-    try {
-      const res = await fetch('/api/product-sync/sync/pull-single', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ storeConfigId: activeStore.id, netsuiteItemId, netsuiteSku: sku }),
-      })
-      const data = await res.json()
-      if (data.log) {
-        setPullLog((prev) => ({ ...prev, [sku]: data.log }))
-      }
-      await loadProducts()
-      setExpandedRow(id)
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err)
-      setPullLog((prev) => ({ ...prev, [sku]: [`❌ Pull failed: ${message}`] }))
-    } finally {
-      setPullingSku(null)
-    }
-  }
-
-  const exportCsv = () => {
-    const headers = ['SKU', 'Name', 'Type', 'NS Price', 'NS Qty', 'Shopify Price', 'Shopify Qty', 'Match', 'Sync', 'Last Synced', 'Error']
-    const rows = products.map((p) => [
-      p.netsuiteSku,
-      p.netsuiteName || '',
-      p.netsuiteItemType || '',
-      p.netsuiteCurrentPrice != null ? String(p.netsuiteCurrentPrice) : '',
-      p.netsuiteCurrentQty != null ? String(Math.max(0, p.netsuiteCurrentQty)) : '',
-      p.lastSyncedPrice != null ? String(p.lastSyncedPrice) : '',
-      p.lastSyncedQuantity != null ? String(p.lastSyncedQuantity) : '',
-      p.matchStatus,
-      p.lastSyncStatus,
-      p.lastSyncAt || '',
-      p.lastSyncError || '',
-    ])
-    const csv = [headers, ...rows].map((r) => r.map((c) => `"${c}"`).join(',')).join('\n')
-    const blob = new Blob([csv], { type: 'text/csv' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `products-${activeStore?.storeName || 'export'}-${new Date().toISOString().slice(0, 10)}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-
-  const handleSort = (col: string) => {
-    if (sortBy === col) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
-    } else {
-      setSortBy(col)
-      setSortOrder('asc')
-    }
-  }
-
-  const toggleSelectAll = () => {
-    if (selectedRows.size === products.length) {
-      setSelectedRows(new Set())
-    } else {
-      setSelectedRows(new Set(products.map((p) => p.id)))
-    }
-  }
-
-  const toggleSelect = (id: string) => {
-    const next = new Set(selectedRows)
-    if (next.has(id)) next.delete(id)
-    else next.add(id)
-    setSelectedRows(next)
-  }
+  const {
+    activeStore,
+    products,
+    summary,
+    total,
+    totalPages,
+    page,
+    setPage,
+    pageSize,
+    search,
+    setSearch,
+    filterMode,
+    setFilterMode,
+    sortBy,
+    sortOrder,
+    loading,
+    pullingSuiteQL,
+    pullingMR,
+    pushingAll,
+    pushingDirty,
+    pushProgress,
+    syncingSku,
+    pullingSku,
+    suiteQLResult,
+    setSuiteQLResult,
+    suiteQLHours,
+    setSuiteQLHours,
+    expandedRow,
+    setExpandedRow,
+    selectedRows,
+    pullLog,
+    handlePullSuiteQL,
+    handlePullMR,
+    handlePushAll,
+    handlePushDirty,
+    syncSingleItem,
+    pullSingleItem,
+    exportCsv,
+    handleSort,
+    toggleSelectAll,
+    toggleSelect,
+  } = hook
 
   if (!activeStore) {
     return (
@@ -358,14 +103,6 @@ export default function ProductsTab() {
       </Card>
     )
   }
-
-  const nsItemUrl = (id: number) => `https://${process.env.NEXT_PUBLIC_NETSUITE_ACCOUNT_ID || '7913744'}.app.netsuite.com/app/common/item/item.nl?id=${id}`
-  const shopifyProductUrl = (gid: string) => {
-    const numId = gid.split('/').pop()
-    return `https://${activeStore.shopifyDomain}/admin/products/${numId}`
-  }
-
-  const totalPages = Math.ceil(total / pageSize)
 
   const FILTER_OPTIONS: { id: FilterMode; label: string; count?: number }[] = [
     { id: 'all', label: 'All', count: summary?.total },
@@ -413,583 +150,50 @@ export default function ProductsTab() {
         ))}
       </div>
 
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-3 bg-white border rounded-lg p-3">
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-          <Input
-            className="pl-9"
-            placeholder="Search SKU, name..."
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-          />
-        </div>
-
-        <div className="flex items-center gap-2 ml-auto">
-          <div className="flex items-center">
-            <Button variant="outline" size="sm" onClick={handlePullSuiteQL} disabled={pullingSuiteQL} className="rounded-r-none border-r-0">
-              {pullingSuiteQL ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Search className="h-3.5 w-3.5 mr-1.5" />}
-              SuiteQL
-            </Button>
-            <select
-              value={suiteQLHours}
-              onChange={(e) => setSuiteQLHours(e.target.value)}
-              disabled={pullingSuiteQL}
-              className="h-8 border border-gray-200 rounded-r-md bg-white text-xs px-1.5 focus:outline-none focus:ring-1 focus:ring-slate-300"
-            >
-              {SUITEQL_WINDOW_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-          </div>
-          <Button variant="outline" size="sm" onClick={handlePullMR} disabled={pullingMR}>
-            {pullingMR ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
-            Pull from NetSuite (MR)
-          </Button>
-          <Button size="sm" onClick={handlePushDirty} disabled={pushingDirty}>
-            {pushingDirty ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <ArrowUp className="h-3.5 w-3.5 mr-1.5" />}
-            Push to Shopify
-          </Button>
-          <Button variant="outline" size="sm" onClick={handlePushAll} disabled={pushingAll}>
-            {pushingAll ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <ArrowUp className="h-3.5 w-3.5 mr-1.5" />}
-            Push All to Shopify
-          </Button>
-          <Button variant="outline" size="sm" onClick={exportCsv}>
-            <DownloadIcon className="h-3.5 w-3.5 mr-1.5" /> CSV
-          </Button>
-        </div>
-      </div>
-
-      {/* Push Progress Banner */}
-      {pushProgress && (
-        <div className={`px-4 py-2 rounded-lg text-sm ${
-          pushProgress.includes('Error') ? 'bg-red-50 text-red-700' :
-          pushProgress.startsWith('Done') ? 'bg-green-50 text-green-700' :
-          'bg-blue-50 text-blue-700'
-        }`}>
-          {pushProgress}
-        </div>
-      )}
-
-      {/* SuiteQL Results Panel */}
-      {suiteQLResult && (
-        <SuiteQLResultsPanel result={suiteQLResult} onDismiss={() => setSuiteQLResult(null)} />
-      )}
+      {/* Actions toolbar, progress banner, SuiteQL results */}
+      <ProductActions
+        search={search}
+        onSearchChange={(v) => { setSearch(v); setPage(1) }}
+        pullingSuiteQL={pullingSuiteQL}
+        suiteQLHours={suiteQLHours}
+        onSuiteQLHoursChange={setSuiteQLHours}
+        onPullSuiteQL={handlePullSuiteQL}
+        suiteQLResult={suiteQLResult}
+        onDismissSuiteQL={() => setSuiteQLResult(null)}
+        pullingMR={pullingMR}
+        onPullMR={handlePullMR}
+        pushingAll={pushingAll}
+        pushingDirty={pushingDirty}
+        pushProgress={pushProgress}
+        onPushAll={handlePushAll}
+        onPushDirty={handlePushDirty}
+        onExportCsv={exportCsv}
+      />
 
       {/* Products Table */}
-      <div className="bg-white border rounded-lg overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b bg-gray-50">
-                <th className="p-3 w-8">
-                  <Checkbox
-                    checked={selectedRows.size === products.length && products.length > 0}
-                    onCheckedChange={toggleSelectAll}
-                  />
-                </th>
-                <th className="p-3 w-8"></th>
-                <SortHeader col="netsuiteSku" label="SKU" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
-                <SortHeader col="netsuiteName" label="Name" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
-                <th className="p-3 text-left font-medium text-gray-600">Type</th>
-                <th className="p-3 text-right font-medium text-gray-600">NS Price</th>
-                <th className="p-3 text-right font-medium text-gray-600">NS Qty</th>
-                <th className="p-3 text-right font-medium text-gray-600">Shopify Price</th>
-                <th className="p-3 text-right font-medium text-gray-600">Shopify Qty</th>
-                <th className="p-3 text-center font-medium text-gray-600">Match</th>
-                <th className="p-3 text-center font-medium text-gray-600">Sync</th>
-                <th className="p-3 text-center font-medium text-gray-600">Links</th>
-                <th className="p-3 text-center font-medium text-gray-600" colSpan={2}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan={13} className="p-12 text-center text-gray-400">
-                    <Loader2 className="h-5 w-5 animate-spin mx-auto mb-2" /> Loading products...
-                  </td>
-                </tr>
-              ) : products.length === 0 ? (
-                <tr>
-                  <td colSpan={13} className="p-12 text-center text-gray-400">
-                    No products found. Click &quot;Pull from NetSuite&quot; to load items.
-                  </td>
-                </tr>
-              ) : (
-                products.map((p) => (
-                  <ProductRowComponent
-                    key={p.id}
-                    product={p}
-                    selected={selectedRows.has(p.id)}
-                    expanded={expandedRow === p.id}
-                    syncingSku={syncingSku}
-                    pullingSku={pullingSku}
-                    pullLog={pullLog[p.netsuiteSku] || null}
-                    onToggleSelect={() => toggleSelect(p.id)}
-                    onToggleExpand={() => setExpandedRow(expandedRow === p.id ? null : p.id)}
-                    onSync={() => syncSingleItem(p.netsuiteSku)}
-                    onPull={() => pullSingleItem(p.id, p.netsuiteSku, p.netsuiteItemId)}
-                    nsItemUrl={nsItemUrl}
-                    shopifyProductUrl={shopifyProductUrl}
-                  />
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t">
-            <p className="text-sm text-gray-500">
-              Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} of {total}
-            </p>
-            <div className="flex items-center gap-1">
-              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>
-                Previous
-              </Button>
-              <span className="px-3 text-sm text-gray-600">Page {page} / {totalPages}</span>
-              <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>
-                Next
-              </Button>
-            </div>
-          </div>
-        )}
-      </div>
+      <ProductsTable
+        products={products}
+        loading={loading}
+        total={total}
+        totalPages={totalPages}
+        page={page}
+        pageSize={pageSize}
+        sortBy={sortBy}
+        sortOrder={sortOrder}
+        selectedRows={selectedRows}
+        expandedRow={expandedRow}
+        syncingSku={syncingSku}
+        pullingSku={pullingSku}
+        pullLog={pullLog}
+        activeStoreShopifyDomain={activeStore.shopifyDomain}
+        onSort={handleSort}
+        onToggleSelectAll={toggleSelectAll}
+        onToggleSelect={toggleSelect}
+        onSetExpandedRow={setExpandedRow}
+        onSetPage={setPage}
+        onSyncSingle={syncSingleItem}
+        onPullSingle={pullSingleItem}
+      />
     </div>
   )
-}
-
-// ---------- Sub-components ----------
-
-function StatCard({ label, value, color }: { label: string; value: string | number; color?: string }) {
-  const colorClasses: Record<string, string> = {
-    green: 'text-green-600',
-    yellow: 'text-yellow-600',
-    orange: 'text-orange-600',
-    red: 'text-red-600',
-  }
-
-  return (
-    <div className="bg-white border rounded-lg p-3 text-center">
-      <p className="text-xs text-gray-500">{label}</p>
-      <p className={`text-lg font-semibold ${color ? colorClasses[color] || '' : 'text-gray-900'}`}>
-        {value}
-      </p>
-    </div>
-  )
-}
-
-function SortHeader({
-  col,
-  label,
-  sortBy,
-  sortOrder,
-  onSort,
-}: {
-  col: string
-  label: string
-  sortBy: string
-  sortOrder: string
-  onSort: (col: string) => void
-}) {
-  return (
-    <th
-      className="p-3 text-left font-medium text-gray-600 cursor-pointer hover:text-gray-900 select-none"
-      onClick={() => onSort(col)}
-    >
-      <span className="flex items-center gap-1">
-        {label}
-        {sortBy === col && <ArrowUpDown className="h-3 w-3" />}
-      </span>
-    </th>
-  )
-}
-
-function MatchBadge({ status }: { status: string }) {
-  switch (status) {
-    case 'matched':
-      return <span title="Matched"><CheckCircle2 className="h-4 w-4 text-green-500" /></span>
-    case 'unmatched':
-      return <span title="SKU not found in Shopify"><AlertTriangle className="h-4 w-4 text-amber-500" /></span>
-    case 'multiple_matches':
-      return <span title="Multiple SKU matches found"><HelpCircle className="h-4 w-4 text-orange-500" /></span>
-    case 'error':
-      return <span title="Match error"><XCircle className="h-4 w-4 text-red-500" /></span>
-    default:
-      return <span className="text-xs text-gray-400">{status}</span>
-  }
-}
-
-function SyncBadge({ status, error }: { status: string; error?: string | null }) {
-  switch (status) {
-    case 'success':
-      return <span title="Synced"><CheckCircle2 className="h-4 w-4 text-green-500" /></span>
-    case 'error':
-      return <span title={error || 'Sync error'}><AlertCircle className="h-4 w-4 text-red-500" /></span>
-    case 'pending':
-      return <span title="Pending"><Clock className="h-4 w-4 text-gray-400" /></span>
-    case 'skipped':
-      return <span title="Skipped" className="text-xs text-gray-400">Skip</span>
-    default:
-      return <span className="text-xs text-gray-400">{status}</span>
-  }
-}
-
-function ProductRowComponent({
-  product,
-  selected,
-  expanded,
-  syncingSku,
-  pullingSku,
-  pullLog,
-  onToggleSelect,
-  onToggleExpand,
-  onSync,
-  onPull,
-  nsItemUrl,
-  shopifyProductUrl,
-}: {
-  product: ProductRow
-  selected: boolean
-  expanded: boolean
-  syncingSku: string | null
-  pullingSku: string | null
-  pullLog: string[] | null
-  onToggleSelect: () => void
-  onToggleExpand: () => void
-  onSync: () => void
-  onPull: () => void
-  nsItemUrl: (id: number) => string
-  shopifyProductUrl: (gid: string) => string
-}) {
-  const nsQty = product.netsuiteCurrentQty != null ? Math.max(0, product.netsuiteCurrentQty) : null
-
-  return (
-    <>
-      <tr className={`border-b hover:bg-gray-50 ${selected ? 'bg-blue-50/50' : ''}`}>
-        <td className="p-3">
-          <Checkbox checked={selected} onCheckedChange={onToggleSelect} />
-        </td>
-        <td className="p-3">
-          <button onClick={onToggleExpand} className="text-gray-400 hover:text-gray-600">
-            {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-          </button>
-        </td>
-        <td className="p-3 font-mono text-xs">{product.netsuiteSku}</td>
-        <td className="p-3 max-w-[200px] truncate">{product.netsuiteName || '—'}</td>
-        <td className="p-3 text-xs text-gray-500">{product.netsuiteItemType || '—'}</td>
-        <td className="p-3 text-right font-mono">
-          {product.netsuiteCurrentPrice != null ? `$${Number(product.netsuiteCurrentPrice).toFixed(2)}` : '—'}
-        </td>
-        <td className="p-3 text-right font-mono">
-          {nsQty != null ? nsQty : '—'}
-        </td>
-        <td className="p-3 text-right font-mono text-slate-400">
-          {product.lastSyncedPrice != null ? `$${Number(product.lastSyncedPrice).toFixed(2)}` : '—'}
-        </td>
-        <td className="p-3 text-right font-mono text-slate-400">
-          {product.lastSyncedQuantity != null ? product.lastSyncedQuantity : '—'}
-        </td>
-        <td className="p-3 text-center"><MatchBadge status={product.matchStatus} /></td>
-        <td className="p-3 text-center"><SyncBadge status={product.lastSyncStatus} error={product.lastSyncError} /></td>
-        <td className="p-3">
-          <div className="flex items-center justify-center gap-1">
-            <a
-              href={nsItemUrl(product.netsuiteItemId)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-gray-400 hover:text-blue-600"
-              title="Open in NetSuite"
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-            </a>
-            {product.shopifyProductId && (
-              <a
-                href={shopifyProductUrl(product.shopifyProductId)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-gray-400 hover:text-green-600"
-                title="Open in Shopify"
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-              </a>
-            )}
-          </div>
-        </td>
-        <td className="p-3 text-center">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onPull}
-            disabled={pullingSku === product.netsuiteSku}
-            className="h-7 px-2 text-xs"
-            title="Pull this item from NetSuite (with diagnostic log)"
-          >
-            {pullingSku === product.netsuiteSku ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              <RefreshCw className="h-3 w-3" />
-            )}
-          </Button>
-        </td>
-        <td className="p-3 text-center">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onSync}
-            disabled={syncingSku === product.netsuiteSku}
-            className="h-7 px-3 text-xs"
-          >
-            {syncingSku === product.netsuiteSku ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              <>
-                <Upload className="h-3 w-3 mr-1" />
-                Push
-              </>
-            )}
-          </Button>
-        </td>
-      </tr>
-
-      {expanded && (
-        <tr className="border-b bg-gray-50/50">
-          <td colSpan={14} className="p-4">
-            <div className="grid grid-cols-3 gap-6 text-sm">
-              <div>
-                <p className="font-medium text-gray-700 mb-2">NetSuite Details</p>
-                <dl className="space-y-1">
-                  <div className="flex justify-between"><dt className="text-gray-500">Item ID:</dt><dd>{product.netsuiteItemId}</dd></div>
-                  <div className="flex justify-between"><dt className="text-gray-500">Type:</dt><dd>{product.netsuiteItemType || '—'}</dd></div>
-                  <div className="flex justify-between"><dt className="text-gray-500">Color:</dt><dd>{product.netsuiteColor || '—'}</dd></div>
-                  <div className="flex justify-between"><dt className="text-gray-500">Size:</dt><dd>{product.netsuiteSize || '—'}</dd></div>
-                  <div className="flex justify-between"><dt className="text-gray-500">Flag Value:</dt><dd>{product.netsuiteFlagValue || '—'}</dd></div>
-                </dl>
-              </div>
-              <div>
-                <p className="font-medium text-gray-700 mb-2">Shopify Details</p>
-                <dl className="space-y-1">
-                  <div className="flex justify-between"><dt className="text-gray-500">Product:</dt><dd className="truncate max-w-[200px]">{product.shopifyProductTitle || '—'}</dd></div>
-                  <div className="flex justify-between"><dt className="text-gray-500">Variant ID:</dt><dd className="font-mono text-xs">{product.shopifyVariantId ? product.shopifyVariantId.split('/').pop() : '—'}</dd></div>
-                </dl>
-              </div>
-              <div>
-                <p className="font-medium text-gray-700 mb-2">Last Push to Shopify</p>
-                <dl className="space-y-1">
-                  <div className="flex justify-between"><dt className="text-gray-500">Price:</dt><dd>{product.lastSyncedPrice != null ? `$${Number(product.lastSyncedPrice).toFixed(2)}` : '—'}</dd></div>
-                  <div className="flex justify-between"><dt className="text-gray-500">Compare Price:</dt><dd>{product.lastSyncedComparePrice != null ? `$${Number(product.lastSyncedComparePrice).toFixed(2)}` : '—'}</dd></div>
-                  <div className="flex justify-between"><dt className="text-gray-500">Quantity:</dt><dd>{product.lastSyncedQuantity ?? '—'}</dd></div>
-                  <div className="flex justify-between"><dt className="text-gray-500">Synced At:</dt><dd className="text-xs">{product.lastSyncAt ? timeAgo(product.lastSyncAt) : '—'}</dd></div>
-                  {product.lastSyncError && (
-                    <div className="mt-2 p-2 bg-red-50 rounded text-xs text-red-700">{product.lastSyncError}</div>
-                  )}
-                </dl>
-              </div>
-            </div>
-
-            {pullLog && pullLog.length > 0 && (
-              <div className="mt-4">
-                <p className="font-medium text-gray-700 mb-2">Pull Diagnostic Log</p>
-                <pre className="bg-gray-900 text-green-400 rounded-lg p-3 text-xs font-mono max-h-96 overflow-auto whitespace-pre-wrap">
-                  {pullLog.join('\n')}
-                </pre>
-              </div>
-            )}
-          </td>
-        </tr>
-      )}
-    </>
-  )
-}
-
-function SuiteQLResultsPanel({ result, onDismiss }: { result: any; onDismiss: () => void }) {
-  const [expandedSteps, setExpandedSteps] = useState<Set<number>>(new Set())
-
-  const toggleStep = (idx: number) => {
-    setExpandedSteps((prev) => {
-      const next = new Set(prev)
-      if (next.has(idx)) next.delete(idx)
-      else next.add(idx)
-      return next
-    })
-  }
-
-  const expandAll = () => {
-    setExpandedSteps(new Set((result.steps || []).map((_: any, i: number) => i)))
-  }
-  const collapseAll = () => setExpandedSteps(new Set())
-
-  const steps = result.steps || []
-
-  return (
-    <div className="bg-white border rounded-lg overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 bg-slate-50 border-b">
-        <div className="flex items-center gap-3">
-          <Search className="h-4 w-4 text-slate-500" />
-          <span className="font-medium text-sm text-slate-700">SuiteQL Delta Sync</span>
-          <span className="text-xs bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full">
-            {result.elapsed_ms}ms total
-          </span>
-          <span className="text-xs text-slate-500">
-            {steps.length} steps
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={expandAll} className="text-xs text-blue-600 hover:text-blue-800">Expand all</button>
-          <span className="text-slate-300">|</span>
-          <button onClick={collapseAll} className="text-xs text-blue-600 hover:text-blue-800">Collapse all</button>
-          <span className="text-slate-300">|</span>
-          <button onClick={onDismiss} className="text-xs text-slate-400 hover:text-slate-600">Dismiss</button>
-        </div>
-      </div>
-
-      {/* Summary bar */}
-      <div className="px-4 py-2.5 border-b bg-blue-50/50 text-sm text-slate-700">
-        {result.summary?.message}
-      </div>
-
-      {/* Steps */}
-      <div className="divide-y">
-        {steps.map((step: any, idx: number) => (
-          <SuiteQLStepCard
-            key={idx}
-            step={step}
-            index={idx}
-            expanded={expandedSteps.has(idx)}
-            onToggle={() => toggleStep(idx)}
-          />
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function SuiteQLStepCard({ step, index, expanded, onToggle }: {
-  step: any
-  index: number
-  expanded: boolean
-  onToggle: () => void
-}) {
-  const [showQuery, setShowQuery] = useState(false)
-
-  const hasError = !!step.error
-  const statusColor = hasError ? 'text-red-600' : 'text-green-600'
-  const bgColor = hasError ? 'bg-red-50' : ''
-
-  // Auto-detect column headers from data
-  const columns = step.data?.length > 0 ? Object.keys(step.data[0]).filter((k) => k !== 'links') : []
-
-  return (
-    <div className={bgColor}>
-      {/* Step header — always visible */}
-      <button
-        onClick={onToggle}
-        className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors"
-      >
-        <span className="flex items-center justify-center w-5 h-5 rounded-full bg-slate-200 text-xs font-bold text-slate-600 flex-shrink-0">
-          {index + 1}
-        </span>
-        {expanded ? <ChevronDown className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />}
-        <span className="font-medium text-sm text-slate-800">{step.name}</span>
-        <span className="text-xs text-slate-500 flex-1">{step.description}</span>
-        <span className={`text-xs font-mono ${statusColor}`}>
-          {hasError ? 'ERROR' : `${step.rowCount} rows`}
-        </span>
-        <span className="text-xs font-mono text-slate-400">
-          {step.elapsed_ms}ms
-        </span>
-      </button>
-
-      {/* Expanded content */}
-      {expanded && (
-        <div className="px-4 pb-3">
-          {/* Query toggle */}
-          <div className="mb-2">
-            <button
-              onClick={(e) => { e.stopPropagation(); setShowQuery(!showQuery) }}
-              className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
-            >
-              {showQuery ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-              {showQuery ? 'Hide query' : 'Show query'}
-            </button>
-            {showQuery && (
-              <pre className="mt-1 bg-gray-900 text-green-400 rounded p-2.5 text-xs font-mono overflow-x-auto whitespace-pre-wrap">
-                {step.query}
-              </pre>
-            )}
-          </div>
-
-          {/* Error message */}
-          {hasError && (
-            <div className="mb-2 p-2 bg-red-100 border border-red-200 rounded text-xs text-red-700">
-              {step.error}
-            </div>
-          )}
-
-          {/* Data table */}
-          {step.data?.length > 0 && columns.length > 0 && (
-            <div className="overflow-x-auto max-h-72 overflow-y-auto border rounded">
-              <table className="w-full text-xs">
-                <thead className="sticky top-0">
-                  <tr className="bg-gray-100 border-b">
-                    {columns.map((col: string) => (
-                      <th key={col} className="px-2.5 py-1.5 text-left font-medium text-gray-600 whitespace-nowrap">
-                        {col}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {step.data.slice(0, 100).map((row: any, i: number) => (
-                    <tr key={i} className="border-b hover:bg-gray-50">
-                      {columns.map((col: string) => (
-                        <td key={col} className="px-2.5 py-1 font-mono whitespace-nowrap">
-                          {formatCellValue(row[col])}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {step.data.length > 100 && (
-                <div className="px-2.5 py-1.5 bg-gray-50 text-xs text-slate-500 border-t">
-                  Showing 100 of {step.data.length} rows
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function formatCellValue(value: any): string {
-  if (value === null || value === undefined) return '—'
-  if (typeof value === 'object' && Array.isArray(value)) {
-    // Kit components array — render inline
-    return value.map((c: any) => `${c.component}: ${c.available}/${c.required}`).join(', ')
-  }
-  if (typeof value === 'object') return JSON.stringify(value)
-  return String(value)
-}
-
-function timeAgo(dateStr: string): string {
-  const now = Date.now()
-  const then = new Date(dateStr).getTime()
-  const diff = now - then
-
-  if (diff < 0) {
-    const absDiff = Math.abs(diff)
-    if (absDiff < 60_000) return `in ${Math.round(absDiff / 1000)}s`
-    if (absDiff < 3_600_000) return `in ${Math.round(absDiff / 60_000)}m`
-    return `in ${Math.round(absDiff / 3_600_000)}h`
-  }
-
-  if (diff < 60_000) return `${Math.round(diff / 1000)}s ago`
-  if (diff < 3_600_000) return `${Math.round(diff / 60_000)}m ago`
-  if (diff < 86_400_000) return `${Math.round(diff / 3_600_000)}h ago`
-  return `${Math.round(diff / 86_400_000)}d ago`
 }

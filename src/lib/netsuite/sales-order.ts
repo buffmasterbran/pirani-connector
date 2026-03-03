@@ -1,5 +1,7 @@
-import { prisma } from './prisma'
-import { findNetSuiteAddressesByCustomerId, matchShopifyAddressToNetSuite } from './netsuite'
+import { prisma } from '../prisma'
+import { findNetSuiteAddressesByCustomerId, matchShopifyAddressToNetSuite } from './address'
+import { generateOAuthHeader } from './oauth'
+import { buildRecordUrl } from './constants'
 
 /**
  * Extracts the numeric ID from strings like "Online Sales (IID: 11)" or "11"
@@ -7,18 +9,18 @@ import { findNetSuiteAddressesByCustomerId, matchShopifyAddressToNetSuite } from
  */
 function extractNetSuiteId(value: string): string {
   if (!value) return value
-  
+
   // Pattern: "Something (IID: 123)" -> extract "123"
   const iidMatch = value.match(/\(IID:\s*(\d+)\)/i)
   if (iidMatch) {
     return iidMatch[1]
   }
-  
+
   // If it's already just a number, return it
   if (/^\d+$/.test(value.trim())) {
     return value.trim()
   }
-  
+
   // If no pattern matches, return original value (fallback)
   return value
 }
@@ -248,10 +250,10 @@ export async function buildNetSuiteSalesOrderPayload(
   const needsShopifyOrderDataForLineItems = orderItemMappings.some(
     (m) => m.mappingType === 'Order Line'
   )
-  
+
   if (needsShopifyOrderDataForLineItems) {
     try {
-      const { getOrderByNameFromShopify } = await import('./shopify')
+      const { getOrderByNameFromShopify } = await import('../shopify')
       shopifyOrderDataForLineItems = await getOrderByNameFromShopify(firstLine.shopifyOrderName)
       if (!shopifyOrderDataForLineItems) {
         console.warn(`⚠️ Could not fetch Shopify order data for line item mappings`)
@@ -266,7 +268,7 @@ export async function buildNetSuiteSalesOrderPayload(
   // Helper function to get nested value from Shopify line item using dot notation
   const getLineItemValue = (shopifyLineItem: any, path: string): any => {
     if (!shopifyLineItem) return null
-    
+
     // Special handling for properties array (e.g., "properties.__pca_barcode")
     if (path.startsWith('properties.')) {
       const propName = path.substring('properties.'.length)
@@ -276,7 +278,7 @@ export async function buildNetSuiteSalesOrderPayload(
       }
       return null
     }
-    
+
     // Standard dot notation traversal for other fields
     const keys = path.split('.')
     let current = shopifyLineItem
@@ -327,19 +329,19 @@ export async function buildNetSuiteSalesOrderPayload(
     })
     .map((line, lineIndex) => {
       const itemObj: { refName?: string; itemid?: string } = {}
-      
+
       // Prefer refName (SKU), fallback to item name if SKU not available
       if (line.lineItemSku) {
         itemObj.refName = line.lineItemSku
       } else if (line.lineItemName) {
         itemObj.refName = line.lineItemName
       }
-      
+
       // Fallback to itemid if refName not available (for backward compatibility)
       if (!itemObj.refName && line.lineItemSku) {
         itemObj.itemid = line.lineItemSku
       }
-      
+
       // Build the base line item
       const lineItem: any = {
         item: itemObj,
@@ -363,7 +365,7 @@ export async function buildNetSuiteSalesOrderPayload(
         if (mappingValue !== null) {
           // Extract numeric ID if needed (for fields like class, location, etc.)
           const finalValue = extractNetSuiteId(mappingValue)
-          
+
           // Handle custom fields (custcol_)
           if (mapping.netsuiteId.startsWith('custcol_')) {
             lineItem[mapping.netsuiteId] = finalValue
@@ -410,10 +412,10 @@ export async function buildNetSuiteSalesOrderPayload(
   const needsShopifyOrderData = orderFieldMappings.some(
     (m) => m.mappingType === 'Order Header' || m.mappingType === 'Order Header with Translation'
   )
-  
+
   if (needsShopifyOrderData) {
     try {
-      const { getOrderByNameFromShopify } = await import('./shopify')
+      const { getOrderByNameFromShopify } = await import('../shopify')
       shopifyOrderData = await getOrderByNameFromShopify(firstLine.shopifyOrderName)
       if (!shopifyOrderData) {
         console.warn(`⚠️ Could not fetch Shopify order data for ${firstLine.shopifyOrderName}`)
@@ -456,7 +458,7 @@ export async function buildNetSuiteSalesOrderPayload(
           return null
         }
         const shopifyValue = getNestedValue(shopifyOrderData, mapping.shopifyCode)
-        
+
         // Convert to string if needed
         let value = shopifyValue
         if (Array.isArray(value)) {
@@ -474,7 +476,7 @@ export async function buildNetSuiteSalesOrderPayload(
           const translation = mapping.translationMappings?.find(
             (tm) => tm.shopifyValue === value
           )
-          
+
           if (translation) {
             // Use translated value
             return translation.netsuiteValue
@@ -609,12 +611,12 @@ export async function buildNetSuiteSalesOrderPayload(
       // Parse payment gateway names (stored as JSON string)
       const paymentGateways = JSON.parse(firstLine.paymentGatewayNames) as string[]
       const paymentMethod = paymentGateways?.[0] || 'unknown'
-      
+
       // Find mapping for this payment method
       const paymentMapping = paymentMethodMappings.find(
         (m) => m.shopifyCode === paymentMethod && m.isActive
       )
-      
+
       if (paymentMapping) {
         // Use mapped payment method
         payload.paymentMethod = {
@@ -655,7 +657,6 @@ export async function buildNetSuiteSalesOrderPayload(
 export async function createNetSuiteSalesOrder(
   payload: NetSuiteSalesOrderPayload
 ): Promise<{ success: boolean; salesOrderId?: string; salesOrderName?: string; error?: string }> {
-  const { generateOAuthHeader, buildRecordUrl } = await import('./netsuite')
   const NETSUITE_API_URL = buildRecordUrl('salesOrder')
 
   const authorization = generateOAuthHeader('POST', NETSUITE_API_URL)
@@ -729,4 +730,3 @@ export async function createNetSuiteSalesOrder(
     }
   }
 }
-

@@ -1,12 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { generateOAuthHeader, buildRecordUrl, buildSuiteQLUrl } from '@/lib/netsuite'
+import {
+  filterValidTransactions,
+  buildDepositItems,
+  buildDropdownItems,
+  buildOtherItems,
+  buildDepositPayload,
+  type DepositItem,
+} from '@/lib/deposit-helpers'
 
 const NETSUITE_API_URL = buildRecordUrl('deposit')
 const SUITEQL_URL = buildSuiteQLUrl()
 
-interface DepositItem { deposit: boolean; id: number }
-interface OtherItem { description: string; amount: number; account: { id: string } }
 interface TxnStatus { id: string; tranid: string; type: string; statusname: string }
 
 /**
@@ -97,95 +103,6 @@ function extractDepositId(response: Response, responseText: string): string | nu
   return null
 }
 
-function buildDepositData(payout: any) {
-  const transactionsWithNS = payout.transactions.filter(
-    (txn: any) =>
-      txn.netsuiteTransactionId &&
-      txn.netsuiteTransactionId.trim() !== '' &&
-      txn.includeInNetSuite !== false,
-  )
-
-  const cashSalesAndRefunds = transactionsWithNS.filter((txn: any) => {
-    const name = (txn.netsuiteTransactionName || '').toUpperCase().trim()
-    return name.startsWith('CS') || name.startsWith('RFND') ||
-      name.includes('CASH SALE') || name.includes('CASH REFUND')
-  })
-
-  const payments = transactionsWithNS.filter((txn: any) => {
-    const name = (txn.netsuiteTransactionName || '').toUpperCase().trim()
-    return name.startsWith('PYMT') || name.startsWith('CUSTPYMT') ||
-      name.includes('PAYMENT')
-  })
-
-  const allDepositTransactions = [...cashSalesAndRefunds, ...payments]
-  const depositItems: DepositItem[] = allDepositTransactions
-    .map((txn: any) => {
-      const idNum = parseInt(txn.netsuiteTransactionId!, 10)
-      if (isNaN(idNum)) return null
-      return { deposit: true, id: idNum }
-    })
-    .filter((item): item is DepositItem => item !== null)
-    .filter((item, idx, arr) => idx === arr.findIndex((t) => t.id === item.id))
-
-  const includedTransactions = payout.transactions.filter((txn: any) => txn.includeInNetSuite !== false)
-  const topLevelTransactions = payout.transactions.filter((txn: any) => !txn.parentTransactionId)
-  const totalFees = topLevelTransactions.reduce((sum: number, txn: any) => sum + (txn.fee || 0), 0)
-
-  return { depositItems, totalFees, includedTransactions, transactionsWithNS }
-}
-
-async function buildOtherItems(payout: any, totalFees: number, includedTransactions: any[]): Promise<OtherItem[]> {
-  const payoutMappings = await prisma.payoutMapping.findMany({ where: { isActive: true } })
-  const findMapping = (value: string | null | undefined) => {
-    if (!value) return null
-    return payoutMappings.find((m) => m.netsuiteId === value || m.description === value)
-  }
-
-  const dropdownItemsMap = new Map<string, { description: string; amount: number }>()
-  for (const txn of includedTransactions) {
-    if (txn.amountDescription) {
-      const mapping = findMapping(txn.amountDescription)
-      if (mapping?.netsuiteId) {
-        const e = dropdownItemsMap.get(mapping.netsuiteId) || { description: mapping.description || '', amount: 0 }
-        e.amount += Number(txn.amount) || 0
-        dropdownItemsMap.set(mapping.netsuiteId, e)
-      }
-    }
-    if (txn.feeDescription) {
-      const mapping = findMapping(txn.feeDescription)
-      if (mapping?.netsuiteId) {
-        const e = dropdownItemsMap.get(mapping.netsuiteId) || { description: mapping.description || '', amount: 0 }
-        e.amount += Number(txn.fee) || 0
-        dropdownItemsMap.set(mapping.netsuiteId, e)
-      }
-    }
-    if (txn.otherFeesDescription) {
-      const mapping = findMapping(txn.otherFeesDescription)
-      if (mapping?.netsuiteId) {
-        const e = dropdownItemsMap.get(mapping.netsuiteId) || { description: mapping.description || '', amount: 0 }
-        e.amount += Number(txn.amount) || Number(txn.fee) || 0
-        dropdownItemsMap.set(mapping.netsuiteId, e)
-      }
-    }
-  }
-
-  const otherItems: OtherItem[] = []
-  if (totalFees !== 0) {
-    otherItems.push({
-      description: 'Shopify Fees',
-      amount: totalFees < 0 ? totalFees : -Math.abs(totalFees),
-      account: { id: '989' },
-    })
-  }
-  dropdownItemsMap.forEach((item, netsuiteId) => {
-    if (item.amount !== 0) {
-      otherItems.push({ description: item.description, amount: item.amount, account: { id: netsuiteId } })
-    }
-  })
-
-  return otherItems
-}
-
 export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -210,7 +127,9 @@ export async function POST(
       })
     }
 
-    const { depositItems, totalFees, includedTransactions, transactionsWithNS } = buildDepositData(payout)
+    // Use shared helpers to build deposit data
+    const transactionsWithNS = filterValidTransactions(payout.transactions)
+    const depositItems = buildDepositItems(transactionsWithNS)
 
     if (depositItems.length === 0) {
       return NextResponse.json({
@@ -219,9 +138,15 @@ export async function POST(
       }, { status: 400 })
     }
 
-    const otherItems = await buildOtherItems(payout, totalFees, includedTransactions)
+    const includedTransactions = payout.transactions.filter((txn: any) => txn.includeInNetSuite !== false)
+    const topLevelTransactions = payout.transactions.filter((txn: any) => !txn.parentTransactionId)
+    const totalFees = topLevelTransactions.reduce((sum: number, txn: any) => sum + (txn.fee || 0), 0)
+
+    const payoutMappings = await prisma.payoutMapping.findMany({ where: { isActive: true } })
+    const dropdownItems = buildDropdownItems(includedTransactions, payoutMappings)
+    const otherItems = buildOtherItems(totalFees, dropdownItems, '989')
+
     const payoutDate = payout.payoutDate || new Date()
-    const memo = `Shopify payout ${payoutId.slice(-8)}`
 
     // Pre-validate: query NetSuite to filter out already-deposited transactions
     const allIds = depositItems.map(i => i.id)
@@ -248,15 +173,12 @@ export async function POST(
       console.log(`   Skipped IDs: ${skipped.map(s => `${s.id} (${s.reason})`).join(', ')}`)
     }
 
-    const createBody: any = {
-      account: { id: '217' },
-      trandate: payoutDate.toISOString().split('T')[0],
-      memo,
-      payment: { items: validDepositItems },
-    }
-    if (otherItems.length > 0) {
-      createBody.other = { items: otherItems }
-    }
+    const createBody = buildDepositPayload(
+      payoutId,
+      payoutDate.toISOString().split('T')[0],
+      validDepositItems,
+      otherItems,
+    )
 
     console.log(`   Full payload:`, JSON.stringify(createBody, null, 2))
 

@@ -17,7 +17,7 @@ import {
   type CustomerFieldMapping,
   type OrderFieldTranslationMapping
 } from '@/lib/mappingUtils'
-import ProductFieldMappings from '@/components/ProductFieldMappings'
+import ProductFieldMappings from '@/components/product-sync'
 
 interface MappingsSectionProps {
   activeSubSection: string
