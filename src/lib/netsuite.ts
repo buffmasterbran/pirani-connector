@@ -179,7 +179,7 @@ export function generateOAuthHeader(method: string, url: string): string {
 
   // Build Authorization header
   const authParams = [
-    `realm="${NETSUITE_ACCOUNT_ID}"`,
+    `realm="${NETSUITE_ACCOUNT_ID.replace(/-/g, '_')}"`,
     `oauth_consumer_key="${NETSUITE_CONSUMER_KEY}"`,
     `oauth_token="${NETSUITE_TOKEN_ID}"`,
     `oauth_signature_method="HMAC-SHA256"`,
