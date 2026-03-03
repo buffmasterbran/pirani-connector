@@ -274,7 +274,7 @@ async function syncItems(
       mappings.length, 0, mappings.length - itemsErrored, itemsErrored, 0, 0, startTime, errors)
   }
 
-  const itemIds = resolvedMappings.map((m) => m.netsuiteItemId)
+  const itemIds = resolvedMappings.map((m) => m.netsuiteItemId).filter((id): id is number => id != null)
 
   // 3. Fetch prices from NetSuite
   console.info(`[sync] 💰 Fetching prices for ${itemIds.length} item(s) (price level: ${storeConfig.netsuitePriceLevelId})...`)
