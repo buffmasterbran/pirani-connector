@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { generateOAuthHeader } from '@/lib/netsuite'
+import { generateOAuthHeader, buildRestletUrl } from '@/lib/netsuite'
 
-
-const NETSUITE_ACCOUNT_ID = process.env.NETSUITE_ACCOUNT_ID || '7913744'
 const TRIGGER_SCRIPT_ID = process.env.NETSUITE_TRIGGER_SCRIPT_ID
 const TRIGGER_DEPLOY_ID = process.env.NETSUITE_TRIGGER_DEPLOY_ID || '1'
 const MR_SCRIPT_ID = process.env.NETSUITE_MR_SCRIPT_ID || 'customscript_pir_con_inventory_sync'
@@ -10,7 +8,7 @@ const MR_DEPLOY_ID = process.env.NETSUITE_MR_DEPLOY_ID || 'customdeploy_pir_con_
 
 function getRestletUrl(): string | null {
   if (!TRIGGER_SCRIPT_ID) return null
-  return `https://${NETSUITE_ACCOUNT_ID}.restlets.api.netsuite.com/app/site/hosting/restlet.nl?script=${TRIGGER_SCRIPT_ID}&deploy=${TRIGGER_DEPLOY_ID}`
+  return buildRestletUrl(TRIGGER_SCRIPT_ID, TRIGGER_DEPLOY_ID)
 }
 
 export async function POST(request: NextRequest) {

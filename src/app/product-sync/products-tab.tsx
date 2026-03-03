@@ -359,8 +359,7 @@ export default function ProductsTab() {
     )
   }
 
-  const NETSUITE_ACCOUNT_ID = '7913744'
-  const nsItemUrl = (id: number) => `https://${NETSUITE_ACCOUNT_ID}.app.netsuite.com/app/common/item/item.nl?id=${id}`
+  const nsItemUrl = (id: number) => `https://${process.env.NEXT_PUBLIC_NETSUITE_ACCOUNT_ID || '7913744'}.app.netsuite.com/app/common/item/item.nl?id=${id}`
   const shopifyProductUrl = (gid: string) => {
     const numId = gid.split('/').pop()
     return `https://${activeStore.shopifyDomain}/admin/products/${numId}`

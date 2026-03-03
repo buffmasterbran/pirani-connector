@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { generateOAuthHeader, type NetSuiteSuiteQLResponse } from '@/lib/netsuite'
+import { generateOAuthHeader, buildSuiteQLUrl, type NetSuiteSuiteQLResponse } from '@/lib/netsuite'
 
-const NETSUITE_ACCOUNT_ID = process.env.NETSUITE_ACCOUNT_ID || '7913744'
-const SUITEQL_BASE = `https://${NETSUITE_ACCOUNT_ID}.suitetalk.api.netsuite.com/services/rest/query/v1/suiteql`
+const SUITEQL_BASE = buildSuiteQLUrl()
 
 async function runQuery(query: string) {
   const url = `${SUITEQL_BASE}?limit=5&offset=0`

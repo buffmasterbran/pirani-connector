@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { generateOAuthHeader } from '@/lib/netsuite'
+import { generateOAuthHeader, buildSuiteQLUrl } from '@/lib/netsuite'
 
-const NETSUITE_ACCOUNT_ID = process.env.NETSUITE_ACCOUNT_ID || '7913744'
-const SUITEQL_URL = `https://${NETSUITE_ACCOUNT_ID}.suitetalk.api.netsuite.com/services/rest/query/v1/suiteql`
+const SUITEQL_URL = buildSuiteQLUrl()
 
 interface SuiteQLStep {
   name: string

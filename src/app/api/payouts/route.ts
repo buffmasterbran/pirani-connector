@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-
-const toISO = (date: Date | null | undefined) => (date ? date.toISOString() : null)
+import { toISO } from '@/lib/api-helpers'
 
 export async function GET() {
   try {

@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { generateOAuthHeader } from '@/lib/netsuite'
+import { generateOAuthHeader, buildRecordUrl, buildSuiteQLUrl } from '@/lib/netsuite'
 
-
-const NETSUITE_ACCOUNT_ID = process.env.NETSUITE_ACCOUNT_ID || '7913744'
-const NETSUITE_API_URL = `https://${NETSUITE_ACCOUNT_ID}.suitetalk.api.netsuite.com/services/rest/record/v1/deposit`
-const SUITEQL_URL = `https://${NETSUITE_ACCOUNT_ID}.suitetalk.api.netsuite.com/services/rest/query/v1/suiteql`
+const NETSUITE_API_URL = buildRecordUrl('deposit')
+const SUITEQL_URL = buildSuiteQLUrl()
 
 interface DepositItem { deposit: boolean; id: number }
 interface OtherItem { description: string; amount: number; account: { id: string } }

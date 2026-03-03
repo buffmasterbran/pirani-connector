@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { generateOAuthHeader } from '@/lib/netsuite'
+import { generateOAuthHeader, buildRestletUrl } from '@/lib/netsuite'
 
-const NETSUITE_ACCOUNT_ID = process.env.NETSUITE_ACCOUNT_ID || '7913744'
-const NETSUITE_RESTLET_URL = `https://${NETSUITE_ACCOUNT_ID}.restlets.api.netsuite.com/app/site/hosting/restlet.nl`
-const NETSUITE_SCRIPT_ID = process.env.NETSUITE_FIELD_INFO_SCRIPT_ID || '2811'
-const NETSUITE_DEPLOY_ID = process.env.NETSUITE_FIELD_INFO_DEPLOY_ID || '1'
+const FIELD_INFO_SCRIPT_ID = process.env.NETSUITE_FIELD_INFO_SCRIPT_ID || '2811'
+const FIELD_INFO_DEPLOY_ID = process.env.NETSUITE_FIELD_INFO_DEPLOY_ID || '1'
 
 interface FieldInfoRequest {
   recordType: string
@@ -41,7 +39,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const url = `${NETSUITE_RESTLET_URL}?script=${NETSUITE_SCRIPT_ID}&deploy=${NETSUITE_DEPLOY_ID}`
+    const url = buildRestletUrl(FIELD_INFO_SCRIPT_ID, FIELD_INFO_DEPLOY_ID)
     const authorization = generateOAuthHeader('POST', url)
 
     const response = await fetch(url, {

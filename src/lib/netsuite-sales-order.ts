@@ -655,11 +655,8 @@ export async function buildNetSuiteSalesOrderPayload(
 export async function createNetSuiteSalesOrder(
   payload: NetSuiteSalesOrderPayload
 ): Promise<{ success: boolean; salesOrderId?: string; salesOrderName?: string; error?: string }> {
-  const NETSUITE_ACCOUNT_ID = process.env.NETSUITE_ACCOUNT_ID || '7913744'
-  const NETSUITE_API_URL = `https://${NETSUITE_ACCOUNT_ID}.suitetalk.api.netsuite.com/services/rest/record/v1/salesOrder`
-
-  // Import generateOAuthHeader from netsuite.ts
-  const { generateOAuthHeader } = await import('./netsuite')
+  const { generateOAuthHeader, buildRecordUrl } = await import('./netsuite')
+  const NETSUITE_API_URL = buildRecordUrl('salesOrder')
 
   const authorization = generateOAuthHeader('POST', NETSUITE_API_URL)
 

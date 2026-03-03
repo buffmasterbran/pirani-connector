@@ -1,7 +1,7 @@
-const NETSUITE_ACCOUNT_ID = process.env.NETSUITE_ACCOUNT_ID || '7913744'
+import { buildItemUrl } from '@/lib/netsuite'
 
 export function netsuiteItemUrl(itemId: number): string {
-  return `https://${NETSUITE_ACCOUNT_ID}.app.netsuite.com/app/common/item/item.nl?id=${itemId}`
+  return buildItemUrl(itemId)
 }
 
 export function shopifyAdminProductUrl(domain: string, productGid: string): string {
