@@ -240,7 +240,7 @@ define(['N/search', 'N/https', 'N/runtime', 'N/log'], (search, https, runtime, l
     const sku = values['GROUP(itemid)']
     const name = values['GROUP(displayname)']
     const itemType = values['GROUP(type)']?.value || values['GROUP(type)']
-    const internalId = values['GROUP(internalid)']?.value || values['GROUP(internalid)']
+    const internalId = values['GROUP(internalid)']?.value || values['GROUP(internalid)'] || result.id
 
     let price = null
     const priceVal = values['MAX(unitprice.pricing)']

@@ -418,7 +418,7 @@ model ProductSyncLocationMapping {
 model ProductSyncMapping {
   id                     String                @id @default(uuid())
   storeConfigId          String
-  netsuiteItemId         Int
+  netsuiteItemId         Int?
   netsuiteSku            String
   netsuiteName           String?
   netsuiteColor          String?
