@@ -157,6 +157,9 @@ export async function syncSingleItem(
       throw new Error(`SKU ${sku} not found in sync mappings`)
     }
 
+    if (!mapping.netsuiteItemId) {
+      throw new Error(`SKU ${sku} has no NetSuite item ID`)
+    }
     const store = await getShopifyStore(storeConfigId)
     const result = await syncItems(storeConfig, store, [mapping.netsuiteItemId], log.id)
     return result
