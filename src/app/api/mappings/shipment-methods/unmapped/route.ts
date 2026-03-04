@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma'
 /**
  * GET /api/mappings/shipment-methods/unmapped
  * Returns all unique shipping methods from orders that don't have a mapping,
- * with an example order name for each.
+ * with the shipping title and an example order name for each.
  */
 export async function GET() {
   try {
@@ -15,8 +15,8 @@ export async function GET() {
       distinct: ['shippingLines'],
     })
 
-    // Parse shipping lines and extract unique shipping method codes + example order
-    const shippingMethodExamples = new Map<string, string>()
+    // Parse shipping lines and extract unique codes with title + example order
+    const shippingMethodInfo = new Map<string, { title: string | null; exampleOrder: string }>()
     orders.forEach((order) => {
       if (order.shippingLines) {
         try {
@@ -26,16 +26,21 @@ export async function GET() {
               const code = line.code || line.title
               if (code && code.trim()) {
                 const trimmed = code.trim()
-                if (!shippingMethodExamples.has(trimmed)) {
-                  shippingMethodExamples.set(trimmed, order.shopifyOrderName)
+                if (!shippingMethodInfo.has(trimmed)) {
+                  // Store the title (if different from code) and example order
+                  const title = line.title?.trim() || null
+                  shippingMethodInfo.set(trimmed, {
+                    title: title && title !== trimmed ? title : null,
+                    exampleOrder: order.shopifyOrderName,
+                  })
                 }
               }
             })
           }
         } catch {
           const code = order.shippingLines.trim()
-          if (code && !shippingMethodExamples.has(code)) {
-            shippingMethodExamples.set(code, order.shopifyOrderName)
+          if (code && !shippingMethodInfo.has(code)) {
+            shippingMethodInfo.set(code, { title: null, exampleOrder: order.shopifyOrderName })
           }
         }
       }
@@ -49,14 +54,18 @@ export async function GET() {
 
     const mappedCodes = new Set(existingMappings.map((m) => m.shopifyCode))
 
-    // Build unmapped list with example orders
-    const allCodes = Array.from(shippingMethodExamples.keys()).sort()
+    // Build unmapped list with title + example orders
+    const allCodes = Array.from(shippingMethodInfo.keys()).sort()
     const unmapped = allCodes
       .filter((code) => !mappedCodes.has(code))
-      .map((code) => ({
-        code,
-        exampleOrder: shippingMethodExamples.get(code) || null,
-      }))
+      .map((code) => {
+        const info = shippingMethodInfo.get(code)!
+        return {
+          code,
+          title: info.title,
+          exampleOrder: info.exampleOrder,
+        }
+      })
 
     return NextResponse.json({
       success: true,

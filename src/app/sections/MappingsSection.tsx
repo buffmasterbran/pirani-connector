@@ -42,7 +42,7 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
   const [isLoadingDefaultPaymentMethod, setIsLoadingDefaultPaymentMethod] = useState(false)
 
   const [shipmentMappings, setShipmentMappings] = useState<ShipmentMethodMapping[]>([])
-  const [unmappedShippingMethods, setUnmappedShippingMethods] = useState<{ code: string; exampleOrder: string | null }[]>([])
+  const [unmappedShippingMethods, setUnmappedShippingMethods] = useState<{ code: string; title: string | null; exampleOrder: string | null }[]>([])
   const [newShipmentShopifyCode, setNewShipmentShopifyCode] = useState('')
   const [newShipmentNetsuiteId, setNewShipmentNetsuiteId] = useState('')
 
@@ -1511,7 +1511,10 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
                   {unmappedShippingMethods.map((item) => (
                     <div key={item.code} className="grid grid-cols-[1fr_auto_1fr_auto] gap-3 p-3 border border-red-200 rounded-lg mb-2 items-center bg-red-50/30">
                       <div>
-                        <div className="text-red-700 font-medium text-sm">{item.code}</div>
+                        <div className="text-red-700 font-medium text-sm">
+                          {item.code}
+                          {item.title && <span className="text-slate-500 font-normal"> — {item.title}</span>}
+                        </div>
                         {item.exampleOrder && (
                           <div className="text-xs text-slate-400 mt-0.5">e.g. {item.exampleOrder}</div>
                         )}
