@@ -1699,7 +1699,38 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
                              </Select>
                              </div>
                            <div className="flex items-center">
-                             {mapping.mappingType === 'Fixed' && fieldsWithDropdowns.includes(mapping.netsuiteId) ? (
+                             {mapping.mappingType === 'Fixed' && mapping.netsuiteId === 'orderStatus' ? (
+                               <Select
+                                 value={mapping.shopifyValue || undefined}
+                                 onValueChange={(value) => {
+                                   const updated = [...orderMappings]
+                                   updated[index] = { ...updated[index], shopifyValue: value }
+                                   setOrderMappings(updated)
+                                 }}
+                               >
+                                 <SelectTrigger className="w-full">
+                                   <SelectValue placeholder="Select order status...">
+                                     {mapping.shopifyValue === 'A' ? 'Pending Approval' :
+                                      mapping.shopifyValue === 'B' ? 'Pending Fulfillment' :
+                                      mapping.shopifyValue === 'C' ? 'Partially Fulfilled' :
+                                      mapping.shopifyValue === 'E' ? 'Pending Billing/Partially Fulfilled' :
+                                      mapping.shopifyValue === 'F' ? 'Pending Billing' :
+                                      mapping.shopifyValue === 'G' ? 'Billed' :
+                                      mapping.shopifyValue === 'H' ? 'Closed' :
+                                      mapping.shopifyValue || 'Select order status...'}
+                                   </SelectValue>
+                                 </SelectTrigger>
+                                 <SelectContent>
+                                   <SelectItem value="A">Pending Approval</SelectItem>
+                                   <SelectItem value="B">Pending Fulfillment</SelectItem>
+                                   <SelectItem value="C">Partially Fulfilled</SelectItem>
+                                   <SelectItem value="E">Pending Billing/Partially Fulfilled</SelectItem>
+                                   <SelectItem value="F">Pending Billing</SelectItem>
+                                   <SelectItem value="G">Billed</SelectItem>
+                                   <SelectItem value="H">Closed</SelectItem>
+                                 </SelectContent>
+                               </Select>
+                             ) : mapping.mappingType === 'Fixed' && fieldsWithDropdowns.includes(mapping.netsuiteId) ? (
                                <Select
                                  value={extractIdFromShopifyValue(mapping.shopifyValue) || undefined}
                                  onValueChange={(value) => {

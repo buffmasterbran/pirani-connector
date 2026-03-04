@@ -55,9 +55,7 @@ export interface NetSuiteSalesOrderPayload {
   location?: {
     id: string // Location ID
   }
-  orderStatus?: {
-    id: string // Order Status ID (e.g., "B" for Pending Billing)
-  }
+  orderStatus?: string // Order Status code (A=Pending Approval, B=Pending Fulfillment, etc.)
   billingAddress?: NetSuiteInlineAddress // Inline billing address on the transaction
   shippingAddress?: NetSuiteInlineAddress // Inline shipping address on the transaction
   item: {
@@ -473,12 +471,15 @@ export async function buildNetSuiteSalesOrderPayload(
     // Handle standard NetSuite fields that need special structure
     // Record-reference fields need { id: value } structure
     const recordReferenceFields = [
-      'subsidiary', 'class', 'location', 'orderStatus', 'terms',
+      'subsidiary', 'class', 'location', 'terms',
       'partner', 'salesRep', 'department', 'leadSource', 'priceLevel',
       'territory', 'taxItem', 'account', 'customForm',
     ]
 
-    if (netsuiteFieldName === 'currency') {
+    if (netsuiteFieldName === 'orderStatus') {
+      // Order status uses letter codes directly (A=Pending Approval, B=Pending Fulfillment, etc.)
+      payload.orderStatus = value
+    } else if (netsuiteFieldName === 'currency') {
       // Currency accepts ISO code via refName, or numeric internal ID via id
       const extracted = extractNetSuiteId(value)
       if (/^\d+$/.test(extracted)) {
@@ -656,9 +657,9 @@ export async function createNetSuiteSalesOrder(
     let salesOrderId: string | undefined
     let salesOrderName: string | undefined
 
-    // Extract ID from Location header: .../salesOrder/{id}
+    // Extract ID from Location header: .../salesOrder/{id} or .../salesorder/{id}
     if (location) {
-      const match = location.match(/\/salesOrder\/(\d+)/)
+      const match = location.match(/\/salesorder\/(\d+)/i)
       if (match) {
         salesOrderId = match[1]
       }
@@ -676,6 +677,21 @@ export async function createNetSuiteSalesOrder(
         }
       } catch {
         // Response might not be JSON (204 No Content), that's okay
+      }
+    }
+
+    // If we got the ID but not the name (204 response), look it up via SuiteQL
+    if (salesOrderId && !salesOrderName) {
+      try {
+        const { executeSuiteQL } = await import('./suiteql')
+        const result = await executeSuiteQL<{ tranid: string }>(
+          `SELECT tranid FROM transaction WHERE id = ${salesOrderId}`
+        )
+        if (result.items?.length > 0) {
+          salesOrderName = result.items[0].tranid
+        }
+      } catch {
+        // Non-critical — we have the ID at least
       }
     }
 
