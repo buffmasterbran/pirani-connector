@@ -97,6 +97,7 @@ export async function POST(request: NextRequest) {
       customerWasCreated,
       warnings: errors.length > 0 ? errors : undefined,
       payload, // Include payload for debugging/review
+      responseDebug: result.responseDebug, // NetSuite response details for debugging
     })
   } catch (error) {
     console.error('❌ Error pushing order to NetSuite:', error)

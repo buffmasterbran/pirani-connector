@@ -609,7 +609,13 @@ export async function buildNetSuiteSalesOrderPayload(
  */
 export async function createNetSuiteSalesOrder(
   payload: NetSuiteSalesOrderPayload
-): Promise<{ success: boolean; salesOrderId?: string; salesOrderName?: string; error?: string }> {
+): Promise<{
+  success: boolean
+  salesOrderId?: string
+  salesOrderName?: string
+  error?: string
+  responseDebug?: { status: number; location: string | null; body: string }
+}> {
   const NETSUITE_API_URL = buildRecordUrl('salesOrder')
 
   const authorization = generateOAuthHeader('POST', NETSUITE_API_URL)
@@ -625,34 +631,33 @@ export async function createNetSuiteSalesOrder(
       body: JSON.stringify(payload),
     })
 
+    // Read response data
+    const location = response.headers.get('Location') || response.headers.get('location')
+    const responseText = await response.text()
+    const allHeaders = Object.fromEntries(response.headers.entries())
+
+    console.log(`📋 NetSuite response status: ${response.status}`)
+    console.log(`📋 All headers:`, JSON.stringify(allHeaders))
+    console.log(`📋 Location header: ${location}`)
+    console.log(`📋 Response body: ${responseText?.substring(0, 500)}`)
+
     if (!response.ok) {
-      const errorText = await response.text()
       console.error('❌ NetSuite API Error:', {
         status: response.status,
-        statusText: response.statusText,
-        headers: Object.fromEntries(response.headers.entries()),
-        body: errorText,
-        payload: JSON.stringify(payload, null, 2),
+        body: responseText,
       })
       return {
         success: false,
-        error: `NetSuite API error ${response.status}: ${errorText}`,
+        error: `NetSuite API error ${response.status}: ${responseText}`,
+        responseDebug: { status: response.status, location, body: responseText?.substring(0, 500) || '' },
       }
     }
-
-    // Get the sales order ID from Location header or response body
-    const location = response.headers.get('Location')
-    const responseText = await response.text()
-
-    console.log(`📋 NetSuite response status: ${response.status}`)
-    console.log(`📋 Location header: ${location}`)
-    console.log(`📋 Response body: ${responseText?.substring(0, 500)}`)
 
     let salesOrderId: string | undefined
     let salesOrderName: string | undefined
 
+    // Extract ID from Location header: .../salesOrder/{id}
     if (location) {
-      // Extract ID from Location header: /record/v1/salesOrder/{id}
       const match = location.match(/\/salesOrder\/(\d+)/)
       if (match) {
         salesOrderId = match[1]
@@ -670,7 +675,7 @@ export async function createNetSuiteSalesOrder(
           salesOrderName = responseData.tranId || responseData.tranid
         }
       } catch {
-        // Response might not be JSON, that's okay
+        // Response might not be JSON (204 No Content), that's okay
       }
     }
 
@@ -678,6 +683,7 @@ export async function createNetSuiteSalesOrder(
       success: true,
       salesOrderId,
       salesOrderName,
+      responseDebug: { status: response.status, location, body: responseText?.substring(0, 500) || '' },
     }
   } catch (error) {
     return {

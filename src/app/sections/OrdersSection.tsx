@@ -1770,6 +1770,16 @@ export function OrdersSection() {
                       </ul>
                     </div>
                   )}
+                  {pushWorkflow.step3.data.responseDebug && (
+                    <details className="mt-1">
+                      <summary className="cursor-pointer text-muted-foreground hover:text-foreground">NetSuite response details</summary>
+                      <div className="mt-1 bg-gray-50 border rounded p-2 space-y-1 text-[10px]">
+                        <div><span className="text-muted-foreground">HTTP Status:</span> {pushWorkflow.step3.data.responseDebug.status}</div>
+                        <div><span className="text-muted-foreground">Location Header:</span> {pushWorkflow.step3.data.responseDebug.location || '(none)'}</div>
+                        <div><span className="text-muted-foreground">Response Body:</span> {pushWorkflow.step3.data.responseDebug.body || '(empty)'}</div>
+                      </div>
+                    </details>
+                  )}
                 </div>
               )}
               {pushWorkflow.step3.status === 'error' && (
