@@ -17,7 +17,7 @@ const FIELD_QUERIES: Record<string, { name: string; query: string }> = {
   },
   shipMethod: {
     name: 'shipmethods',
-    query: "SELECT id, name, isinactive FROM shipmethod ORDER BY name"
+    query: "SELECT id, itemid AS name, isinactive FROM shipItem ORDER BY itemid"
   },
   taxCode: {
     name: 'taxcodes',
