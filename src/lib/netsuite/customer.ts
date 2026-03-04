@@ -5,13 +5,21 @@ import { prisma } from '../prisma'
 import type { NetSuiteCustomer } from './types'
 
 /**
- * Extracts a numeric ID from strings like "Online Sales (IID: 11)" or "11"
+ * Extracts a numeric ID from strings like:
+ *   "Online Sales (IID: 11)" → "11"
+ *   "Direct to Consumer (28)" → "28"
+ *   "11" → "11"
  * Returns just the numeric ID as a string, or the original value if no pattern matches
  */
 function extractNetSuiteId(value: string): string {
   if (!value) return value
+  // Pattern 1: "Something (IID: 123)" → "123"
   const iidMatch = value.match(/\(IID:\s*(\d+)\)/i)
   if (iidMatch) return iidMatch[1]
+  // Pattern 2: "Something (123)" → "123" (Custom mapping format)
+  const parenMatch = value.match(/\((\d+)\)\s*$/)
+  if (parenMatch) return parenMatch[1]
+  // Pattern 3: Already just a number
   if (/^\d+$/.test(value.trim())) return value.trim()
   return value
 }
@@ -78,34 +86,33 @@ export async function createNetSuiteCustomer(
   }
 
   // Apply CustomerFieldMappings from database
-  try {
-    const customerFieldMappings = await prisma.customerFieldMapping.findMany({
-      where: { isActive: true },
-    })
+  const customerFieldMappings = await prisma.customerFieldMapping.findMany({
+    where: { isActive: true },
+  })
 
-    for (const mapping of customerFieldMappings) {
-      const value = getCustomerMappingValue(mapping, customerData, email, shopifyCustomerId)
-      if (value === null) continue
+  console.log(`📋 Found ${customerFieldMappings.length} active CustomerFieldMapping(s)`)
 
-      const fieldName = mapping.customFieldId || mapping.netsuiteId
-      const finalValue = extractNetSuiteId(value)
+  for (const mapping of customerFieldMappings) {
+    const value = getCustomerMappingValue(mapping, customerData, email, shopifyCustomerId)
+    console.log(`   Mapping: ${mapping.mappingType} | shopifyValue="${mapping.shopifyValue}" | netsuiteId="${mapping.netsuiteId}" | customFieldId="${mapping.customFieldId}" → value="${value}"`)
+    if (value === null) continue
 
-      // Custom body fields and standard record-reference fields need { id: value }
-      if (fieldName.startsWith('custentity_')) {
+    const fieldName = mapping.customFieldId || mapping.netsuiteId
+    const finalValue = extractNetSuiteId(value)
+    console.log(`   → field="${fieldName}" finalValue="${finalValue}"`)
+
+    // Custom body fields and standard record-reference fields need { id: value }
+    if (fieldName.startsWith('custentity_')) {
+      payload[fieldName] = { id: finalValue }
+    } else {
+      // Standard fields that are record references
+      const fieldsNeedingObjectFormat = ['subsidiary', 'category', 'salesRep', 'partner', 'territory', 'priceLevel', 'terms', 'currency']
+      if (fieldsNeedingObjectFormat.includes(fieldName)) {
         payload[fieldName] = { id: finalValue }
       } else {
-        // Standard fields that are record references
-        const fieldsNeedingObjectFormat = ['subsidiary', 'category', 'salesRep', 'partner', 'territory', 'priceLevel', 'terms', 'currency']
-        if (fieldsNeedingObjectFormat.includes(fieldName)) {
-          payload[fieldName] = { id: finalValue }
-        } else {
-          payload[fieldName] = finalValue
-        }
+        payload[fieldName] = finalValue
       }
     }
-  } catch (error) {
-    console.warn('Could not apply CustomerFieldMappings:', error)
-    // Continue without mappings — base fields are enough to create the customer
   }
 
   console.log(`📤 Creating NetSuite customer for Shopify customer ${shopifyCustomerId}...`)
