@@ -42,7 +42,7 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
   const [isLoadingDefaultPaymentMethod, setIsLoadingDefaultPaymentMethod] = useState(false)
 
   const [shipmentMappings, setShipmentMappings] = useState<ShipmentMethodMapping[]>([])
-  const [unmappedShippingMethods, setUnmappedShippingMethods] = useState<string[]>([])
+  const [unmappedShippingMethods, setUnmappedShippingMethods] = useState<{ code: string; exampleOrder: string | null }[]>([])
   const [newShipmentShopifyCode, setNewShipmentShopifyCode] = useState('')
   const [newShipmentNetsuiteId, setNewShipmentNetsuiteId] = useState('')
 
@@ -726,7 +726,7 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
       if (result.success) {
         console.log(`Added shipment method mapping: ${shopifyCode} -> ${netsuiteId}`)
         setShipmentMappings(prev => [...prev, result.data])
-        setUnmappedShippingMethods(prev => prev.filter(m => m !== shopifyCode))
+        setUnmappedShippingMethods(prev => prev.filter(m => m.code !== shopifyCode))
         return true
       } else {
         console.error(`Failed to add shipment method mapping:`, result.error)
@@ -1508,13 +1508,18 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
                   </div>
 
                   {/* Unmapped shipping methods from orders */}
-                  {unmappedShippingMethods.map((shippingCode) => (
-                    <div key={shippingCode} className="grid grid-cols-[1fr_auto_1fr_auto] gap-3 p-3 border border-red-200 rounded-lg mb-2 items-center bg-red-50/30">
-                      <div className="text-red-700 font-medium text-sm">{shippingCode}</div>
+                  {unmappedShippingMethods.map((item) => (
+                    <div key={item.code} className="grid grid-cols-[1fr_auto_1fr_auto] gap-3 p-3 border border-red-200 rounded-lg mb-2 items-center bg-red-50/30">
+                      <div>
+                        <div className="text-red-700 font-medium text-sm">{item.code}</div>
+                        {item.exampleOrder && (
+                          <div className="text-xs text-slate-400 mt-0.5">e.g. {item.exampleOrder}</div>
+                        )}
+                      </div>
                       <span className="text-slate-400">&rarr;</span>
                       <Select
                         onValueChange={async (value) => {
-                          await addShipmentMethodMapping(shippingCode, value)
+                          await addShipmentMethodMapping(item.code, value)
                           await fetchShipmentMappings()
                         }}
                         onOpenChange={(open) => {
@@ -1530,9 +1535,9 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
                           {loadingFields.has('shipMethod') ? (
                             <div className="px-2 py-1.5 text-sm text-slate-500">Loading...</div>
                           ) : netsuiteListCache['shipMethod']?.length > 0 ? (
-                            netsuiteListCache['shipMethod'].map((item) => (
-                              <SelectItem key={item.id} value={item.id}>
-                                {item.name} ({item.id})
+                            netsuiteListCache['shipMethod'].map((nsItem) => (
+                              <SelectItem key={nsItem.id} value={nsItem.id}>
+                                {nsItem.name} ({nsItem.id})
                               </SelectItem>
                             ))
                           ) : (
