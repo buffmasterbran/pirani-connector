@@ -526,7 +526,7 @@ export async function buildNetSuiteSalesOrderPayload(
     const recordReferenceFields = [
       'subsidiary', 'class', 'location', 'terms',
       'partner', 'salesRep', 'department', 'leadSource', 'priceLevel',
-      'territory', 'taxItem', 'account', 'customForm',
+      'territory', 'taxItem', 'account', 'customForm', 'discountItem',
     ]
 
     if (netsuiteFieldName === 'orderStatus') {
