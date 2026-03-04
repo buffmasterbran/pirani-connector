@@ -195,11 +195,11 @@ export async function buildNetSuiteSalesOrderPayload(
     },
   })
 
-  // Fetch discount item setting
+  // Fetch discount item setting - check MappingDefaults first, then fall back to order field mapping
   const discountItemSetting = await prisma.mappingDefaults.findUnique({
     where: { settingKey: 'default_discount_item' },
   })
-  const discountItemId = discountItemSetting?.settingValue || null
+  let discountItemId = discountItemSetting?.settingValue || null
 
   // Fetch Shopify order data if needed for Order Line mappings
   let shopifyOrderDataForLineItems: any = null
@@ -427,6 +427,17 @@ export async function buildNetSuiteSalesOrderPayload(
       },
     },
   })
+
+  // If no discount item in MappingDefaults, fall back to discountItem order field mapping
+  if (!discountItemId) {
+    const discountMapping = orderFieldMappings.find(m => (m.customFieldId || m.netsuiteId) === 'discountItem' && m.isActive)
+    if (discountMapping) {
+      const rawValue = discountMapping.shopifyValue || discountMapping.shopifyCode || null
+      if (rawValue) {
+        discountItemId = extractNetSuiteId(rawValue)
+      }
+    }
+  }
 
   // Fetch Shopify order data if needed for Order Header mappings
   let shopifyOrderData: any = null
