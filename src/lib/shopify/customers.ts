@@ -98,23 +98,24 @@ export async function saveCustomerAndAddresses(order: any): Promise<void> {
     netsuiteCustomerId,
   }
 
-  // Upsert customer (with retry on unique constraint race condition)
-  try {
-    await prisma.customer.upsert({
-      where: { shopifyCustomerId },
-      create: customerData,
-      update: customerData,
-    })
-  } catch (error: any) {
-    // Handle race condition: if upsert fails with unique constraint on id,
-    // the record was likely created by a concurrent request — just update it
-    if (error?.code === 'P2002') {
-      console.log(`Customer ${shopifyCustomerId} upsert hit unique constraint, retrying as update...`)
-      await prisma.customer.update({
+  // Upsert customer with retry on auto-increment id collision
+  // PostgreSQL sequences can get out of sync after data imports/restores
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await prisma.customer.upsert({
         where: { shopifyCustomerId },
-        data: customerData,
+        create: customerData,
+        update: customerData,
       })
-    } else {
+      break
+    } catch (error: any) {
+      const isIdCollision = error?.code === 'P2002' &&
+        Array.isArray(error?.meta?.target) &&
+        error.meta.target.includes('id')
+      if (isIdCollision && attempt < 3) {
+        console.warn(`⚠️ Customer ${shopifyCustomerId} auto-increment id collision (attempt ${attempt}/3), retrying...`)
+        continue
+      }
       throw error
     }
   }

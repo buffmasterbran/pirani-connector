@@ -2,6 +2,29 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { flattenShopifyOrder, saveCustomerAndAddresses } from '@/lib/shopify'
 
+// Retry upsert on auto-increment id collision (P2002 on 'id' field)
+// PostgreSQL sequences can get out of sync after data imports/restores
+async function upsertWithRetry<T>(
+  operation: () => Promise<T>,
+  maxRetries = 3
+): Promise<T> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await operation()
+    } catch (error: any) {
+      const isIdCollision = error?.code === 'P2002' &&
+        Array.isArray(error?.meta?.target) &&
+        error.meta.target.includes('id')
+      if (isIdCollision && attempt < maxRetries) {
+        console.warn(`⚠️ Auto-increment id collision (attempt ${attempt}/${maxRetries}), retrying...`)
+        continue
+      }
+      throw error
+    }
+  }
+  throw new Error('upsertWithRetry: exhausted retries')
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -53,7 +76,7 @@ export async function POST(request: NextRequest) {
 
         let result
         try {
-          result = await prisma.orderLine.upsert({
+          result = await upsertWithRetry(() => prisma.orderLine.upsert({
             where: {
               shopifyOrderId_lineItemId: {
                 shopifyOrderId: lineShopifyOrderId,
@@ -67,13 +90,13 @@ export async function POST(request: NextRequest) {
               ...(appId !== undefined && appId !== null ? { appId } : {}),
               updatedAt: new Date(),
             },
-          })
+          }))
         } catch (error: any) {
           // If error is about unknown fields, retry without sourceName/appId
           if (error.message?.includes('sourceName') || error.message?.includes('appId') || error.message?.includes('Unknown arg')) {
             console.warn(`⚠️ Prisma client not regenerated with new fields, saving without sourceName/appId for order ${lineShopifyOrderId}`)
             const { sourceName: _, appId: __, shopifyOrderId: ___, lineItemId: ____, ...restWithoutNewFields } = line
-            result = await prisma.orderLine.upsert({
+            result = await upsertWithRetry(() => prisma.orderLine.upsert({
               where: {
                 shopifyOrderId_lineItemId: {
                   shopifyOrderId: lineShopifyOrderId,
@@ -89,7 +112,7 @@ export async function POST(request: NextRequest) {
                 ...restWithoutNewFields,
                 updatedAt: new Date(),
               },
-            })
+            }))
           } else {
             throw error
           }
