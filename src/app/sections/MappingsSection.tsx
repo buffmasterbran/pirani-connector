@@ -86,11 +86,12 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
   const [customerCustomFieldValue, setCustomerCustomFieldValue] = useState<string>('')
 
   // Fields that require dropdowns for Customer mappings
-  const customerFieldsWithDropdowns = ['currency', 'terms', 'taxCode', 'subsidiary', 'partner', 'account']
+  const customerFieldsWithDropdowns = ['account', 'currency', 'partner', 'priceLevel', 'subsidiary', 'taxCode', 'terms']
 
   // Standard NetSuite Customer fields
   const standardCustomerFields = [
     { value: 'Custom field', label: 'Custom field' },
+    { value: 'account', label: 'Account' },
     { value: 'campaignCategory', label: 'Campaign Category' },
     { value: 'category', label: 'Category' },
     { value: 'companyName', label: 'Company vs. Individual' },
@@ -103,9 +104,12 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
     { value: 'lastName', label: 'Last Name' },
     { value: 'leadSource', label: 'Lead Source' },
     { value: 'parent', label: 'Parent' },
+    { value: 'partner', label: 'Partner (Rep Group)' },
+    { value: 'priceLevel', label: 'Price Level' },
     { value: 'resaleNumber', label: 'Resale Number' },
     { value: 'salesRep', label: 'Sales Rep' },
     { value: 'shipComplete', label: 'Ship Complete' },
+    { value: 'subsidiary', label: 'Subsidiary' },
     { value: 'taxCode', label: 'Tax Code' },
     { value: 'terms', label: 'Terms' },
     { value: 'territory', label: 'Territory' },
