@@ -41,17 +41,9 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
   const [defaultPaymentMethod, setDefaultPaymentMethod] = useState<string>('')
   const [isLoadingDefaultPaymentMethod, setIsLoadingDefaultPaymentMethod] = useState(false)
 
-  const [shipmentMappings, setShipmentMappings] = useState<ShipmentMethodMapping[]>([
-    { id: '1', shopifyCode: 'free_shipping', netsuiteId: '293', isActive: true },
-    { id: '2', shopifyCode: 'standard_shipping', netsuiteId: '288', isActive: true },
-    { id: '3', shopifyCode: 'local_pickup', netsuiteId: '1035', isActive: true },
-    { id: '4', shopifyCode: 'asheville', netsuiteId: '1035', isActive: true },
-    { id: '5', shopifyCode: 'flat_rate', netsuiteId: '288', isActive: true },
-    { id: '6', shopifyCode: 'ups_ground', netsuiteId: '4', isActive: true },
-    { id: '7', shopifyCode: 'dhl', netsuiteId: '1222', isActive: true },
-    { id: '8', shopifyCode: 'dhl_express_worldwide', netsuiteId: '1222', isActive: true },
-    { id: '9', shopifyCode: 'economy_international', netsuiteId: '1036', isActive: true }
-  ])
+  const [shipmentMappings, setShipmentMappings] = useState<ShipmentMethodMapping[]>([])
+  const [newShipmentShopifyCode, setNewShipmentShopifyCode] = useState('')
+  const [newShipmentNetsuiteId, setNewShipmentNetsuiteId] = useState('')
 
   const [orderMappings, setOrderMappings] = useState<OrderFieldMapping[]>([])
 
@@ -1484,61 +1476,71 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
           <Card>
             <CardHeader>
               <CardTitle>Shipment Methods</CardTitle>
+              <p className="text-sm text-slate-500">Map Shopify shipping method codes to NetSuite shipment method IDs. The Shopify code must match exactly (e.g. &quot;Flat Rate&quot;, &quot;Free Shipping&quot;).</p>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <span className="text-sm text-slate-600">Default shipment method to post to when no match found</span>
-                    <Database className="h-4 w-4 text-slate-400" />
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <div className="w-48 p-2 border rounded bg-gray-50 text-sm text-gray-500">
-                      Select component temporarily disabled
-                    </div>
-                    <Button variant="ghost" size="sm">
-                      <Database className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-
                 <div className="border-t pt-4">
-                  <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-lg mb-3">
-                    <div className="font-medium text-slate-700 flex items-center space-x-2">
-                      <span>Shopify-default Shipment Methods</span>
-                      <Database className="h-4 w-4 text-slate-400" />
-                    </div>
-                    <div className="font-medium text-slate-700">NetSuite Shipment Methods</div>
+                  <div className="grid grid-cols-[1fr_auto_1fr_auto] gap-3 p-3 bg-slate-50 rounded-lg mb-3 items-center">
+                    <div className="font-medium text-slate-700 text-sm">Shopify Shipping Code</div>
+                    <div></div>
+                    <div className="font-medium text-slate-700 text-sm">NetSuite Ship Method ID</div>
+                    <div></div>
                   </div>
 
-                  {shipmentMappings.map((mapping, index) => (
-                    <div key={index} className="grid grid-cols-2 gap-4 p-4 border rounded-lg mb-2">
+                  {shipmentMappings.map((mapping) => (
+                    <div key={mapping.id} className="grid grid-cols-[1fr_auto_1fr_auto] gap-3 p-3 border rounded-lg mb-2 items-center">
                       <div className="text-slate-700 font-mono text-sm">{mapping.shopifyCode}</div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-slate-400">&rarr;</span>
-                        <span className="text-slate-600 font-mono text-sm">{mapping.netsuiteId}</span>
-                        <Button variant="ghost" size="sm" onClick={() => openDeleteConfirmDialog('Shipment Method', mapping.shopifyCode, mapping.id.toString())}>
-                          <Trash2 className="h-4 w-4 text-red-500" />
-                        </Button>
-                      </div>
+                      <span className="text-slate-400">&rarr;</span>
+                      <div className="text-slate-600 font-mono text-sm">{mapping.netsuiteId}</div>
+                      <Button variant="ghost" size="sm" onClick={() => openDeleteConfirmDialog('Shipment Method', mapping.shopifyCode, mapping.id.toString())}>
+                        <Trash2 className="h-4 w-4 text-red-500" />
+                      </Button>
                     </div>
                   ))}
-                </div>
 
-                {/* Advanced Options Section */}
-                <div className="border-t pt-4">
-                  <div className="space-y-3">
-                    <h4 className="font-medium text-slate-700">Advanced options</h4>
-                    <div className="flex items-center space-x-2">
-                      <input type="checkbox" className="w-4 h-4" />
-                      <span className="text-sm text-slate-600">Filter orders by weight/total</span>
+                  {shipmentMappings.length === 0 && (
+                    <div className="text-center py-6 text-sm text-slate-400 border rounded-lg mb-2">
+                      No shipment method mappings configured. Add one below.
                     </div>
-                  </div>
-                </div>
+                  )}
 
-                {/* Need Help Link */}
-                <div className="pt-4">
-                  <a href="#" className="text-sm text-blue-600 hover:underline">Need help?</a>
+                  {/* Add new mapping row */}
+                  <div className="grid grid-cols-[1fr_auto_1fr_auto] gap-3 p-3 border-2 border-dashed border-blue-200 rounded-lg items-center bg-blue-50/30">
+                    <Input
+                      placeholder='e.g. "Flat Rate"'
+                      value={newShipmentShopifyCode}
+                      onChange={(e) => setNewShipmentShopifyCode(e.target.value)}
+                      className="font-mono text-sm"
+                    />
+                    <span className="text-slate-400">&rarr;</span>
+                    <Input
+                      placeholder="NetSuite ID (e.g. 288)"
+                      value={newShipmentNetsuiteId}
+                      onChange={(e) => setNewShipmentNetsuiteId(e.target.value)}
+                      className="font-mono text-sm"
+                    />
+                    <Button
+                      size="sm"
+                      disabled={!newShipmentShopifyCode.trim() || !newShipmentNetsuiteId.trim()}
+                      onClick={async () => {
+                        const success = await addShipmentMethodMapping(
+                          newShipmentShopifyCode.trim(),
+                          newShipmentNetsuiteId.trim()
+                        )
+                        if (success) {
+                          setNewShipmentShopifyCode('')
+                          setNewShipmentNetsuiteId('')
+                          await fetchShipmentMappings()
+                        } else {
+                          alert('Failed to add shipment method mapping')
+                        }
+                      }}
+                      className="bg-blue-600 hover:bg-blue-700 text-white"
+                    >
+                      Add
+                    </Button>
+                  </div>
                 </div>
               </div>
             </CardContent>
