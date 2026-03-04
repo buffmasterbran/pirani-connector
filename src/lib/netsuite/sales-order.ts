@@ -76,7 +76,8 @@ export interface NetSuiteSalesOrderPayload {
   shippingCost?: number
   total?: number
   currency?: {
-    id?: string // Currency code (e.g., "USD")
+    id?: string // Currency internal ID (numeric)
+    refName?: string // Currency ISO code (e.g., "USD")
   }
   // Additional optional fields from NetSuite API
   shipDate?: string // Ship Date (YYYY-MM-DD)
@@ -470,19 +471,23 @@ export async function buildNetSuiteSalesOrderPayload(
     const netsuiteFieldName = mapping.customFieldId || mapping.netsuiteId
 
     // Handle standard NetSuite fields that need special structure
-    // For fields that use { id: value } structure, extract numeric ID from display strings
-    if (netsuiteFieldName === 'subsidiary') {
-      payload.subsidiary = { id: extractNetSuiteId(value) }
-    } else if (netsuiteFieldName === 'class') {
-      payload.class = { id: extractNetSuiteId(value) }
-    } else if (netsuiteFieldName === 'location') {
-      payload.location = { id: extractNetSuiteId(value) }
-    } else if (netsuiteFieldName === 'orderStatus') {
-      payload.orderStatus = { id: extractNetSuiteId(value) }
-    } else if (netsuiteFieldName === 'currency') {
-      payload.currency = { id: value.toUpperCase() }
-    } else if (netsuiteFieldName === 'terms') {
-      payload.terms = { id: extractNetSuiteId(value) }
+    // Record-reference fields need { id: value } structure
+    const recordReferenceFields = [
+      'subsidiary', 'class', 'location', 'orderStatus', 'terms',
+      'partner', 'salesRep', 'department', 'leadSource', 'priceLevel',
+      'territory', 'taxItem', 'account', 'customForm',
+    ]
+
+    if (netsuiteFieldName === 'currency') {
+      // Currency accepts ISO code via refName, or numeric internal ID via id
+      const extracted = extractNetSuiteId(value)
+      if (/^\d+$/.test(extracted)) {
+        payload.currency = { id: extracted }
+      } else {
+        payload.currency = { refName: extracted.toUpperCase() }
+      }
+    } else if (recordReferenceFields.includes(netsuiteFieldName)) {
+      ;(payload as any)[netsuiteFieldName] = { id: extractNetSuiteId(value) }
     } else if (netsuiteFieldName === 'shipDate') {
       payload.shipDate = value
     } else if (netsuiteFieldName === 'memo') {
@@ -503,18 +508,12 @@ export async function buildNetSuiteSalesOrderPayload(
       payload.shippingCost = parseFloat(value) || undefined
     } else if (netsuiteFieldName === 'total') {
       payload.total = parseFloat(value) || undefined
+    } else if (netsuiteFieldName.startsWith('custbody_') || netsuiteFieldName.startsWith('custcol_')) {
+      // Custom fields — use { id: value } for select fields
+      ;(payload as any)[netsuiteFieldName] = { id: extractNetSuiteId(value) }
     } else {
-      // Custom fields or other fields - check if it's a custom field (starts with custbody_ or custcol_)
-      if (netsuiteFieldName.startsWith('custbody_') || netsuiteFieldName.startsWith('custcol_')) {
-        // Custom fields typically need { id: value } structure for select fields
-        // For text/date fields, they might need direct value assignment
-        // We'll use { id: value } structure as default, which works for most custom field types
-        // Extract numeric ID from display strings like "Online Sales (IID: 11)" -> "11"
-        ;(payload as any)[netsuiteFieldName] = { id: extractNetSuiteId(value) }
-      } else {
-        // For other fields, try to assign directly
-        ;(payload as any)[netsuiteFieldName] = value
-      }
+      // Other fields — assign directly
+      ;(payload as any)[netsuiteFieldName] = value
     }
   }
 
@@ -552,10 +551,10 @@ export async function buildNetSuiteSalesOrderPayload(
     errors.push(`No shipping address found - NetSuite will use customer default`)
   }
 
-  // Add currency if available
-  if (firstLine.currency) {
+  // Add currency if available (use refName for ISO code like "USD", not id which needs a numeric internal ID)
+  if (firstLine.currency && !payload.currency) {
     payload.currency = {
-      id: firstLine.currency.toUpperCase(), // NetSuite expects uppercase (e.g., "USD")
+      refName: firstLine.currency.toUpperCase(),
     }
   }
 
