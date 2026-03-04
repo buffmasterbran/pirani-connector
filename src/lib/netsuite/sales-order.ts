@@ -278,6 +278,20 @@ export async function buildNetSuiteSalesOrderPayload(
   let perLineDiscountTotal = 0
   const items = orderLines
     .filter((line) => {
+      // Filter out removed/cancelled items (current_quantity = 0)
+      let effectiveQuantity = line.lineItemQuantity
+      if (line.lineItemMetadata) {
+        try {
+          const meta = JSON.parse(line.lineItemMetadata)
+          if (meta.current_quantity !== undefined) {
+            effectiveQuantity = Number(meta.current_quantity)
+          }
+        } catch { /* use stored quantity */ }
+      }
+      if (effectiveQuantity === 0) {
+        errors.push(`Line item "${line.lineItemSku || line.lineItemName}" has quantity 0 (removed/cancelled) - skipping`)
+        return false
+      }
       // Filter out lines without SKU or name
       if (!line.lineItemSku && !line.lineItemName) {
         errors.push(`Line item "${line.lineItemId}" has no SKU or name - skipping`)
@@ -300,10 +314,21 @@ export async function buildNetSuiteSalesOrderPayload(
         itemObj.itemid = line.lineItemSku
       }
 
+      // Use current_quantity from metadata if available (handles order edits)
+      let lineQuantity = line.lineItemQuantity || 1
+      if (line.lineItemMetadata) {
+        try {
+          const meta = JSON.parse(line.lineItemMetadata)
+          if (meta.current_quantity !== undefined && meta.current_quantity > 0) {
+            lineQuantity = Number(meta.current_quantity)
+          }
+        } catch { /* use stored quantity */ }
+      }
+
       // Build the base line item
       const lineItem: any = {
         item: itemObj,
-        quantity: line.lineItemQuantity || 1,
+        quantity: lineQuantity,
         rate: line.lineItemPrice || undefined,
         description: line.lineItemName || undefined,
       }

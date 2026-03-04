@@ -70,7 +70,7 @@ export function flattenShopifyOrder(order: any): FlattenedOrderLine[] {
   }
 
   return lineItems.map((item: any, index: number) => {
-    const quantity = Number(item.quantity ?? 0)
+    const quantity = Number(item.current_quantity ?? item.quantity ?? 0)
     const unitPrice =
       parseFloatOrNull(item.price) ?? parseFloatOrNull(item.price_set?.shop_money?.amount) ?? 0
     const total = parseFloatOrNull(item.total ?? item.line_price) ?? unitPrice * quantity
