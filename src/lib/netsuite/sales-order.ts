@@ -622,7 +622,6 @@ export async function createNetSuiteSalesOrder(
         'Content-Type': 'application/json',
         Authorization: authorization,
         Accept: 'application/json',
-        Prefer: 'respond-async', // Use async for better performance
       },
       body: JSON.stringify(payload),
     })
@@ -646,6 +645,10 @@ export async function createNetSuiteSalesOrder(
     const location = response.headers.get('Location')
     const responseText = await response.text()
 
+    console.log(`📋 NetSuite response status: ${response.status}`)
+    console.log(`📋 Location header: ${location}`)
+    console.log(`📋 Response body: ${responseText?.substring(0, 500)}`)
+
     let salesOrderId: string | undefined
     let salesOrderName: string | undefined
 
@@ -664,8 +667,8 @@ export async function createNetSuiteSalesOrder(
         if (responseData.id) {
           salesOrderId = String(responseData.id)
         }
-        if (responseData.tranid) {
-          salesOrderName = responseData.tranid
+        if (responseData.tranId || responseData.tranid) {
+          salesOrderName = responseData.tranId || responseData.tranid
         }
       } catch {
         // Response might not be JSON, that's okay
