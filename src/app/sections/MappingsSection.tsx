@@ -217,7 +217,7 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
   const [loadingFields, setLoadingFields] = useState<Set<string>>(new Set())
 
   // Fields that require dropdown lookups
-  const fieldsWithDropdowns = ['class', 'location', 'partner', 'subsidiary', 'currency', 'terms', 'department', 'account', 'shipMethod', 'taxCode', 'priceLevel', 'units']
+  const fieldsWithDropdowns = ['class', 'location', 'partner', 'subsidiary', 'currency', 'terms', 'department', 'account', 'shipMethod', 'taxCode', 'priceLevel', 'units', 'discountItem']
 
   // Payout mappings state
   const [payoutMappings, setPayoutMappings] = useState<Array<{
