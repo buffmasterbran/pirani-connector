@@ -28,6 +28,8 @@ interface Order {
   currency: string
   created_at: string
   netsuiteDepositNumber?: string | null
+  netsuiteSalesOrderId?: string | null
+  netsuiteSalesOrderName?: string | null
   inDatabase?: boolean
   addedToDatabaseAt?: string
   customer?: {
@@ -855,7 +857,7 @@ export function OrdersSection() {
 
     // NetSuite status filter
     if (!orderFilters.netsuiteStatus.all) {
-      const hasNetSuiteId = !!order.netsuiteDepositNumber
+      const hasNetSuiteId = !!order.netsuiteDepositNumber || !!order.netsuiteSalesOrderId
       const matchesNetSuite = (orderFilters.netsuiteStatus.pushed && hasNetSuiteId) ||
                              (orderFilters.netsuiteStatus.not_pushed && !hasNetSuiteId)
       if (!matchesNetSuite) return false
@@ -1055,6 +1057,17 @@ export function OrdersSection() {
                             {'✓'} In DB
                           </span>
                         )}
+                        {order.netsuiteSalesOrderId && (
+                          <a
+                            href={`https://7913744.app.netsuite.com/app/accounting/transactions/salesord.nl?id=${order.netsuiteSalesOrderId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 hover:bg-purple-200 cursor-pointer transition-colors"
+                            title="View Sales Order in NetSuite"
+                          >
+                            {'✓'} SO: {order.netsuiteSalesOrderName || order.netsuiteSalesOrderId}
+                          </a>
+                        )}
                         {order.netsuiteDepositNumber && (
                           <button
                             onClick={() => openEditNetSuiteIdDialog(order)}
@@ -1073,7 +1086,7 @@ export function OrdersSection() {
                             {'⚠'} Mapping Error
                           </button>
                         )}
-                        {order.inDatabase && !order.netsuiteDepositNumber && (
+                        {order.inDatabase && !order.netsuiteDepositNumber && !order.netsuiteSalesOrderId && (
                           <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
                             Ready for NS
                           </span>
@@ -1100,7 +1113,7 @@ export function OrdersSection() {
                         >
                           Order Info
                         </Button>
-                        {order.inDatabase && !order.netsuiteDepositNumber && (
+                        {order.inDatabase && !order.netsuiteSalesOrderId && (
                           <>
                             <Button
                               size="sm"
@@ -1118,6 +1131,18 @@ export function OrdersSection() {
                               Add NS ID
                             </Button>
                           </>
+                        )}
+                        {order.netsuiteSalesOrderId && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => window.open(`https://7913744.app.netsuite.com/app/accounting/transactions/salesord.nl?id=${order.netsuiteSalesOrderId}`, '_blank', 'noopener,noreferrer')}
+                            className="text-xs flex items-center gap-1"
+                            title="View Sales Order in NetSuite"
+                          >
+                            <ArrowUpRight className="h-3 w-3" />
+                            View in NetSuite
+                          </Button>
                         )}
                         {order.inDatabase && (
                           <Button
