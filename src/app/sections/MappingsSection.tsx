@@ -1167,6 +1167,10 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
       fetchPaymentMethodNetSuiteList()
       fetchDefaultPaymentMethod()
     }
+    if (activeMappingTab === 'Shipment') {
+      fetchShipmentMappings()
+      fetchNetSuiteListForField('shipMethod')
+    }
   }, [activeMappingTab])
 
   // Fetch NetSuite list when a field requiring dropdown is selected
@@ -1488,16 +1492,22 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
                     <div></div>
                   </div>
 
-                  {shipmentMappings.map((mapping) => (
-                    <div key={mapping.id} className="grid grid-cols-[1fr_auto_1fr_auto] gap-3 p-3 border rounded-lg mb-2 items-center">
-                      <div className="text-slate-700 font-mono text-sm">{mapping.shopifyCode}</div>
-                      <span className="text-slate-400">&rarr;</span>
-                      <div className="text-slate-600 font-mono text-sm">{mapping.netsuiteId}</div>
-                      <Button variant="ghost" size="sm" onClick={() => openDeleteConfirmDialog('Shipment Method', mapping.shopifyCode, mapping.id.toString())}>
-                        <Trash2 className="h-4 w-4 text-red-500" />
-                      </Button>
-                    </div>
-                  ))}
+                  {shipmentMappings.map((mapping) => {
+                    const cachedItems = netsuiteListCache['shipMethod'] || []
+                    const matchedItem = cachedItems.find(item => item.id === mapping.netsuiteId)
+                    return (
+                      <div key={mapping.id} className="grid grid-cols-[1fr_auto_1fr_auto] gap-3 p-3 border rounded-lg mb-2 items-center">
+                        <div className="text-slate-700 font-mono text-sm">{mapping.shopifyCode}</div>
+                        <span className="text-slate-400">&rarr;</span>
+                        <div className="text-slate-600 text-sm">
+                          {matchedItem ? `${matchedItem.name} (${mapping.netsuiteId})` : mapping.netsuiteId}
+                        </div>
+                        <Button variant="ghost" size="sm" onClick={() => openDeleteConfirmDialog('Shipment Method', mapping.shopifyCode, mapping.id.toString())}>
+                          <Trash2 className="h-4 w-4 text-red-500" />
+                        </Button>
+                      </div>
+                    )
+                  })}
 
                   {shipmentMappings.length === 0 && (
                     <div className="text-center py-6 text-sm text-slate-400 border rounded-lg mb-2">
@@ -1514,12 +1524,32 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
                       className="font-mono text-sm"
                     />
                     <span className="text-slate-400">&rarr;</span>
-                    <Input
-                      placeholder="NetSuite ID (e.g. 288)"
+                    <Select
                       value={newShipmentNetsuiteId}
-                      onChange={(e) => setNewShipmentNetsuiteId(e.target.value)}
-                      className="font-mono text-sm"
-                    />
+                      onValueChange={setNewShipmentNetsuiteId}
+                      onOpenChange={(open) => {
+                        if (open && !netsuiteListCache['shipMethod']) {
+                          fetchNetSuiteListForField('shipMethod')
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="w-full text-sm">
+                        <SelectValue placeholder={loadingFields.has('shipMethod') ? 'Loading...' : 'Select ship method...'} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {loadingFields.has('shipMethod') ? (
+                          <div className="px-2 py-1.5 text-sm text-slate-500">Loading...</div>
+                        ) : netsuiteListCache['shipMethod']?.length > 0 ? (
+                          netsuiteListCache['shipMethod'].map((item) => (
+                            <SelectItem key={item.id} value={item.id}>
+                              {item.name} ({item.id})
+                            </SelectItem>
+                          ))
+                        ) : (
+                          <div className="px-2 py-1.5 text-sm text-slate-500">Click to load ship methods...</div>
+                        )}
+                      </SelectContent>
+                    </Select>
                     <Button
                       size="sm"
                       disabled={!newShipmentShopifyCode.trim() || !newShipmentNetsuiteId.trim()}
