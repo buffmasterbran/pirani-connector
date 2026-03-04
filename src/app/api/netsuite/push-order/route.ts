@@ -24,20 +24,20 @@ export async function POST(request: NextRequest) {
 
     console.log(`🚀 Building NetSuite sales order payload for Shopify order: ${shopifyOrderId}`)
 
-    // Build the payload
-    const { payload, errors } = await buildNetSuiteSalesOrderPayload(shopifyOrderId)
+    // Build the payload (resolveCustomer is called internally — 3-tier lookup/create)
+    const { payload, errors, customerWasCreated } = await buildNetSuiteSalesOrderPayload(shopifyOrderId)
 
     // Log any warnings/errors
     if (errors.length > 0) {
       console.warn(`⚠️ Warnings while building payload:`, errors)
     }
 
-    // Validate critical fields
+    // Validate critical fields — customer resolution is now automatic, but can still fail
     if (!payload.entity.id) {
       return NextResponse.json(
         {
           success: false,
-          error: 'Customer does not have a NetSuite ID. Please ensure the customer has been matched to NetSuite.',
+          error: 'Could not resolve NetSuite customer. Check warnings for details.',
           warnings: errors,
         },
         { status: 400 }
@@ -94,6 +94,7 @@ export async function POST(request: NextRequest) {
       success: true,
       salesOrderId: result.salesOrderId,
       salesOrderName: result.salesOrderName,
+      customerWasCreated,
       warnings: errors.length > 0 ? errors : undefined,
       payload, // Include payload for debugging/review
     })
@@ -130,7 +131,7 @@ export async function GET(request: NextRequest) {
 
     console.log(`🔍 Previewing NetSuite sales order payload for Shopify order: ${shopifyOrderId}`)
 
-    const { payload, errors } = await buildNetSuiteSalesOrderPayload(shopifyOrderId)
+    const { payload, errors, customerWasCreated } = await buildNetSuiteSalesOrderPayload(shopifyOrderId)
 
     // Fetch customer and address details for preview
     const orderLines = await prisma.orderLine.findMany({
@@ -206,14 +207,15 @@ export async function GET(request: NextRequest) {
       success: true,
       payload,
       customerInfo,
+      customerWasCreated,
       addressInfo,
       warnings: errors.length > 0 ? errors : undefined,
       validation: {
         hasCustomerId: !!payload.entity.id,
-        hasBillingAddress: !!payload.billAddressList?.id,
-        hasShippingAddress: !!payload.shipAddressList?.id,
+        hasBillingAddress: !!payload.billingAddress,
+        hasShippingAddress: !!payload.shippingAddress,
         itemCount: payload.item.items.length,
-        allItemsHaveSku: payload.item.items.every((item) => !!item.item.itemid),
+        allItemsHaveSku: payload.item.items.every((item) => !!item.item.refName),
       },
     })
   } catch (error) {

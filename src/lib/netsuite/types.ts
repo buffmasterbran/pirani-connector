@@ -73,3 +73,19 @@ export interface NetSuiteSuiteQLResponse<T = any> {
   offset: number
   totalResults: number
 }
+
+/**
+ * Inline address on a NetSuite transaction (sales order, invoice, etc.)
+ * These are transaction-level addresses that DON'T modify the customer's address book.
+ */
+export interface NetSuiteInlineAddress {
+  addr1?: string | null
+  addr2?: string | null
+  city?: string | null
+  state?: string | null
+  zip?: string | null
+  country?: string | null // ISO 2-letter code (e.g., "US") — NetSuite REST API accepts this
+  addressee?: string | null // Full name of the addressee
+  addrPhone?: string | null
+  attention?: string | null
+}

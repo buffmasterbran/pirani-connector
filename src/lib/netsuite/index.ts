@@ -24,7 +24,7 @@ export { executeSuiteQL, fetchNetSuiteList } from './suiteql'
 export { fetchNetSuiteTransactions, matchNetSuiteTransactions } from './transactions'
 
 // Customer
-export { findNetSuiteCustomerByEmail } from './customer'
+export { findNetSuiteCustomerByEmail, resolveCustomer, createNetSuiteCustomer } from './customer'
 
 // Address
 export { findNetSuiteAddressesByCustomerId, matchShopifyAddressToNetSuite } from './address'
@@ -45,5 +45,6 @@ export type {
   NetSuiteTransactionRequest,
   NetSuiteCustomer,
   NetSuiteAddress,
+  NetSuiteInlineAddress,
   NetSuiteSuiteQLResponse,
 } from './types'

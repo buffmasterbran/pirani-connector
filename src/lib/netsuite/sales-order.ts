@@ -1,7 +1,8 @@
 import { prisma } from '../prisma'
-import { findNetSuiteAddressesByCustomerId, matchShopifyAddressToNetSuite } from './address'
+import { resolveCustomer } from './customer'
 import { generateOAuthHeader } from './oauth'
 import { buildRecordUrl } from './constants'
+import type { NetSuiteInlineAddress } from './types'
 
 /**
  * Extracts the numeric ID from strings like "Online Sales (IID: 11)" or "11"
@@ -55,12 +56,8 @@ export interface NetSuiteSalesOrderPayload {
   orderStatus?: {
     id: string // Order Status ID (e.g., "B" for Pending Billing)
   }
-  billAddressList?: {
-    id: string // NetSuite Billing Address Internal ID (NetSuite accepts both "billAddressList" and "billaddresslist")
-  }
-  shipAddressList?: {
-    id: string // NetSuite Shipping Address Internal ID (NetSuite accepts both "shipAddressList" and "shipaddresslist")
-  }
+  billingAddress?: NetSuiteInlineAddress // Inline billing address on the transaction
+  shippingAddress?: NetSuiteInlineAddress // Inline shipping address on the transaction
   item: {
     items: Array<{
       item: {
@@ -94,7 +91,7 @@ export interface NetSuiteSalesOrderPayload {
  */
 export async function buildNetSuiteSalesOrderPayload(
   shopifyOrderId: string
-): Promise<{ payload: NetSuiteSalesOrderPayload; errors: string[] }> {
+): Promise<{ payload: NetSuiteSalesOrderPayload; errors: string[]; customerWasCreated: boolean }> {
   const errors: string[] = []
 
   // Fetch all order lines for this order
@@ -115,8 +112,11 @@ export async function buildNetSuiteSalesOrderPayload(
   // Get order data from first line (all lines share the same order-level data)
   const firstLine = orderLines[0]
 
-  // Fetch customer data
-  // Note: OrderLine.customerId is the Shopify customer ID string
+  // Resolve customer: 3-tier lookup (local DB → SuiteQL email → create in NetSuite)
+  let netsuiteCustomerId: string | null = null
+  let customerWasCreated = false
+
+  // Fetch customer from local DB for address data
   let customer = null
   if (firstLine.customerId) {
     customer = await prisma.customer.findUnique({
@@ -136,87 +136,29 @@ export async function buildNetSuiteSalesOrderPayload(
     })
   }
 
-  if (!customer) {
-    errors.push(`Customer not found for Shopify customer ID: ${firstLine.customerId || 'unknown'}`)
-  }
-
-  if (!customer?.netsuiteCustomerId) {
-    errors.push(`Customer ${customer?.email || firstLine.customerId} does not have a NetSuite customer ID`)
-  }
-
-  // Find billing and shipping addresses
-  let billingAddress = customer?.addresses.find((addr) => addr.isDefaultBilling)
-  let shippingAddress = customer?.addresses.find((addr) => addr.isDefaultShipping)
-
-  // If customer has NetSuite ID but addresses are missing NetSuite IDs, try to look them up
-  if (customer?.netsuiteCustomerId) {
-    // Check if we need to look up addresses
-    const needsBillingLookup = billingAddress && !billingAddress.netsuiteAddressId
-    const needsShippingLookup = shippingAddress && !shippingAddress.netsuiteAddressId
-
-    if (needsBillingLookup || needsShippingLookup) {
-      try {
-        console.log(`🔍 Looking up NetSuite addresses for customer ${customer.netsuiteCustomerId}...`)
-        const netsuiteAddresses = await findNetSuiteAddressesByCustomerId(customer.netsuiteCustomerId)
-        console.log(`✅ Found ${netsuiteAddresses.length} NetSuite address(es) for customer ${customer.netsuiteCustomerId}`)
-
-        // Try to match billing address
-        if (needsBillingLookup && billingAddress) {
-          const matchedId = matchShopifyAddressToNetSuite(
-            {
-              address1: billingAddress.address1,
-              city: billingAddress.city,
-              zip: billingAddress.zip,
-              province: billingAddress.province,
-              country: billingAddress.country,
-            },
-            netsuiteAddresses
-          )
-          if (matchedId) {
-            console.log(`✅ Matched billing address to NetSuite address ID: ${matchedId}`)
-            // Update the address in database
-            await prisma.customerAddress.update({
-              where: { id: billingAddress.id },
-              data: { netsuiteAddressId: matchedId },
-            })
-            // Update local reference
-            billingAddress.netsuiteAddressId = matchedId
-          } else {
-            console.log(`⚠️ Could not match billing address to NetSuite address`)
-          }
+  if (!firstLine.customerId) {
+    errors.push(`Order has no customer ID`)
+  } else {
+    try {
+      const result = await resolveCustomer(
+        firstLine.customerId,
+        firstLine.customerEmail,
+        {
+          firstName: customer?.firstName,
+          lastName: customer?.lastName,
+          phone: customer?.phone,
         }
-
-        // Try to match shipping address
-        if (needsShippingLookup && shippingAddress) {
-          const matchedId = matchShopifyAddressToNetSuite(
-            {
-              address1: shippingAddress.address1,
-              city: shippingAddress.city,
-              zip: shippingAddress.zip,
-              province: shippingAddress.province,
-              country: shippingAddress.country,
-            },
-            netsuiteAddresses
-          )
-          if (matchedId) {
-            console.log(`✅ Matched shipping address to NetSuite address ID: ${matchedId}`)
-            // Update the address in database
-            await prisma.customerAddress.update({
-              where: { id: shippingAddress.id },
-              data: { netsuiteAddressId: matchedId },
-            })
-            // Update local reference
-            shippingAddress.netsuiteAddressId = matchedId
-          } else {
-            console.log(`⚠️ Could not match shipping address to NetSuite address`)
-          }
-        }
-      } catch (error) {
-        console.warn(`⚠️ Could not look up NetSuite addresses:`, error)
-        errors.push(`Could not look up NetSuite addresses: ${error instanceof Error ? error.message : 'Unknown error'}`)
-      }
+      )
+      netsuiteCustomerId = result.netsuiteCustomerId
+      customerWasCreated = result.wasCreated
+    } catch (error) {
+      errors.push(`Could not resolve NetSuite customer: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
+
+  // Get billing and shipping addresses from local DB
+  const billingAddress = customer?.addresses.find((addr) => addr.isDefaultBilling)
+  const shippingAddress = customer?.addresses.find((addr) => addr.isDefaultShipping)
 
   // Fetch PaymentMethodMapping for payment method
   const paymentMethodMappings = await prisma.paymentMethodMapping.findMany({
@@ -499,7 +441,7 @@ export async function buildNetSuiteSalesOrderPayload(
   // Build the payload
   const payload: NetSuiteSalesOrderPayload = {
     entity: {
-      id: customer?.netsuiteCustomerId || '',
+      id: netsuiteCustomerId || '',
     },
     tranDate: formattedDate,
     tranId: firstLine.shopifyOrderName.replace('#', ''), // Remove # from order name
@@ -574,28 +516,38 @@ export async function buildNetSuiteSalesOrderPayload(
     }
   }
 
-  // Add billing address if available
-  // Note: NetSuite will use customer's default billing address if not specified
-  if (billingAddress?.netsuiteAddressId) {
-    payload.billAddressList = {
-      id: billingAddress.netsuiteAddressId,
+  // Add inline billing address (transaction-level, doesn't modify customer's address book)
+  if (billingAddress) {
+    payload.billingAddress = {
+      addr1: billingAddress.address1,
+      addr2: billingAddress.address2,
+      city: billingAddress.city,
+      state: billingAddress.province,
+      zip: billingAddress.zip,
+      country: billingAddress.countryCode || billingAddress.country, // NetSuite REST API accepts ISO 2-letter codes
+      addressee: `${billingAddress.firstName || ''} ${billingAddress.lastName || ''}`.trim() || undefined,
+      addrPhone: billingAddress.phone,
     }
-  } else if (billingAddress) {
-    // Address exists but no NetSuite ID - NetSuite will use customer default
-    console.warn(`⚠️ Billing address found but missing NetSuite address ID. NetSuite will use customer's default billing address.`)
-    errors.push(`Billing address found but missing NetSuite address ID - will use customer default`)
+  } else {
+    console.warn(`⚠️ No billing address found for this order`)
+    errors.push(`No billing address found - NetSuite will use customer default`)
   }
 
-  // Add shipping address if available
-  // Note: NetSuite will use customer's default shipping address if not specified
-  if (shippingAddress?.netsuiteAddressId) {
-    payload.shipAddressList = {
-      id: shippingAddress.netsuiteAddressId,
+  // Add inline shipping address (transaction-level, doesn't modify customer's address book)
+  if (shippingAddress) {
+    payload.shippingAddress = {
+      addr1: shippingAddress.address1,
+      addr2: shippingAddress.address2,
+      city: shippingAddress.city,
+      state: shippingAddress.province,
+      zip: shippingAddress.zip,
+      country: shippingAddress.countryCode || shippingAddress.country, // NetSuite REST API accepts ISO 2-letter codes
+      addressee: `${shippingAddress.firstName || ''} ${shippingAddress.lastName || ''}`.trim() || undefined,
+      addrPhone: shippingAddress.phone,
     }
-  } else if (shippingAddress) {
-    // Address exists but no NetSuite ID - NetSuite will use customer default
-    console.warn(`⚠️ Shipping address found but missing NetSuite address ID. NetSuite will use customer's default shipping address.`)
-    errors.push(`Shipping address found but missing NetSuite address ID - will use customer default`)
+  } else {
+    console.warn(`⚠️ No shipping address found for this order`)
+    errors.push(`No shipping address found - NetSuite will use customer default`)
   }
 
   // Add currency if available
@@ -648,7 +600,7 @@ export async function buildNetSuiteSalesOrderPayload(
     }
   }
 
-  return { payload, errors }
+  return { payload, errors, customerWasCreated }
 }
 
 /**
