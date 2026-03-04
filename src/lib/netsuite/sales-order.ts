@@ -5,24 +5,26 @@ import { buildRecordUrl } from './constants'
 import type { NetSuiteInlineAddress } from './types'
 
 /**
- * Extracts the numeric ID from strings like "Online Sales (IID: 11)" or "11"
+ * Extracts a numeric ID from strings like:
+ *   "Online Sales (IID: 11)" → "11"
+ *   "Direct to Consumer (28)" → "28"
+ *   "Direct to Consumer (Value: 28)" → "28"
+ *   "11" → "11"
  * Returns just the numeric ID as a string, or the original value if no pattern matches
  */
 function extractNetSuiteId(value: string): string {
   if (!value) return value
-
-  // Pattern: "Something (IID: 123)" -> extract "123"
+  // Pattern 1: "Something (IID: 123)" → "123"
   const iidMatch = value.match(/\(IID:\s*(\d+)\)/i)
-  if (iidMatch) {
-    return iidMatch[1]
-  }
-
-  // If it's already just a number, return it
-  if (/^\d+$/.test(value.trim())) {
-    return value.trim()
-  }
-
-  // If no pattern matches, return original value (fallback)
+  if (iidMatch) return iidMatch[1]
+  // Pattern 2: "Something (Value: 123)" → "123" (Custom field select format)
+  const valueMatch = value.match(/\(Value:\s*(\d+)\)/i)
+  if (valueMatch) return valueMatch[1]
+  // Pattern 3: "Something (123)" → "123" (Custom mapping format)
+  const parenMatch = value.match(/\((\d+)\)\s*$/)
+  if (parenMatch) return parenMatch[1]
+  // Pattern 4: Already just a number
+  if (/^\d+$/.test(value.trim())) return value.trim()
   return value
 }
 

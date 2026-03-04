@@ -8,6 +8,7 @@ import type { NetSuiteCustomer } from './types'
  * Extracts a numeric ID from strings like:
  *   "Online Sales (IID: 11)" → "11"
  *   "Direct to Consumer (28)" → "28"
+ *   "Direct to Consumer (Value: 28)" → "28"
  *   "11" → "11"
  * Returns just the numeric ID as a string, or the original value if no pattern matches
  */
@@ -16,10 +17,13 @@ function extractNetSuiteId(value: string): string {
   // Pattern 1: "Something (IID: 123)" → "123"
   const iidMatch = value.match(/\(IID:\s*(\d+)\)/i)
   if (iidMatch) return iidMatch[1]
-  // Pattern 2: "Something (123)" → "123" (Custom mapping format)
+  // Pattern 2: "Something (Value: 123)" → "123" (Custom field select format)
+  const valueMatch = value.match(/\(Value:\s*(\d+)\)/i)
+  if (valueMatch) return valueMatch[1]
+  // Pattern 3: "Something (123)" → "123" (Custom mapping format)
   const parenMatch = value.match(/\((\d+)\)\s*$/)
   if (parenMatch) return parenMatch[1]
-  // Pattern 3: Already just a number
+  // Pattern 4: Already just a number
   if (/^\d+$/.test(value.trim())) return value.trim()
   return value
 }
