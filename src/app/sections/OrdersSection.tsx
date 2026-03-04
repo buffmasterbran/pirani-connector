@@ -1696,14 +1696,30 @@ export function OrdersSection() {
                     </div>
                   )}
 
-                  {/* Warnings */}
-                  {pushWorkflow.step2.data.warnings && pushWorkflow.step2.data.warnings.length > 0 && (
+                  {/* Blocking errors (missing mappings) */}
+                  {pushWorkflow.step2.data.warnings && pushWorkflow.step2.data.warnings.some((w: string) => w.startsWith('BLOCKING:')) && (
+                    <div className="bg-red-50 border border-red-300 rounded p-2">
+                      <p className="text-xs font-medium text-red-800 mb-1">Cannot Push — Missing Mappings:</p>
+                      <ul className="text-xs text-red-700 space-y-0.5">
+                        {pushWorkflow.step2.data.warnings
+                          .filter((w: string) => w.startsWith('BLOCKING:'))
+                          .map((w: string, i: number) => (
+                            <li key={i}>- {w.replace('BLOCKING: ', '')}</li>
+                          ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Non-blocking warnings */}
+                  {pushWorkflow.step2.data.warnings && pushWorkflow.step2.data.warnings.filter((w: string) => !w.startsWith('BLOCKING:')).length > 0 && (
                     <div className="bg-yellow-50 border border-yellow-200 rounded p-2">
                       <p className="text-xs font-medium text-yellow-800 mb-1">Warnings:</p>
                       <ul className="text-xs text-yellow-700 space-y-0.5">
-                        {pushWorkflow.step2.data.warnings.map((w: string, i: number) => (
-                          <li key={i}>- {w}</li>
-                        ))}
+                        {pushWorkflow.step2.data.warnings
+                          .filter((w: string) => !w.startsWith('BLOCKING:'))
+                          .map((w: string, i: number) => (
+                            <li key={i}>- {w}</li>
+                          ))}
                       </ul>
                     </div>
                   )}
@@ -1748,7 +1764,7 @@ export function OrdersSection() {
               description="Send the sales order payload to NetSuite REST API"
               status={pushWorkflow.step3.status}
               onRun={runStep3PushToNetSuite}
-              canRun={pushWorkflow.step2.status === 'success' && pushWorkflow.step3.status !== 'loading'}
+              canRun={pushWorkflow.step2.status === 'success' && pushWorkflow.step3.status !== 'loading' && !(pushWorkflow.step2.data?.warnings?.some((w: string) => w.startsWith('BLOCKING:')))}
             >
               {pushWorkflow.step3.status === 'success' && pushWorkflow.step3.data && (
                 <div className="space-y-2 text-xs">

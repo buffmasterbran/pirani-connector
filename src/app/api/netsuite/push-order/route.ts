@@ -55,6 +55,20 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Check for blocking errors (missing mappings)
+    const blockingErrors = errors.filter((e) => e.startsWith('BLOCKING:'))
+    if (blockingErrors.length > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: blockingErrors.map((e) => e.replace('BLOCKING: ', '')).join('\n'),
+          warnings: errors,
+          payload,
+        },
+        { status: 400 }
+      )
+    }
+
     console.log(`📦 NetSuite Sales Order Payload:`, JSON.stringify(payload, null, 2))
 
     // Create the sales order in NetSuite

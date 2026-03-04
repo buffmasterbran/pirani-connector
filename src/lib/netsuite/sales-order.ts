@@ -181,6 +181,13 @@ export async function buildNetSuiteSalesOrderPayload(
     console.warn('Could not fetch default payment method setting:', error)
   }
 
+  // Fetch ShipmentMethodMapping for shipping method
+  const shipmentMethodMappings = await prisma.shipmentMethodMapping.findMany({
+    where: {
+      isActive: true,
+    },
+  })
+
   // Fetch OrderItemFieldMapping for line item fields
   const orderItemMappings = await prisma.orderItemFieldMapping.findMany({
     where: {
@@ -583,8 +590,8 @@ export async function buildNetSuiteSalesOrderPayload(
         }
         errors.push(`Payment method "${paymentMethod}" not mapped, using default payment method`)
       } else {
-        // No mapping and no default - this is an error
-        errors.push(`Payment method "${paymentMethod}" is not mapped and no default payment method is set. Order cannot be created without payment mapping.`)
+        // No mapping and no default - blocking error
+        errors.push(`BLOCKING: Payment method "${paymentMethod}" is not mapped and no default is set. Add a Payment Method mapping for "${paymentMethod}".`)
       }
     } catch (error) {
       console.warn('Could not parse payment gateway names:', error)
@@ -598,8 +605,50 @@ export async function buildNetSuiteSalesOrderPayload(
       }
       errors.push('No payment method found in order, using default payment method')
     } else {
-      errors.push('No payment method found in order and no default payment method is set. Order cannot be created without payment mapping.')
+      errors.push('BLOCKING: No payment method found in order and no default is set. Configure a default payment method in settings.')
     }
+  }
+
+  // Add shipping method if available
+  if (firstLine.shippingLines) {
+    try {
+      const shippingLines = JSON.parse(firstLine.shippingLines) as Array<{ code?: string; title?: string; price?: string }>
+      const shippingLine = shippingLines?.[0]
+      const shippingCode = shippingLine?.code || shippingLine?.title
+
+      if (shippingCode) {
+        const shipmentMapping = shipmentMethodMappings.find(
+          (m) => m.shopifyCode === shippingCode
+        )
+
+        if (shipmentMapping) {
+          payload.shipMethod = { id: shipmentMapping.netsuiteId }
+        } else {
+          errors.push(`BLOCKING: Shipping method "${shippingCode}" is not mapped. This order cannot be pushed. Add a Shipment Method mapping for "${shippingCode}".`)
+        }
+      }
+    } catch (error) {
+      console.warn('Could not parse shipping lines:', error)
+      errors.push(`Could not parse shipping lines: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
+  // Add discount line item if order has a discount
+  if (firstLine.orderDiscount && firstLine.orderDiscount > 0) {
+    const discountAmount = firstLine.orderDiscount
+    // NetSuite uses a discount item with a negative rate
+    items.push({
+      item: { refName: 'Shopify Discount' },
+      quantity: 1,
+      rate: -discountAmount,
+      description: 'Shopify Order Discount',
+    })
+  }
+
+  // Check for blocking errors (missing mappings) — prevent push
+  const blockingErrors = errors.filter((e) => e.startsWith('BLOCKING:'))
+  if (blockingErrors.length > 0) {
+    // Still return the payload for preview, but the POST handler should check for blocking errors
   }
 
   return { payload, errors, customerWasCreated }
