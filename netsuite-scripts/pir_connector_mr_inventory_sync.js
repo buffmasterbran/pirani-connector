@@ -375,7 +375,7 @@ define(['N/search', 'N/https', 'N/runtime', 'N/log'], (search, https, runtime, l
 
     // Webhook now only writes to the database (no Shopify calls),
     // so we can send larger batches without hitting timeouts.
-    const BATCH_SIZE = 500
+    const BATCH_SIZE = 4000
     let totalPushed = 0
     let totalErrors = 0
     const totalBatches = Math.ceil(allItems.length / BATCH_SIZE)

@@ -735,6 +735,18 @@ export async function buildNetSuiteSalesOrderPayload(
     }
   }
 
+  // Pirani Tech validation fields — hardcoded on every order push
+  // These feed the pirtech_ue_validate_order.js User Event in NetSuite
+  payload.custbody_pirtech_order_total = JSON.stringify({
+    orderTotal: firstLine.orderTotal || 0,
+    subtotal: firstLine.orderSubtotal || 0,
+    taxTotal: firstLine.orderTax || 0,
+    shippingCost: firstLine.orderShipping || 0,
+    discountTotal: firstLine.orderDiscount || 0,
+  })
+  payload.custbody_pirtech_storefront = 'Shopify'
+  payload.custbody_pirtech_order_num = firstLine.shopifyOrderName
+
   // Check for blocking errors (missing mappings) — prevent push
   const blockingErrors = errors.filter((e) => e.startsWith('BLOCKING:'))
   if (blockingErrors.length > 0) {
