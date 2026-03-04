@@ -41,6 +41,11 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
   const [defaultPaymentMethod, setDefaultPaymentMethod] = useState<string>('')
   const [isLoadingDefaultPaymentMethod, setIsLoadingDefaultPaymentMethod] = useState(false)
 
+  const [defaultDiscountItem, setDefaultDiscountItem] = useState<string>('')
+  const [isLoadingDefaultDiscountItem, setIsLoadingDefaultDiscountItem] = useState(false)
+  const [discountItemNetSuiteList, setDiscountItemNetSuiteList] = useState<Array<{ id: string; name: string }>>([])
+  const [isLoadingDiscountItems, setIsLoadingDiscountItems] = useState(false)
+
   const [shipmentMappings, setShipmentMappings] = useState<ShipmentMethodMapping[]>([])
   const [unmappedShippingMethods, setUnmappedShippingMethods] = useState<{ code: string; title: string | null; exampleOrder: string | null }[]>([])
   const [newShipmentShopifyCode, setNewShipmentShopifyCode] = useState('')
@@ -505,6 +510,61 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
       return false
     } catch (error) {
       console.error('Error saving default payment method:', error)
+      return false
+    }
+  }
+
+  const fetchDiscountItemNetSuiteList = async () => {
+    if (discountItemNetSuiteList.length > 0) return
+
+    setIsLoadingDiscountItems(true)
+    try {
+      const response = await fetch('/api/netsuite/lists?field=discountItem')
+      const result = await response.json()
+      if (result.success && result.items) {
+        setDiscountItemNetSuiteList(result.items)
+      }
+    } catch (error) {
+      console.error('Error fetching NetSuite discount items:', error)
+    } finally {
+      setIsLoadingDiscountItems(false)
+    }
+  }
+
+  const fetchDefaultDiscountItem = async () => {
+    setIsLoadingDefaultDiscountItem(true)
+    try {
+      const response = await fetch('/api/mappings/defaults?key=default_discount_item')
+      const result = await response.json()
+      if (result.success && result.value) {
+        setDefaultDiscountItem(result.value)
+      }
+    } catch (error) {
+      console.error('Error fetching default discount item:', error)
+    } finally {
+      setIsLoadingDefaultDiscountItem(false)
+    }
+  }
+
+  const saveDefaultDiscountItem = async (value: string) => {
+    try {
+      const response = await fetch('/api/mappings/defaults', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          key: 'default_discount_item',
+          value,
+          description: 'NetSuite Discount Item to post per-line discounts',
+        }),
+      })
+      const result = await response.json()
+      if (result.success) {
+        setDefaultDiscountItem(value)
+        return true
+      }
+      return false
+    } catch (error) {
+      console.error('Error saving default discount item:', error)
       return false
     }
   }
@@ -1186,6 +1246,10 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
       fetchUnmappedShippingMethods()
       fetchNetSuiteListForField('shipMethod')
     }
+    if (activeMappingTab === 'Order') {
+      fetchDefaultDiscountItem()
+      fetchDiscountItemNetSuiteList()
+    }
   }, [activeMappingTab])
 
   // Fetch NetSuite list when a field requiring dropdown is selected
@@ -1739,6 +1803,49 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
+                {/* Discount Item Setting */}
+                <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg">
+                  <div className="flex items-center space-x-2">
+                    <HelpCircle className="h-4 w-4 text-slate-400" />
+                    <span className="text-sm font-medium text-slate-700">Discount Item (posted as line item for each discounted product)</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Select
+                      value={defaultDiscountItem || 'none'}
+                      onValueChange={async (value) => {
+                        await saveDefaultDiscountItem(value === 'none' ? '' : value)
+                      }}
+                      onOpenChange={(open) => {
+                        if (open && discountItemNetSuiteList.length === 0) {
+                          fetchDiscountItemNetSuiteList()
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="w-64">
+                        <SelectValue placeholder={isLoadingDefaultDiscountItem ? "Loading..." : "Select discount item..."}>
+                          {defaultDiscountItem && defaultDiscountItem !== '' && discountItemNetSuiteList.length > 0
+                            ? discountItemNetSuiteList.find(di => di.id === defaultDiscountItem)?.name || `ID: ${defaultDiscountItem}`
+                            : defaultDiscountItem === '' || !defaultDiscountItem ? "Do Not Post" : "Select discount item..."}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Do Not Post</SelectItem>
+                        {isLoadingDiscountItems ? (
+                          <div className="px-2 py-1.5 text-sm text-slate-500">Loading...</div>
+                        ) : discountItemNetSuiteList.length > 0 ? (
+                          discountItemNetSuiteList.map((di) => (
+                            <SelectItem key={di.id} value={di.id}>
+                              {di.name} (IID: {di.id})
+                            </SelectItem>
+                          ))
+                        ) : (
+                          <div className="px-2 py-1.5 text-sm text-slate-500">No discount items available</div>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
                   <div className="grid grid-cols-4 gap-4 p-4 bg-slate-50 rounded-lg text-sm font-medium text-slate-700">
               <div className="flex items-center space-x-2">
                 <span>Mapping type</span>

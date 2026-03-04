@@ -63,6 +63,10 @@ const FIELD_QUERIES: Record<string, { name: string; query: string }> = {
     name: 'paymentmethods',
     query: "SELECT id, name, isinactive FROM paymentmethod ORDER BY name"
   },
+  discountItem: {
+    name: 'discountitems',
+    query: "SELECT id, itemid AS name, isinactive FROM discountItem ORDER BY itemid"
+  },
 }
 
 /**

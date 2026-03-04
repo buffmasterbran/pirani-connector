@@ -195,6 +195,12 @@ export async function buildNetSuiteSalesOrderPayload(
     },
   })
 
+  // Fetch discount item setting
+  const discountItemSetting = await prisma.mappingDefaults.findUnique({
+    where: { settingKey: 'default_discount_item' },
+  })
+  const discountItemId = discountItemSetting?.settingValue || null
+
   // Fetch Shopify order data if needed for Order Line mappings
   let shopifyOrderDataForLineItems: any = null
   const needsShopifyOrderDataForLineItems = orderItemMappings.some(
@@ -268,6 +274,8 @@ export async function buildNetSuiteSalesOrderPayload(
   }
 
   // Build items array using refName (SKU or item name) and apply order item mappings
+  // Uses flatMap to insert discount lines after each discounted item
+  let perLineDiscountTotal = 0
   const items = orderLines
     .filter((line) => {
       // Filter out lines without SKU or name
@@ -277,7 +285,7 @@ export async function buildNetSuiteSalesOrderPayload(
       }
       return true
     })
-    .map((line, lineIndex) => {
+    .flatMap((line, lineIndex) => {
       const itemObj: { refName?: string; itemid?: string } = {}
 
       // Prefer refName (SKU), fallback to item name if SKU not available
@@ -332,7 +340,45 @@ export async function buildNetSuiteSalesOrderPayload(
         }
       }
 
-      return lineItem
+      const result: any[] = [lineItem]
+
+      // Add per-line discount item if this line has discount_allocations
+      if (discountItemId) {
+        let lineDiscount = 0
+
+        // Try to get discount from lineItemMetadata (has discount_allocations)
+        if (line.lineItemMetadata) {
+          try {
+            const metadata = JSON.parse(line.lineItemMetadata)
+            if (metadata.discount_allocations && Array.isArray(metadata.discount_allocations)) {
+              lineDiscount = metadata.discount_allocations.reduce(
+                (sum: number, alloc: any) => sum + (parseFloat(alloc.amount) || 0),
+                0
+              )
+            } else if (metadata.total_discount) {
+              lineDiscount = parseFloat(metadata.total_discount) || 0
+            }
+          } catch {
+            // Fallback: use lineItemTotal - lineItemNet if available
+            if (line.lineItemTotal && line.lineItemNet && line.lineItemTotal > line.lineItemNet) {
+              lineDiscount = line.lineItemTotal - line.lineItemNet
+            }
+          }
+        } else if (line.lineItemTotal && line.lineItemNet && line.lineItemTotal > line.lineItemNet) {
+          lineDiscount = line.lineItemTotal - line.lineItemNet
+        }
+
+        if (lineDiscount > 0) {
+          perLineDiscountTotal += lineDiscount
+          result.push({
+            item: { id: discountItemId },
+            rate: -lineDiscount,
+            description: `Discount on ${line.lineItemName || line.lineItemSku || 'item'}`,
+          })
+        }
+      }
+
+      return result
     })
 
   if (items.length === 0) {
@@ -633,16 +679,24 @@ export async function buildNetSuiteSalesOrderPayload(
     }
   }
 
-  // Add discount line item if order has a discount
+  // Handle remaining order-level discount not covered by per-line discounts
   if (firstLine.orderDiscount && firstLine.orderDiscount > 0) {
-    const discountAmount = firstLine.orderDiscount
-    // NetSuite uses a discount item with a negative rate
-    items.push({
-      item: { refName: 'Shopify Discount' },
-      quantity: 1,
-      rate: -discountAmount,
-      description: 'Shopify Order Discount',
-    })
+    const orderDiscount = firstLine.orderDiscount
+    const remainingDiscount = Math.round((orderDiscount - perLineDiscountTotal) * 100) / 100
+
+    if (discountItemId) {
+      // If per-line discounts didn't cover the full order discount, add a remainder line
+      if (remainingDiscount > 0.01) {
+        items.push({
+          item: { id: discountItemId },
+          rate: -remainingDiscount,
+          description: 'Shopify Order Discount (remainder)',
+        })
+      }
+    } else {
+      // No discount item configured — warn but don't block
+      errors.push(`Order has a discount of $${orderDiscount.toFixed(2)} but no Discount Item is configured. Set a Default Discount Item in Order Mappings > Order tab.`)
+    }
   }
 
   // Check for blocking errors (missing mappings) — prevent push
