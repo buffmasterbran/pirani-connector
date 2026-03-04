@@ -98,12 +98,26 @@ export async function saveCustomerAndAddresses(order: any): Promise<void> {
     netsuiteCustomerId,
   }
 
-  // Upsert customer
-  await prisma.customer.upsert({
-    where: { shopifyCustomerId },
-    create: customerData,
-    update: customerData,
-  })
+  // Upsert customer (with retry on unique constraint race condition)
+  try {
+    await prisma.customer.upsert({
+      where: { shopifyCustomerId },
+      create: customerData,
+      update: customerData,
+    })
+  } catch (error: any) {
+    // Handle race condition: if upsert fails with unique constraint on id,
+    // the record was likely created by a concurrent request — just update it
+    if (error?.code === 'P2002') {
+      console.log(`Customer ${shopifyCustomerId} upsert hit unique constraint, retrying as update...`)
+      await prisma.customer.update({
+        where: { shopifyCustomerId },
+        data: customerData,
+      })
+    } else {
+      throw error
+    }
+  }
 
   // Step 1: Fetch all saved customer addresses from Shopify
   let savedAddresses: any[] = []
