@@ -47,6 +47,14 @@ export async function findNetSuiteCustomerByEmail(email: string): Promise<NetSui
   }
 }
 
+/** Return type for createNetSuiteCustomer — includes the payload sent for debugging */
+export interface CreateCustomerResult {
+  customerId: string
+  customerName?: string
+  payloadSent: Record<string, any>
+  mappingsApplied: Array<{ field: string; rawValue: string; finalValue: string; mappingType: string }>
+}
+
 /**
  * Creates a new customer in NetSuite via REST API
  * Applies CustomerFieldMappings from the database for dynamic field configuration
@@ -55,9 +63,10 @@ export async function createNetSuiteCustomer(
   shopifyCustomerId: string,
   email: string | null,
   customerData?: { firstName?: string | null; lastName?: string | null; phone?: string | null }
-): Promise<{ customerId: string; customerName?: string }> {
+): Promise<CreateCustomerResult> {
   const url = buildRecordUrl('customer')
   const authorization = generateOAuthHeader('POST', url)
+  const mappingsApplied: CreateCustomerResult['mappingsApplied'] = []
 
   // Build base customer payload
   const payload: Record<string, any> = {
@@ -100,6 +109,8 @@ export async function createNetSuiteCustomer(
     const fieldName = mapping.customFieldId || mapping.netsuiteId
     const finalValue = extractNetSuiteId(value)
     console.log(`   → field="${fieldName}" finalValue="${finalValue}"`)
+
+    mappingsApplied.push({ field: fieldName, rawValue: value, finalValue, mappingType: mapping.mappingType })
 
     // Custom body fields and standard record-reference fields need { id: value }
     if (fieldName.startsWith('custentity_')) {
@@ -166,7 +177,20 @@ export async function createNetSuiteCustomer(
   }
 
   console.log(`✅ Created NetSuite customer ${customerId} for Shopify customer ${shopifyCustomerId}`)
-  return { customerId, customerName }
+  return { customerId, customerName, payloadSent: payload, mappingsApplied }
+}
+
+/** Return type for resolveCustomer — includes tier info for debugging */
+export interface ResolveCustomerResult {
+  netsuiteCustomerId: string
+  wasCreated: boolean
+  tier: 1 | 2 | 3
+  tierDescription: string
+  /** Only present if tier 3 (customer was created) */
+  createDetails?: {
+    payloadSent: Record<string, any>
+    mappingsApplied: CreateCustomerResult['mappingsApplied']
+  }
 }
 
 /**
@@ -181,7 +205,7 @@ export async function resolveCustomer(
   shopifyCustomerId: string,
   email: string | null,
   customerData?: { firstName?: string | null; lastName?: string | null; phone?: string | null }
-): Promise<{ netsuiteCustomerId: string; wasCreated: boolean }> {
+): Promise<ResolveCustomerResult> {
   // Tier 1: Check local DB
   const existingCustomer = await prisma.customer.findUnique({
     where: { shopifyCustomerId },
@@ -190,7 +214,12 @@ export async function resolveCustomer(
 
   if (existingCustomer?.netsuiteCustomerId) {
     console.log(`🔍 Tier 1: Found NetSuite ID ${existingCustomer.netsuiteCustomerId} in local DB for Shopify customer ${shopifyCustomerId}`)
-    return { netsuiteCustomerId: existingCustomer.netsuiteCustomerId, wasCreated: false }
+    return {
+      netsuiteCustomerId: existingCustomer.netsuiteCustomerId,
+      wasCreated: false,
+      tier: 1,
+      tierDescription: 'Found in local database',
+    }
   }
 
   // Tier 2: SuiteQL email lookup
@@ -205,7 +234,12 @@ export async function resolveCustomer(
           where: { shopifyCustomerId },
           data: { netsuiteCustomerId: netsuiteCustomer.id },
         })
-        return { netsuiteCustomerId: netsuiteCustomer.id, wasCreated: false }
+        return {
+          netsuiteCustomerId: netsuiteCustomer.id,
+          wasCreated: false,
+          tier: 2,
+          tierDescription: 'Found via SuiteQL email lookup',
+        }
       }
       console.log(`⚠️ Tier 2: No NetSuite customer found for email ${email}`)
     } catch (error) {
@@ -216,15 +250,24 @@ export async function resolveCustomer(
 
   // Tier 3: Create new customer in NetSuite
   console.log(`📝 Tier 3: Creating new NetSuite customer for Shopify customer ${shopifyCustomerId}...`)
-  const { customerId } = await createNetSuiteCustomer(shopifyCustomerId, email, customerData)
+  const result = await createNetSuiteCustomer(shopifyCustomerId, email, customerData)
 
   // Save to local DB
   await prisma.customer.update({
     where: { shopifyCustomerId },
-    data: { netsuiteCustomerId: customerId },
+    data: { netsuiteCustomerId: result.customerId },
   })
 
-  return { netsuiteCustomerId: customerId, wasCreated: true }
+  return {
+    netsuiteCustomerId: result.customerId,
+    wasCreated: true,
+    tier: 3,
+    tierDescription: 'Created new customer in NetSuite',
+    createDetails: {
+      payloadSent: result.payloadSent,
+      mappingsApplied: result.mappingsApplied,
+    },
+  }
 }
 
 /**

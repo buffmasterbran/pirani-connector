@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { OrderInfoDialog } from '@/components/OrderInfoDialog'
 import { Loader, LoaderWithText } from '@/components/Loader'
-import { Download, ArrowUpRight, Filter } from 'lucide-react'
+import { Download, ArrowUpRight, Filter, CheckCircle2, XCircle, Clock, ChevronDown, ChevronRight, Play } from 'lucide-react'
 import JsonView from '@uiw/react-json-view'
 import {
   validateOrderMappings,
@@ -107,21 +107,21 @@ export function OrdersSection() {
   const [editingNetSuiteId, setEditingNetSuiteId] = useState('')
   const [selectedOrderForEdit, setSelectedOrderForEdit] = useState<Order | null>(null)
 
-  // NetSuite Payload Preview dialog state
-  const [netsuitePayloadDialog, setNetsuitePayloadDialog] = useState<{
+  // Push Workflow dialog state (3-step: Resolve Customer -> Build Payload -> Push to NetSuite)
+  const [pushWorkflow, setPushWorkflow] = useState<{
     isOpen: boolean
     orderId: string | null
-    payload: any | null
-    customerInfo: any | null
-    addressInfo: any | null
-    isLoading: boolean
+    orderName: string | null
+    step1: { status: 'idle' | 'loading' | 'success' | 'error'; data?: any; error?: string }
+    step2: { status: 'idle' | 'loading' | 'success' | 'error'; data?: any; error?: string }
+    step3: { status: 'idle' | 'loading' | 'success' | 'error'; data?: any; error?: string }
   }>({
     isOpen: false,
     orderId: null,
-    payload: null,
-    customerInfo: null,
-    addressInfo: null,
-    isLoading: false,
+    orderName: null,
+    step1: { status: 'idle' },
+    step2: { status: 'idle' },
+    step3: { status: 'idle' },
   })
 
   // Mapping error state
@@ -440,102 +440,148 @@ export function OrdersSection() {
     }
   }
 
-  const pushOrderToNetSuite = async (orderId: string) => {
-    // First, fetch the preview payload
-    setNetsuitePayloadDialog({
+  // Open the push workflow dialog
+  const openPushWorkflow = (orderId: string, orderName: string) => {
+    setPushWorkflow({
       isOpen: true,
       orderId,
-      payload: null,
-      customerInfo: null,
-      addressInfo: null,
-      isLoading: true,
+      orderName,
+      step1: { status: 'idle' },
+      step2: { status: 'idle' },
+      step3: { status: 'idle' },
     })
-
-    try {
-      // Fetch preview payload
-      const previewResponse = await fetch(`/api/netsuite/push-order?shopifyOrderId=${orderId}`)
-      const previewData = await previewResponse.json()
-
-      if (previewResponse.ok && previewData.success) {
-        setNetsuitePayloadDialog({
-          isOpen: true,
-          orderId,
-          payload: previewData.payload,
-          customerInfo: previewData.customerInfo || null,
-          addressInfo: previewData.addressInfo || null,
-          isLoading: false,
-        })
-      } else {
-        alert(`Failed to generate payload:\n\n${previewData.error || 'Unknown error'}`)
-        setNetsuitePayloadDialog({
-          isOpen: false,
-          orderId: null,
-          payload: null,
-          customerInfo: null,
-          addressInfo: null,
-          isLoading: false,
-        })
-      }
-    } catch (error) {
-      console.error('Error fetching payload preview:', error)
-      alert(`Error fetching payload preview: ${error instanceof Error ? error.message : 'Unknown error'}`)
-      setNetsuitePayloadDialog({
-        isOpen: false,
-        orderId: null,
-        payload: null,
-        customerInfo: null,
-        addressInfo: null,
-        isLoading: false,
-      })
-    }
   }
 
-  const confirmPushToNetSuite = async () => {
-    if (!netsuitePayloadDialog.orderId) return
+  const closePushWorkflow = () => {
+    setPushWorkflow({
+      isOpen: false,
+      orderId: null,
+      orderName: null,
+      step1: { status: 'idle' },
+      step2: { status: 'idle' },
+      step3: { status: 'idle' },
+    })
+  }
+
+  // Step 1: Resolve Customer
+  const runStep1ResolveCustomer = async () => {
+    if (!pushWorkflow.orderId) return
+
+    setPushWorkflow((prev) => ({
+      ...prev,
+      step1: { status: 'loading' },
+      step2: { status: 'idle' },
+      step3: { status: 'idle' },
+    }))
 
     try {
-      const response = await fetch('/api/netsuite/push-order', {
+      const response = await fetch('/api/netsuite/resolve-customer', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ shopifyOrderId: netsuitePayloadDialog.orderId }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shopifyOrderId: pushWorkflow.orderId }),
       })
 
       const data = await response.json()
 
-      // Close dialog
-      setNetsuitePayloadDialog({
-        isOpen: false,
-        orderId: null,
-        payload: null,
-        customerInfo: null,
-        addressInfo: null,
-        isLoading: false,
-      })
+      if (response.ok && data.success) {
+        setPushWorkflow((prev) => ({
+          ...prev,
+          step1: { status: 'success', data },
+        }))
+      } else {
+        setPushWorkflow((prev) => ({
+          ...prev,
+          step1: { status: 'error', error: data.error || 'Unknown error', data },
+        }))
+      }
+    } catch (error) {
+      setPushWorkflow((prev) => ({
+        ...prev,
+        step1: {
+          status: 'error',
+          error: error instanceof Error ? error.message : 'Network error',
+        },
+      }))
+    }
+  }
+
+  // Step 2: Build Payload
+  const runStep2BuildPayload = async () => {
+    if (!pushWorkflow.orderId) return
+
+    setPushWorkflow((prev) => ({
+      ...prev,
+      step2: { status: 'loading' },
+      step3: { status: 'idle' },
+    }))
+
+    try {
+      const response = await fetch(
+        `/api/netsuite/push-order?shopifyOrderId=${pushWorkflow.orderId}`
+      )
+      const data = await response.json()
 
       if (response.ok && data.success) {
-        alert(`Successfully pushed order to NetSuite!\n\nSales Order ID: ${data.salesOrderId || 'N/A'}\nSales Order Name: ${data.salesOrderName || 'N/A'}${data.warnings && data.warnings.length > 0 ? `\n\nWarnings:\n${data.warnings.join('\n')}` : ''}`)
+        setPushWorkflow((prev) => ({
+          ...prev,
+          step2: { status: 'success', data },
+        }))
+      } else {
+        setPushWorkflow((prev) => ({
+          ...prev,
+          step2: { status: 'error', error: data.error || 'Unknown error', data },
+        }))
+      }
+    } catch (error) {
+      setPushWorkflow((prev) => ({
+        ...prev,
+        step2: {
+          status: 'error',
+          error: error instanceof Error ? error.message : 'Network error',
+        },
+      }))
+    }
+  }
 
+  // Step 3: Push to NetSuite
+  const runStep3PushToNetSuite = async () => {
+    if (!pushWorkflow.orderId) return
+
+    setPushWorkflow((prev) => ({
+      ...prev,
+      step3: { status: 'loading' },
+    }))
+
+    try {
+      const response = await fetch('/api/netsuite/push-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shopifyOrderId: pushWorkflow.orderId }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        setPushWorkflow((prev) => ({
+          ...prev,
+          step3: { status: 'success', data },
+        }))
         // Refresh orders to show updated NetSuite IDs
         await fetchOrders()
       } else {
-        const errorMsg = data.error || 'Unknown error occurred'
-        const warnings = data.warnings && data.warnings.length > 0 ? `\n\nWarnings:\n${data.warnings.join('\n')}` : ''
-        alert(`Failed to push order to NetSuite:\n\n${errorMsg}${warnings}`)
-        console.error('NetSuite push error:', data)
+        setPushWorkflow((prev) => ({
+          ...prev,
+          step3: { status: 'error', error: data.error || 'Unknown error', data },
+        }))
       }
     } catch (error) {
-      console.error('Error pushing order to NetSuite:', error)
-      alert(`Error pushing order to NetSuite: ${error instanceof Error ? error.message : 'Unknown error'}`)
-      setNetsuitePayloadDialog({
-        isOpen: false,
-        orderId: null,
-        payload: null,
-        customerInfo: null,
-        addressInfo: null,
-        isLoading: false,
-      })
+      setPushWorkflow((prev) => ({
+        ...prev,
+        step3: {
+          status: 'error',
+          error: error instanceof Error ? error.message : 'Network error',
+        },
+      }))
     }
   }
 
@@ -1058,7 +1104,7 @@ export function OrdersSection() {
                           <>
                             <Button
                               size="sm"
-                              onClick={() => pushOrderToNetSuite(String(order.id))}
+                              onClick={() => openPushWorkflow(String(order.id), order.name)}
                               className="bg-blue-600 hover:bg-blue-700 text-xs px-3"
                             >
                               Push to NS
@@ -1528,182 +1574,320 @@ export function OrdersSection() {
         </DialogContent>
       </Dialog>
 
-      {/* NetSuite Payload Preview Dialog */}
-      <Dialog open={netsuitePayloadDialog.isOpen} onOpenChange={(open) => {
-        if (!open) {
-          setNetsuitePayloadDialog({
-            isOpen: false,
-            orderId: null,
-            payload: null,
-            customerInfo: null,
-            addressInfo: null,
-            isLoading: false,
-          })
-        }
-      }}>
+      {/* Push to NetSuite Workflow Dialog (3-step) */}
+      <Dialog open={pushWorkflow.isOpen} onOpenChange={(open) => { if (!open) closePushWorkflow() }}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>NetSuite Sales Order Payload Preview</DialogTitle>
+            <DialogTitle>Push Order to NetSuite</DialogTitle>
           </DialogHeader>
-          {netsuitePayloadDialog.isLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader />
-              <span className="ml-2">Generating payload...</span>
-            </div>
-          ) : netsuitePayloadDialog.payload ? (
-            <div className="space-y-4">
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <p className="text-sm text-blue-800">
-                  <strong>Order ID:</strong> {netsuitePayloadDialog.orderId}
-                </p>
-                <p className="text-xs text-blue-600 mt-1">
-                  Review the JSON payload below. Click &quot;Push to NetSuite&quot; to send this order.
-                </p>
-              </div>
 
-              {/* Customer Info */}
-              {netsuitePayloadDialog.customerInfo && (
-                <div>
-                  <h3 className="font-semibold mb-2">Customer Information</h3>
-                  <div className="bg-gray-50 border border-gray-200 p-4 rounded-lg">
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <span className="text-muted-foreground">Name:</span>{' '}
-                        <strong>{netsuitePayloadDialog.customerInfo.firstName} {netsuitePayloadDialog.customerInfo.lastName}</strong>
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <p className="text-sm text-blue-800">
+              <strong>Order:</strong> {pushWorkflow.orderName || pushWorkflow.orderId}
+            </p>
+            <p className="text-xs text-blue-600 mt-1">
+              Run each step in order. Click the play button to execute each step and inspect the results before proceeding.
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            {/* ──── Step 1: Resolve Customer ──── */}
+            <WorkflowStep
+              stepNumber={1}
+              title="Resolve Customer"
+              description="3-tier lookup: Local DB, SuiteQL email search, or create new customer in NetSuite"
+              status={pushWorkflow.step1.status}
+              onRun={runStep1ResolveCustomer}
+              canRun={pushWorkflow.step1.status !== 'loading'}
+            >
+              {pushWorkflow.step1.status === 'success' && pushWorkflow.step1.data && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                      pushWorkflow.step1.data.tier === 1 ? 'bg-green-100 text-green-800' :
+                      pushWorkflow.step1.data.tier === 2 ? 'bg-blue-100 text-blue-800' :
+                      'bg-orange-100 text-orange-800'
+                    }`}>
+                      Tier {pushWorkflow.step1.data.tier}
+                    </span>
+                    <span className="text-xs text-muted-foreground">{pushWorkflow.step1.data.tierDescription}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div><span className="text-muted-foreground">NetSuite ID:</span> <strong className="text-green-700">{pushWorkflow.step1.data.netsuiteCustomerId}</strong></div>
+                    <div><span className="text-muted-foreground">Name:</span> <strong>{pushWorkflow.step1.data.customerName || 'N/A'}</strong></div>
+                    <div><span className="text-muted-foreground">Email:</span> <strong>{pushWorkflow.step1.data.email || 'N/A'}</strong></div>
+                    <div><span className="text-muted-foreground">Shopify ID:</span> <strong>{pushWorkflow.step1.data.shopifyCustomerId}</strong></div>
+                  </div>
+                  {pushWorkflow.step1.data.wasCreated && pushWorkflow.step1.data.createDetails && (
+                    <div className="mt-2">
+                      <p className="text-xs font-medium text-orange-700 mb-1">Customer was CREATED in NetSuite (Tier 3)</p>
+                      {pushWorkflow.step1.data.createDetails.mappingsApplied?.length > 0 && (
+                        <div className="mb-2">
+                          <p className="text-xs font-medium mb-1">Mappings Applied:</p>
+                          <div className="bg-white border rounded p-2 text-xs space-y-1">
+                            {pushWorkflow.step1.data.createDetails.mappingsApplied.map((m: any, i: number) => (
+                              <div key={i} className="flex gap-2">
+                                <span className="text-muted-foreground">{m.field}:</span>
+                                <span className="font-mono">{m.finalValue}</span>
+                                <span className="text-muted-foreground">({m.mappingType}: {m.rawValue})</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      <details className="text-xs">
+                        <summary className="cursor-pointer text-muted-foreground hover:text-foreground">View payload sent to NetSuite</summary>
+                        <div className="mt-1 bg-white border rounded p-2 overflow-x-auto">
+                          <JsonView
+                            value={pushWorkflow.step1.data.createDetails.payloadSent}
+                            style={{ backgroundColor: 'transparent', fontSize: '11px' }}
+                            collapsed={1}
+                            displayDataTypes={false}
+                            displayObjectSize={false}
+                            enableClipboard={true}
+                          />
+                        </div>
+                      </details>
+                    </div>
+                  )}
+                </div>
+              )}
+              {pushWorkflow.step1.status === 'error' && (
+                <div className="text-xs">
+                  <p className="text-red-700 font-medium">{pushWorkflow.step1.error}</p>
+                  {pushWorkflow.step1.data && (
+                    <details className="mt-1">
+                      <summary className="cursor-pointer text-muted-foreground hover:text-foreground">View response details</summary>
+                      <pre className="mt-1 bg-red-50 border border-red-200 rounded p-2 overflow-x-auto text-[10px]">
+                        {JSON.stringify(pushWorkflow.step1.data, null, 2)}
+                      </pre>
+                    </details>
+                  )}
+                </div>
+              )}
+            </WorkflowStep>
+
+            {/* ──── Step 2: Build Payload ──── */}
+            <WorkflowStep
+              stepNumber={2}
+              title="Build Payload"
+              description="Generate the full NetSuite Sales Order JSON with addresses, line items, and mappings"
+              status={pushWorkflow.step2.status}
+              onRun={runStep2BuildPayload}
+              canRun={pushWorkflow.step1.status === 'success' && pushWorkflow.step2.status !== 'loading'}
+            >
+              {pushWorkflow.step2.status === 'success' && pushWorkflow.step2.data && (
+                <div className="space-y-3">
+                  {/* Validation summary */}
+                  {pushWorkflow.step2.data.validation && (
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                      <div className={`p-2 rounded ${pushWorkflow.step2.data.validation.hasCustomerId ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                        Customer ID: {pushWorkflow.step2.data.validation.hasCustomerId ? 'Yes' : 'Missing'}
                       </div>
-                      <div>
-                        <span className="text-muted-foreground">Email:</span>{' '}
-                        <strong>{netsuitePayloadDialog.customerInfo.email}</strong>
+                      <div className={`p-2 rounded ${pushWorkflow.step2.data.validation.hasBillingAddress ? 'bg-green-50 text-green-700' : 'bg-orange-50 text-orange-700'}`}>
+                        Billing Addr: {pushWorkflow.step2.data.validation.hasBillingAddress ? 'Yes' : 'No'}
                       </div>
-                      <div>
-                        <span className="text-muted-foreground">Shopify Customer ID:</span>{' '}
-                        <strong>{netsuitePayloadDialog.customerInfo.shopifyCustomerId}</strong>
+                      <div className={`p-2 rounded ${pushWorkflow.step2.data.validation.hasShippingAddress ? 'bg-green-50 text-green-700' : 'bg-orange-50 text-orange-700'}`}>
+                        Shipping Addr: {pushWorkflow.step2.data.validation.hasShippingAddress ? 'Yes' : 'No'}
                       </div>
-                      <div>
-                        <span className="text-muted-foreground">NetSuite Customer ID:</span>{' '}
-                        <strong className={netsuitePayloadDialog.customerInfo.netsuiteCustomerId ? 'text-green-600' : 'text-red-600'}>
-                          {netsuitePayloadDialog.customerInfo.netsuiteCustomerId || 'Not Found'}
-                        </strong>
+                      <div className="p-2 rounded bg-blue-50 text-blue-700">
+                        Items: {pushWorkflow.step2.data.validation.itemCount}
                       </div>
                     </div>
-                  </div>
+                  )}
+
+                  {/* Warnings */}
+                  {pushWorkflow.step2.data.warnings && pushWorkflow.step2.data.warnings.length > 0 && (
+                    <div className="bg-yellow-50 border border-yellow-200 rounded p-2">
+                      <p className="text-xs font-medium text-yellow-800 mb-1">Warnings:</p>
+                      <ul className="text-xs text-yellow-700 space-y-0.5">
+                        {pushWorkflow.step2.data.warnings.map((w: string, i: number) => (
+                          <li key={i}>- {w}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Full JSON Payload */}
+                  <details open>
+                    <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">
+                      Full JSON Payload
+                    </summary>
+                    <div className="mt-1 bg-white border rounded p-3 overflow-x-auto">
+                      <JsonView
+                        value={pushWorkflow.step2.data.payload}
+                        style={{ backgroundColor: 'transparent', fontSize: '11px' }}
+                        collapsed={1}
+                        displayDataTypes={false}
+                        displayObjectSize={false}
+                        enableClipboard={true}
+                      />
+                    </div>
+                  </details>
                 </div>
               )}
-
-              {/* Address Info */}
-              {netsuitePayloadDialog.addressInfo && (
-                <div>
-                  <h3 className="font-semibold mb-2">Address Information</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {netsuitePayloadDialog.addressInfo.billing && (
-                      <div className="bg-gray-50 border border-gray-200 p-4 rounded-lg">
-                        <h4 className="font-medium mb-2 text-sm">Billing Address</h4>
-                        <div className="text-xs space-y-1">
-                          <div>
-                            <span className="text-muted-foreground">NetSuite Address ID:</span>{' '}
-                            <strong className={netsuitePayloadDialog.addressInfo.billing.netsuiteAddressId ? 'text-green-600' : 'text-orange-600'}>
-                              {netsuitePayloadDialog.addressInfo.billing.netsuiteAddressId || 'Not Found (will use customer default)'}
-                            </strong>
-                          </div>
-                          <div>
-                            <strong>{netsuitePayloadDialog.addressInfo.billing.firstName} {netsuitePayloadDialog.addressInfo.billing.lastName}</strong>
-                          </div>
-                          <div>{netsuitePayloadDialog.addressInfo.billing.address1}</div>
-                          {netsuitePayloadDialog.addressInfo.billing.address2 && (
-                            <div>{netsuitePayloadDialog.addressInfo.billing.address2}</div>
-                          )}
-                          <div>
-                            {netsuitePayloadDialog.addressInfo.billing.city}, {netsuitePayloadDialog.addressInfo.billing.province} {netsuitePayloadDialog.addressInfo.billing.zip}
-                          </div>
-                          <div>{netsuitePayloadDialog.addressInfo.billing.country}</div>
-                          {netsuitePayloadDialog.addressInfo.billing.phone && (
-                            <div>Phone: {netsuitePayloadDialog.addressInfo.billing.phone}</div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                    {netsuitePayloadDialog.addressInfo.shipping && (
-                      <div className="bg-gray-50 border border-gray-200 p-4 rounded-lg">
-                        <h4 className="font-medium mb-2 text-sm">Shipping Address</h4>
-                        <div className="text-xs space-y-1">
-                          <div>
-                            <span className="text-muted-foreground">NetSuite Address ID:</span>{' '}
-                            <strong className={netsuitePayloadDialog.addressInfo.shipping.netsuiteAddressId ? 'text-green-600' : 'text-orange-600'}>
-                              {netsuitePayloadDialog.addressInfo.shipping.netsuiteAddressId || 'Not Found (will use customer default)'}
-                            </strong>
-                          </div>
-                          <div>
-                            <strong>{netsuitePayloadDialog.addressInfo.shipping.firstName} {netsuitePayloadDialog.addressInfo.shipping.lastName}</strong>
-                          </div>
-                          <div>{netsuitePayloadDialog.addressInfo.shipping.address1}</div>
-                          {netsuitePayloadDialog.addressInfo.shipping.address2 && (
-                            <div>{netsuitePayloadDialog.addressInfo.shipping.address2}</div>
-                          )}
-                          <div>
-                            {netsuitePayloadDialog.addressInfo.shipping.city}, {netsuitePayloadDialog.addressInfo.shipping.province} {netsuitePayloadDialog.addressInfo.shipping.zip}
-                          </div>
-                          <div>{netsuitePayloadDialog.addressInfo.shipping.country}</div>
-                          {netsuitePayloadDialog.addressInfo.shipping.phone && (
-                            <div>Phone: {netsuitePayloadDialog.addressInfo.shipping.phone}</div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
+              {pushWorkflow.step2.status === 'error' && (
+                <div className="text-xs">
+                  <p className="text-red-700 font-medium">{pushWorkflow.step2.error}</p>
+                  {pushWorkflow.step2.data && (
+                    <details className="mt-1">
+                      <summary className="cursor-pointer text-muted-foreground hover:text-foreground">View response details</summary>
+                      <pre className="mt-1 bg-red-50 border border-red-200 rounded p-2 overflow-x-auto text-[10px]">
+                        {JSON.stringify(pushWorkflow.step2.data, null, 2)}
+                      </pre>
+                    </details>
+                  )}
                 </div>
               )}
+            </WorkflowStep>
 
-              <div>
-                <h3 className="font-semibold mb-2">NetSuite JSON Payload</h3>
-                <div className="bg-white border border-gray-200 p-4 rounded-lg overflow-x-auto">
-                  <JsonView
-                    value={netsuitePayloadDialog.payload}
-                    style={{
-                      backgroundColor: 'transparent',
-                      fontSize: '12px',
-                    }}
-                    collapsed={false}
-                    displayDataTypes={false}
-                    displayObjectSize={false}
-                    enableClipboard={true}
-                  />
+            {/* ──── Step 3: Push to NetSuite ──── */}
+            <WorkflowStep
+              stepNumber={3}
+              title="Push to NetSuite"
+              description="Send the sales order payload to NetSuite REST API"
+              status={pushWorkflow.step3.status}
+              onRun={runStep3PushToNetSuite}
+              canRun={pushWorkflow.step2.status === 'success' && pushWorkflow.step3.status !== 'loading'}
+            >
+              {pushWorkflow.step3.status === 'success' && pushWorkflow.step3.data && (
+                <div className="space-y-2 text-xs">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-green-600" />
+                    <span className="font-medium text-green-700">Sales Order Created Successfully!</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div><span className="text-muted-foreground">Sales Order ID:</span> <strong>{pushWorkflow.step3.data.salesOrderId || 'N/A'}</strong></div>
+                    <div><span className="text-muted-foreground">Sales Order Name:</span> <strong>{pushWorkflow.step3.data.salesOrderName || 'N/A'}</strong></div>
+                  </div>
+                  {pushWorkflow.step3.data.warnings && pushWorkflow.step3.data.warnings.length > 0 && (
+                    <div className="bg-yellow-50 border border-yellow-200 rounded p-2 mt-1">
+                      <p className="text-xs font-medium text-yellow-800 mb-1">Warnings:</p>
+                      <ul className="text-xs text-yellow-700 space-y-0.5">
+                        {pushWorkflow.step3.data.warnings.map((w: string, i: number) => (
+                          <li key={i}>- {w}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
-                <p className="text-xs text-muted-foreground mt-2">
-                  Click arrows to expand/collapse sections. Use the copy button to copy the JSON.
-                </p>
-              </div>
+              )}
+              {pushWorkflow.step3.status === 'error' && (
+                <div className="text-xs">
+                  <p className="text-red-700 font-medium">{pushWorkflow.step3.error}</p>
+                  {pushWorkflow.step3.data && (
+                    <details className="mt-1">
+                      <summary className="cursor-pointer text-muted-foreground hover:text-foreground">View response details</summary>
+                      <pre className="mt-1 bg-red-50 border border-red-200 rounded p-2 overflow-x-auto text-[10px]">
+                        {JSON.stringify(pushWorkflow.step3.data, null, 2)}
+                      </pre>
+                    </details>
+                  )}
+                </div>
+              )}
+            </WorkflowStep>
+          </div>
 
-              <div className="flex justify-end space-x-2 pt-4">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setNetsuitePayloadDialog({
-                      isOpen: false,
-                      orderId: null,
-                      payload: null,
-                      customerInfo: null,
-                      addressInfo: null,
-                      isLoading: false,
-                    })
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={confirmPushToNetSuite}
-                  className="bg-blue-600 hover:bg-blue-700"
-                >
-                  Push to NetSuite
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="text-center py-8 text-muted-foreground">
-              No payload data available
-            </div>
-          )}
+          <div className="flex justify-end pt-2">
+            <Button variant="outline" onClick={closePushWorkflow}>
+              Close
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+
+/** Reusable workflow step component */
+function WorkflowStep({
+  stepNumber,
+  title,
+  description,
+  status,
+  onRun,
+  canRun,
+  children,
+}: {
+  stepNumber: number
+  title: string
+  description: string
+  status: 'idle' | 'loading' | 'success' | 'error'
+  onRun: () => void
+  canRun: boolean
+  children?: React.ReactNode
+}) {
+  const [isExpanded, setIsExpanded] = useState(status === 'success' || status === 'error')
+
+  // Auto-expand when status changes to success or error
+  useEffect(() => {
+    if (status === 'success' || status === 'error') {
+      setIsExpanded(true)
+    }
+  }, [status])
+
+  const statusIcon = {
+    idle: <Clock className="h-4 w-4 text-gray-400" />,
+    loading: <Loader />,
+    success: <CheckCircle2 className="h-4 w-4 text-green-600" />,
+    error: <XCircle className="h-4 w-4 text-red-600" />,
+  }[status]
+
+  const borderColor = {
+    idle: 'border-gray-200',
+    loading: 'border-blue-300',
+    success: 'border-green-300',
+    error: 'border-red-300',
+  }[status]
+
+  return (
+    <div className={`border ${borderColor} rounded-lg overflow-hidden`}>
+      <div className="flex items-center justify-between p-3 bg-gray-50">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="flex items-center gap-1 hover:text-blue-600"
+          >
+            {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+          </button>
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-gray-200 text-xs font-bold">
+              {stepNumber}
+            </span>
+            <span className="text-sm font-medium">{title}</span>
+            {statusIcon}
+          </div>
+        </div>
+        <Button
+          size="sm"
+          variant={status === 'success' ? 'outline' : 'default'}
+          onClick={onRun}
+          disabled={!canRun}
+          className="text-xs h-7 px-3"
+        >
+          {status === 'loading' ? (
+            'Running...'
+          ) : status === 'success' ? (
+            'Re-run'
+          ) : (
+            <>
+              <Play className="h-3 w-3 mr-1" />
+              Run
+            </>
+          )}
+        </Button>
+      </div>
+      {!isExpanded && (
+        <div className="px-3 pb-2">
+          <p className="text-xs text-muted-foreground">{description}</p>
+        </div>
+      )}
+      {isExpanded && (
+        <div className="p-3 border-t bg-white">
+          <p className="text-xs text-muted-foreground mb-2">{description}</p>
+          {children}
+        </div>
+      )}
     </div>
   )
 }

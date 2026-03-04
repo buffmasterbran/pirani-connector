@@ -25,6 +25,7 @@ export { fetchNetSuiteTransactions, matchNetSuiteTransactions } from './transact
 
 // Customer
 export { findNetSuiteCustomerByEmail, resolveCustomer, createNetSuiteCustomer } from './customer'
+export type { ResolveCustomerResult, CreateCustomerResult } from './customer'
 
 // Address
 export { findNetSuiteAddressesByCustomerId, matchShopifyAddressToNetSuite } from './address'
