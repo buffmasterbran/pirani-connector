@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { toISO } from '@/lib/api-helpers'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
   try {
     const payouts = await prisma.payout.findMany({
