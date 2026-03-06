@@ -79,6 +79,9 @@ export function PayoutsSection() {
   const [payoutRangeEnd, setPayoutRangeEnd] = useState('')
 
   // Search and filter state
+  const [statusView, setStatusView] = useState<'all' | 'unpushed' | 'pushed'>('unpushed')
+  const [sortField, setSortField] = useState<'id' | 'date' | 'amount' | 'status'>('date')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [payoutSearchTerm, setPayoutSearchTerm] = useState('')
   const [isPayoutFiltersOpen, setIsPayoutFiltersOpen] = useState(false)
   const [filters, setFilters] = useState({
@@ -703,7 +706,11 @@ export function PayoutsSection() {
       }
     }
 
-    // NetSuite Status filter
+    // Status view toggle filter
+    if (statusView === 'unpushed' && !!payout.netsuiteDepositNumber) return false
+    if (statusView === 'pushed' && !payout.netsuiteDepositNumber) return false
+
+    // NetSuite Status filter (from advanced filters dialog)
     if (!filters.netsuiteStatus.all) {
       const hasNetSuiteId = !!payout.netsuiteDepositNumber
       const matchesNetSuite = (filters.netsuiteStatus.pushed && hasNetSuiteId) ||
@@ -731,6 +738,33 @@ export function PayoutsSection() {
     return true
   })
 
+  // Sort payouts
+  const sortedPayouts = [...filteredPayouts].sort((a, b) => {
+    let cmp = 0
+    switch (sortField) {
+      case 'id': cmp = String(a.id).localeCompare(String(b.id)); break
+      case 'date': cmp = new Date(a.date).getTime() - new Date(b.date).getTime(); break
+      case 'amount': cmp = Number(a.amount) - Number(b.amount); break
+      case 'status': cmp = (a.status || '').localeCompare(b.status || ''); break
+    }
+    return sortDir === 'asc' ? cmp : -cmp
+  })
+
+  const toggleSort = (field: typeof sortField) => {
+    if (sortField === field) {
+      setSortDir(prev => prev === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortField(field)
+      setSortDir(field === 'date' ? 'desc' : 'asc')
+    }
+  }
+
+  const SortIcon = ({ field }: { field: typeof sortField }) => (
+    <span className="ml-1 text-[10px]">
+      {sortField === field ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}
+    </span>
+  )
+
   // --- Render ---
 
   return (
@@ -749,6 +783,23 @@ export function PayoutsSection() {
                       onChange={(e) => setPayoutSearchTerm(e.target.value)}
                       className="h-9 flex-1"
                     />
+                  </div>
+
+                  {/* Status View Toggle */}
+                  <div className="flex items-center rounded-md border overflow-hidden">
+                    {(['unpushed', 'all', 'pushed'] as const).map((view) => (
+                      <button
+                        key={view}
+                        onClick={() => setStatusView(view)}
+                        className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                          statusView === view
+                            ? 'bg-primary text-primary-foreground'
+                            : 'bg-background text-muted-foreground hover:bg-muted'
+                        } ${view !== 'unpushed' ? 'border-l' : ''}`}
+                      >
+                        {view === 'unpushed' ? 'Unpushed' : view === 'pushed' ? 'Pushed' : 'All'}
+                      </button>
+                    ))}
                   </div>
 
                   {/* Filter and Import Controls */}
@@ -794,40 +845,11 @@ export function PayoutsSection() {
                       </Button>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-muted-foreground whitespace-nowrap">Import:</span>
-                      <Input
-                        type="number"
-                        placeholder="Start"
-                        value={payoutRangeStart}
-                        onChange={(e) => setPayoutRangeStart(e.target.value)}
-                        className="w-[70px] h-9"
-                        title="Starting position (e.g., 1 for first payout)"
-                      />
-                      <span className="text-sm text-muted-foreground">-</span>
-                      <Input
-                        type="number"
-                        placeholder="End"
-                        value={payoutRangeEnd}
-                        onChange={(e) => setPayoutRangeEnd(e.target.value)}
-                        className="w-[70px] h-9"
-                        title="Ending position (e.g., 10 for 10th payout)"
-                      />
-                      <Button
-                        onClick={importPayoutsByRange}
-                        disabled={isLoading || !payoutRangeStart.trim() || !payoutRangeEnd.trim()}
-                        className="h-9"
-                        size="sm"
-                        variant="outline"
-                      >
-                        Import Range
-                      </Button>
-                    </div>
                   </div>
 
                   {/* Results Count */}
                   <div className="text-sm text-muted-foreground">
-                    {filteredPayouts.length} of {allPayouts.length}
+                    {sortedPayouts.length} of {allPayouts.length}
                   </div>
                 </div>
 
@@ -842,73 +864,87 @@ export function PayoutsSection() {
             <div className="text-center py-8 text-muted-foreground">
               No payouts found. Click &quot;Import All Payouts&quot; or &quot;Import by ID&quot; to get started.
             </div>
-          ) : filteredPayouts.length === 0 ? (
+          ) : sortedPayouts.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               No payouts match the current filters. Try adjusting your filter criteria.
             </div>
           ) : (
             <div className="space-y-3">
-              {filteredPayouts.map((payout) => (
+              {/* Column Headers */}
+              <div className="grid grid-cols-[200px_70px_100px_140px_1fr] items-center gap-4 px-4 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                <button onClick={() => toggleSort('id')} className="hover:text-foreground cursor-pointer flex items-center">
+                  Payout ID<SortIcon field="id" />
+                </button>
+                <button onClick={() => toggleSort('status')} className="hover:text-foreground cursor-pointer flex items-center">
+                  Status<SortIcon field="status" />
+                </button>
+                <button onClick={() => toggleSort('date')} className="hover:text-foreground cursor-pointer flex items-center">
+                  Date<SortIcon field="date" />
+                </button>
+                <button onClick={() => toggleSort('amount')} className="hover:text-foreground cursor-pointer flex items-center">
+                  Amount<SortIcon field="amount" />
+                </button>
+                <div className="text-right">Actions</div>
+              </div>
+              {sortedPayouts.map((payout) => (
                 <Card key={payout.id} className="p-4">
-                  <div className="flex items-center justify-between">
-                    {/* Left side - Payout info */}
-                    <div className="flex items-center space-x-6">
-                      <div className="flex items-center space-x-3">
-                        <div className="flex items-center space-x-2">
-                          <h4 className="font-semibold text-sm">
-                            #{payout.id}
-                          </h4>
-                          {/* Shopify Link */}
-                          <a
-                            href={`https://admin.shopify.com/store/pirani-life/payments/payouts/${payout.id}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:text-blue-800 text-xs"
-                            title="View in Shopify"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                            </svg>
-                          </a>
-                          {/* NetSuite Link */}
-                          {payout.netsuiteDepositId && (
-                            <a
-                              href={`https://7913744.app.netsuite.com/app/accounting/transactions/deposit.nl?id=${payout.netsuiteDepositId}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-green-600 hover:text-green-800 text-xs"
-                              title="View in NetSuite"
-                            >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                              </svg>
-                            </a>
-                          )}
-                        </div>
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          payout.status === 'paid'
-                            ? 'bg-green-100 text-green-800'
-                            : 'bg-yellow-100 text-yellow-800'
-                        }`}>
-                          {payout.status}
-                        </span>
-                      </div>
+                  <div className="grid grid-cols-[200px_70px_100px_140px_1fr] items-center gap-4">
+                    {/* Payout ID */}
+                    <div className="flex items-center space-x-2">
+                      <h4 className="font-semibold text-sm truncate">
+                        #{payout.id}
+                      </h4>
+                      <a
+                        href={`https://admin.shopify.com/store/pirani-life/payments/payouts/${payout.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:text-blue-800 text-xs flex-shrink-0"
+                        title="View in Shopify"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                      </a>
+                      {payout.netsuiteDepositId && (
+                        <a
+                          href={`https://7913744.app.netsuite.com/app/accounting/transactions/deposit.nl?id=${payout.netsuiteDepositId}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-green-600 hover:text-green-800 text-xs flex-shrink-0"
+                          title="View in NetSuite"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                          </svg>
+                        </a>
+                      )}
+                    </div>
 
-                      <div className="text-sm text-muted-foreground">
-                        {safeToLocaleDateString(payout.date)}
-                      </div>
+                    {/* Status */}
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium text-center w-fit ${
+                      payout.status === 'paid'
+                        ? 'bg-green-100 text-green-800'
+                        : 'bg-yellow-100 text-yellow-800'
+                    }`}>
+                      {payout.status}
+                    </span>
 
-                      <div className="font-bold">
-                        {hideSensitiveData ? (
-                          <span className="text-gray-500">{"••••••"}</span>
-                        ) : (
-                          `${payout.currency} ${Number(payout.amount).toFixed(2)}`
-                        )}
-                      </div>
+                    {/* Date */}
+                    <div className="text-sm text-muted-foreground">
+                      {safeToLocaleDateString(payout.date)}
+                    </div>
+
+                    {/* Amount */}
+                    <div className="font-bold text-sm">
+                      {hideSensitiveData ? (
+                        <span className="text-gray-500">{"••••••"}</span>
+                      ) : (
+                        `${payout.currency} ${Number(payout.amount).toFixed(2)}`
+                      )}
                     </div>
 
                     {/* Right side - Status badges and actions */}
-                    <div className="flex items-center space-x-4">
+                    <div className="flex items-center justify-end space-x-4">
                       {/* Status Badges */}
                       <div className="flex items-center space-x-2">
                         {payout.inDatabase && (
