@@ -44,7 +44,13 @@ export function TransactionSummary({
   const chargesMatch = Math.abs(totalCharges - nsCharges) < 0.01
   const refundsMatch = Math.abs(totalRefunds - nsRefunds) < 0.01
   const adjustmentsMatch = Math.abs(totalAdjustments - nsAdjustments) < 0.01
-  const feesMatch = Math.abs(totalFees - nsFees) < 0.01
+
+  // Compute itemized fee totals from groupedFeeItems (matches what the NS deposit will contain)
+  const totalShopifyFeeItems = groupedFeeItems.reduce((sum, item) => sum + item.shopifyAmount, 0)
+  const totalNetsuiteFeeItems = groupedFeeItems.reduce((sum, item) => sum + item.netsuiteAmount, 0)
+  const feesMatch = groupedFeeItems.length > 0
+    ? Math.abs(totalShopifyFeeItems - totalNetsuiteFeeItems) < 0.01
+    : Math.abs(totalFees - nsFees) < 0.01
 
   // Create unified list of items to display (always show all items for alignment)
   // Show item if it appears in Shopify OR NetSuite to ensure alignment
@@ -53,7 +59,6 @@ export function TransactionSummary({
     { label: 'Refunds', shopify: totalRefunds, netsuite: nsRefunds, match: refundsMatch, showShopify: totalRefunds !== 0, showNetSuite: nsRefunds !== 0, isNegative: true },
     { label: 'Adjustments', shopify: totalAdjustments, netsuite: nsAdjustments, match: adjustmentsMatch, showShopify: totalAdjustments !== 0, showNetSuite: nsAdjustments !== 0, isNegative: false },
     { label: 'Marketplace sales tax', shopify: totalMarketplaceSalesTax, netsuite: 0, match: true, showShopify: totalMarketplaceSalesTax !== 0, showNetSuite: false, isNegative: false },
-    { label: 'Fees', shopify: totalFees, netsuite: nsFees, match: feesMatch, showShopify: totalFees !== 0, showNetSuite: nsFees !== 0, isNegative: true },
   ].filter(item => item.showShopify || item.showNetSuite) // Only show items that appear in at least one column
 
   return (

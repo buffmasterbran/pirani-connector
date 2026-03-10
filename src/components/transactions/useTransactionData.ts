@@ -359,34 +359,13 @@ export function useTransactionData({
     .filter(t => t.adjustmentReason && t.adjustmentReason !== null)
     .reduce((sum, t) => sum + getNetSuiteAmount(t), 0)
 
-  // Calculate NetSuite fees: includes actual fees PLUS amounts from dropdown selections when there's no cash sale
+  // Calculate NetSuite fees: only actual transaction fees (fee column).
+  // Dropdown-assigned amounts (shipping labels, ad fees, etc.) are tracked
+  // separately in groupedFeeItems and shown as individual line items.
   const nsFeesRaw = includedTransactionsForNetSuite
     .reduce((sum, t) => {
-      // Start with actual fee amount
       const fee = typeof t.fee === 'string' ? parseFloat(t.fee) : t.fee
-      let feeAmount = Math.abs(fee || 0)
-
-      // If there's no cash sale (no netsuiteTransactionId) and a dropdown is selected, add that amount to fees
-      const hasNoCashSale = !t.netsuiteTransactionId || t.netsuiteTransactionId.trim() === ''
-      const hasDropdownSelection = !!(t.amountDescription || t.otherFeesDescription)
-
-      if (hasNoCashSale && hasDropdownSelection) {
-        // For amountDescription, use the transaction amount
-        if (t.amountDescription) {
-          const amount = typeof t.amount === 'string' ? parseFloat(t.amount) : t.amount
-          feeAmount += Math.abs(amount || 0)
-        }
-
-        // For otherFeesDescription, use amount or fee (whichever is available)
-        if (t.otherFeesDescription) {
-          const amount = typeof t.amount === 'string' ? parseFloat(t.amount) : t.amount
-          const feeValue = typeof t.fee === 'string' ? parseFloat(t.fee) : t.fee
-          const amountToUse = Math.abs(amount || 0) || Math.abs(feeValue || 0)
-          feeAmount += amountToUse
-        }
-      }
-
-      return sum + feeAmount
+      return sum + Math.abs(fee || 0)
     }, 0)
   const nsFees = -nsFeesRaw // Fees are negative
 
