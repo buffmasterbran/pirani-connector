@@ -36,17 +36,8 @@ export async function POST(
     }
 
     // Calculate amount mismatch
-    // For payments, prioritize net amount (after fees) for comparison
-    // Check if this is a payment transaction by name
-    const netsuiteNameUpper = (netsuiteTransactionName || '').toUpperCase().trim()
-    const isPayment = netsuiteNameUpper.startsWith('PYMT') ||
-                      netsuiteNameUpper.startsWith('CUSTPYMT') ||
-                      netsuiteNameUpper.includes('PAYMENT')
-    
-    // For payments, use net amount; for others, prefer amount then net
-    const shopifyAmount = isPayment 
-      ? (transaction.net || transaction.amount || 0)
-      : (transaction.amount || transaction.net || 0)
+    // NS payments reflect full invoice amount, so always compare on amount (not net)
+    const shopifyAmount = transaction.amount || transaction.net || 0
     
     const netsuiteAmountNum = typeof netsuiteAmount === 'string' ? parseFloat(netsuiteAmount) : netsuiteAmount
     
