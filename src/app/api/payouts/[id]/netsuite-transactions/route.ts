@@ -163,38 +163,43 @@ export async function POST(
     matchNS(nsResults.refunds, t => isRefundTxn(t), true)
     matchNS(nsResults.payments, t => t.type === 'payment' || t.type === 'custpymt' || (t.type?.toLowerCase().includes('payment') ?? false), true)
 
-    // Bulk update all matched transactions
+    // Bulk update matched transactions in chunks (Postgres max 32767 bind vars, 6 per row)
+    const UPDATE_CHUNK_SIZE = 4000
     if (updates.length > 0) {
-      let nsIdCase = ''
-      let nsNameCase = ''
-      let nsAmountCase = ''
-      let mismatchCase = ''
-      const sqlParams: any[] = []
-      let pIdx = 1
+      for (let i = 0; i < updates.length; i += UPDATE_CHUNK_SIZE) {
+        const chunk = updates.slice(i, i + UPDATE_CHUNK_SIZE)
 
-      for (const u of updates) {
-        nsIdCase += ` WHEN "id" = $${pIdx} THEN $${pIdx + 1}`
-        nsNameCase += ` WHEN "id" = $${pIdx} THEN $${pIdx + 2}`
-        nsAmountCase += ` WHEN "id" = $${pIdx} THEN $${pIdx + 3}::float`
-        mismatchCase += ` WHEN "id" = $${pIdx} THEN $${pIdx + 4}::boolean`
-        sqlParams.push(u.id, u.netsuiteTransactionId, u.netsuiteTransactionName, u.netsuiteAmount, u.amountMismatch)
-        pIdx += 5
+        let nsIdCase = ''
+        let nsNameCase = ''
+        let nsAmountCase = ''
+        let mismatchCase = ''
+        const sqlParams: any[] = []
+        let pIdx = 1
+
+        for (const u of chunk) {
+          nsIdCase += ` WHEN "id" = $${pIdx} THEN $${pIdx + 1}`
+          nsNameCase += ` WHEN "id" = $${pIdx} THEN $${pIdx + 2}`
+          nsAmountCase += ` WHEN "id" = $${pIdx} THEN $${pIdx + 3}::float`
+          mismatchCase += ` WHEN "id" = $${pIdx} THEN $${pIdx + 4}::boolean`
+          sqlParams.push(u.id, u.netsuiteTransactionId, u.netsuiteTransactionName, u.netsuiteAmount, u.amountMismatch)
+          pIdx += 5
+        }
+
+        const ids = chunk.map(u => u.id)
+        const idPlaceholders = ids.map((_, idx) => `$${pIdx + idx}`).join(', ')
+        sqlParams.push(...ids)
+
+        const sql = `
+          UPDATE "PayoutTransaction" SET
+            "netsuiteTransactionId" = CASE ${nsIdCase} END,
+            "netsuiteTransactionName" = CASE ${nsNameCase} END,
+            "netsuiteAmount" = CASE ${nsAmountCase} END,
+            "amountMismatch" = CASE ${mismatchCase} END
+          WHERE "id" IN (${idPlaceholders})
+        `
+        await prisma.$executeRawUnsafe(sql, ...sqlParams)
+        console.log(`💾 Updated ${i + chunk.length}/${updates.length} transactions`)
       }
-
-      const ids = updates.map(u => u.id)
-      const idPlaceholders = ids.map((_, idx) => `$${pIdx + idx}`).join(', ')
-      sqlParams.push(...ids)
-
-      const sql = `
-        UPDATE "PayoutTransaction" SET
-          "netsuiteTransactionId" = CASE ${nsIdCase} END,
-          "netsuiteTransactionName" = CASE ${nsNameCase} END,
-          "netsuiteAmount" = CASE ${nsAmountCase} END,
-          "amountMismatch" = CASE ${mismatchCase} END
-        WHERE "id" IN (${idPlaceholders})
-      `
-      await prisma.$executeRawUnsafe(sql, ...sqlParams)
-      console.log(`💾 Updated ${updates.length} transactions in one query`)
     }
 
     return NextResponse.json({
