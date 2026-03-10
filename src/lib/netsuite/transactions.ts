@@ -11,10 +11,53 @@ interface SuiteQLTransactionRow {
   typename: string
 }
 
+// Max values in a single IN (...) clause to stay within SQL limits
+const IN_CLAUSE_CHUNK_SIZE = 900
+// SuiteQL returns max 1000 rows per request
+const SUITEQL_PAGE_SIZE = 1000
+
+/**
+ * Run a single SuiteQL query for a chunk of order refs, paginating through
+ * all results if there are more than 1000 rows.
+ */
+async function fetchChunk(refList: string): Promise<SuiteQLTransactionRow[]> {
+  const baseQuery = `
+    SELECT
+      Transaction.id,
+      Transaction.tranid,
+      Transaction.otherrefnum,
+      BUILTIN.DF(Transaction.entity) AS entityname,
+      Transaction.foreigntotal,
+      Transaction.type,
+      BUILTIN.DF(Transaction.type) AS typename
+    FROM Transaction
+    WHERE Transaction.otherrefnum IN (${refList})
+      AND Transaction.type IN ('CashSale', 'CashRfnd', 'CustPymt')
+    ORDER BY Transaction.otherrefnum, Transaction.type
+  `
+
+  const allRows: SuiteQLTransactionRow[] = []
+  let offset = 0
+
+  while (true) {
+    const data = await executeSuiteQL<SuiteQLTransactionRow>(baseQuery, SUITEQL_PAGE_SIZE, offset)
+    const items = data.items || []
+    allRows.push(...items)
+
+    // If we got fewer than the page size, we've fetched everything
+    if (items.length < SUITEQL_PAGE_SIZE || !data.hasMore) break
+    offset += SUITEQL_PAGE_SIZE
+  }
+
+  return allRows
+}
+
 /**
  * Fetches NetSuite transaction IDs for cash sales, refunds, and payments
  * using SuiteQL instead of a RESTlet. Filters to only CashSale, CashRfnd,
  * and CustPymt — guarantees no Sales Orders leak through.
+ *
+ * Handles large payouts by chunking the IN clause and paginating results.
  */
 export async function fetchNetSuiteTransactions(
   request: NetSuiteTransactionRequest
@@ -36,31 +79,26 @@ export async function fetchNetSuiteTransactions(
 
   // Deduplicate and escape single quotes for SQL
   const uniqueRefs = [...new Set(allRefs)]
-  const refList = uniqueRefs.map(r => `'${r.replace(/'/g, "''")}'`).join(', ')
 
-  const query = `
-    SELECT
-      Transaction.id,
-      Transaction.tranid,
-      Transaction.otherrefnum,
-      BUILTIN.DF(Transaction.entity) AS entityname,
-      Transaction.foreigntotal,
-      Transaction.type,
-      BUILTIN.DF(Transaction.type) AS typename
-    FROM Transaction
-    WHERE Transaction.otherrefnum IN (${refList})
-      AND Transaction.type IN ('CashSale', 'CashRfnd', 'CustPymt')
-    ORDER BY Transaction.otherrefnum, Transaction.type
-  `
+  // Chunk refs to stay within SQL IN clause limits, fetch each chunk in parallel
+  const chunks: string[][] = []
+  for (let i = 0; i < uniqueRefs.length; i += IN_CLAUSE_CHUNK_SIZE) {
+    chunks.push(uniqueRefs.slice(i, i + IN_CLAUSE_CHUNK_SIZE))
+  }
 
-  const data = await executeSuiteQL<SuiteQLTransactionRow>(query, 1000)
+  const allRows: SuiteQLTransactionRow[] = []
+  for (const chunk of chunks) {
+    const refList = chunk.map(r => `'${r.replace(/'/g, "''")}'`).join(', ')
+    const rows = await fetchChunk(refList)
+    allRows.push(...rows)
+  }
 
   // Classify results into the same shape the rest of the app expects
   const cashsales: NetSuiteCashSale[] = []
   const refunds: NetSuiteRefund[] = []
   const payments: NetSuitePayment[] = []
 
-  for (const row of data.items || []) {
+  for (const row of allRows) {
     const mapped = {
       id: Number(row.id),
       tranid: row.tranid,
