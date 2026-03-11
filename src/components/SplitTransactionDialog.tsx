@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Trash2, Plus, Loader2 } from 'lucide-react'
 
 interface SplitChild {
@@ -12,6 +13,14 @@ interface SplitChild {
   netsuiteTransactionName: string | null
   netsuiteAmount: number | null
   amount: number
+  amountDescription?: string | null
+}
+
+interface PayoutMappingOption {
+  id: number
+  netsuiteId: string
+  description: string | null
+  mappingType: string
 }
 
 interface SplitTransactionDialogProps {
@@ -37,9 +46,17 @@ export function SplitTransactionDialog({ isOpen, onClose, transaction, onSaved }
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // NS transaction mode state
   const [nsId, setNsId] = useState('')
   const [nsName, setNsName] = useState('')
   const [nsAmount, setNsAmount] = useState('')
+
+  // Account line mode state
+  const [addMode, setAddMode] = useState<'ns_transaction' | 'account_line'>('ns_transaction')
+  const [payoutMappings, setPayoutMappings] = useState<PayoutMappingOption[]>([])
+  const [loadingMappings, setLoadingMappings] = useState(false)
+  const [selectedMappingId, setSelectedMappingId] = useState('')
+  const [acctAmount, setAcctAmount] = useState('')
 
   const loadChildren = useCallback(async () => {
     if (!transaction) return
@@ -57,6 +74,26 @@ export function SplitTransactionDialog({ isOpen, onClose, transaction, onSaved }
     }
   }, [transaction])
 
+  const loadMappings = useCallback(async () => {
+    setLoadingMappings(true)
+    try {
+      const res = await fetch('/api/mappings/payout-mappings')
+      const data = await res.json()
+      if (data.success && Array.isArray(data.data)) {
+        const excluded = ['deposit_account', 'fees_account']
+        setPayoutMappings(
+          data.data.filter((m: PayoutMappingOption) =>
+            !excluded.includes(m.mappingType) && (m as any).isActive !== false
+          )
+        )
+      }
+    } catch (e) {
+      console.error('Failed to load payout mappings:', e)
+    } finally {
+      setLoadingMappings(false)
+    }
+  }, [])
+
   useEffect(() => {
     if (isOpen && transaction) {
       if (transaction.children && transaction.children.length > 0) {
@@ -64,58 +101,102 @@ export function SplitTransactionDialog({ isOpen, onClose, transaction, onSaved }
       } else {
         loadChildren()
       }
+      loadMappings()
       setError(null)
       setNsId('')
       setNsName('')
       setNsAmount('')
+      setAddMode('ns_transaction')
+      setSelectedMappingId('')
+      setAcctAmount('')
     }
-  }, [isOpen, transaction, loadChildren])
+  }, [isOpen, transaction, loadChildren, loadMappings])
 
   if (!transaction) return null
 
   const originalAmount = Math.abs(typeof transaction.amount === 'string' ? parseFloat(transaction.amount) : transaction.amount)
   const allocatedAmount = children.reduce((sum, c) => sum + Math.abs(c.netsuiteAmount ?? c.amount ?? 0), 0)
   const remaining = originalAmount - allocatedAmount
-  const isFullyMatched = remaining < 0.01
+  // Treat over-allocated the same as fully matched — allocations are "done"
+  // (the Shopify payout amount ≠ the NS Cash Sale amount for marketplace tax orders)
+  const isFullyMatched = remaining <= 0.01
   const currency = transaction.currency || 'USD'
 
   const handleAdd = async () => {
-    if (!nsId.trim()) {
-      setError('NetSuite Transaction ID is required')
-      return
-    }
-    const amount = parseFloat(nsAmount)
-    if (isNaN(amount) || amount === 0) {
-      setError('A valid amount is required')
-      return
-    }
-
-    setIsSaving(true)
-    setError(null)
-    try {
-      const res = await fetch(`/api/payouts/transactions/${transaction.id}/split`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          netsuiteTransactionId: nsId.trim(),
-          netsuiteTransactionName: nsName.trim() || null,
-          netsuiteAmount: amount,
-        }),
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        setError(data.error || 'Failed to add')
+    if (addMode === 'ns_transaction') {
+      if (!nsId.trim()) {
+        setError('NetSuite Transaction ID is required')
         return
       }
-      setChildren(prev => [...prev, data.child])
-      setNsId('')
-      setNsName('')
-      setNsAmount('')
-      onSaved()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to add')
-    } finally {
-      setIsSaving(false)
+      const amount = parseFloat(nsAmount)
+      if (isNaN(amount) || amount === 0) {
+        setError('A valid amount is required')
+        return
+      }
+
+      setIsSaving(true)
+      setError(null)
+      try {
+        const res = await fetch(`/api/payouts/transactions/${transaction.id}/split`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            netsuiteTransactionId: nsId.trim(),
+            netsuiteTransactionName: nsName.trim() || null,
+            netsuiteAmount: amount,
+          }),
+        })
+        const data = await res.json()
+        if (!res.ok) {
+          setError(data.error || 'Failed to add')
+          return
+        }
+        setChildren(prev => [...prev, data.child])
+        setNsId('')
+        setNsName('')
+        setNsAmount('')
+        onSaved()
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Failed to add')
+      } finally {
+        setIsSaving(false)
+      }
+    } else {
+      if (!selectedMappingId) {
+        setError('Select a GL account')
+        return
+      }
+      const amount = parseFloat(acctAmount)
+      if (isNaN(amount) || amount === 0) {
+        setError('A valid amount is required')
+        return
+      }
+
+      setIsSaving(true)
+      setError(null)
+      try {
+        const res = await fetch(`/api/payouts/transactions/${transaction.id}/split`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            amountDescription: selectedMappingId,
+            amount,
+          }),
+        })
+        const data = await res.json()
+        if (!res.ok) {
+          setError(data.error || 'Failed to add')
+          return
+        }
+        setChildren(prev => [...prev, data.child])
+        setSelectedMappingId('')
+        setAcctAmount('')
+        onSaved()
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Failed to add')
+      } finally {
+        setIsSaving(false)
+      }
     }
   }
 
@@ -143,6 +224,11 @@ export function SplitTransactionDialog({ isOpen, onClose, transaction, onSaved }
 
   const fmt = (n: number) => {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(n)
+  }
+
+  const getMappingLabel = (netsuiteId: string) => {
+    const mapping = payoutMappings.find(m => m.netsuiteId === netsuiteId)
+    return mapping?.description || netsuiteId
   }
 
   return (
@@ -185,8 +271,8 @@ export function SplitTransactionDialog({ isOpen, onClose, transaction, onSaved }
             <span className="font-semibold">{fmt(allocatedAmount)}</span>
             <span className="text-muted-foreground"> of {fmt(originalAmount)}</span>
           </div>
-          <div className={`text-sm font-bold ${Math.abs(remaining) < 0.01 ? 'text-green-600' : remaining < 0 ? 'text-red-600' : 'text-orange-600'}`}>
-            {Math.abs(remaining) < 0.01 ? 'Fully matched' : `Remaining: ${fmt(remaining)}`}
+          <div className={`text-sm font-bold ${Math.abs(remaining) < 0.01 ? 'text-green-600' : remaining < 0 ? 'text-slate-500' : 'text-orange-600'}`}>
+            {Math.abs(remaining) < 0.01 ? 'Fully matched' : remaining < 0 ? `Allocations set` : `Remaining: ${fmt(remaining)}`}
           </div>
         </div>
 
@@ -201,8 +287,9 @@ export function SplitTransactionDialog({ isOpen, onClose, transaction, onSaved }
               <thead className="bg-slate-50 border-b">
                 <tr>
                   <th className="px-3 py-2 text-left font-medium text-muted-foreground">#</th>
-                  <th className="px-3 py-2 text-left font-medium text-muted-foreground">NS Transaction ID</th>
-                  <th className="px-3 py-2 text-left font-medium text-muted-foreground">NS Name</th>
+                  <th className="px-3 py-2 text-left font-medium text-muted-foreground">Type</th>
+                  <th className="px-3 py-2 text-left font-medium text-muted-foreground">NS ID / Account</th>
+                  <th className="px-3 py-2 text-left font-medium text-muted-foreground">Name / Description</th>
                   <th className="px-3 py-2 text-right font-medium text-muted-foreground">Amount</th>
                   <th className="px-3 py-2 text-center font-medium text-muted-foreground w-10"></th>
                 </tr>
@@ -211,8 +298,21 @@ export function SplitTransactionDialog({ isOpen, onClose, transaction, onSaved }
                 {children.map((child, idx) => (
                   <tr key={child.id} className="border-b last:border-0">
                     <td className="px-3 py-2 text-muted-foreground">{idx + 1}</td>
-                    <td className="px-3 py-2 font-mono text-xs">{child.netsuiteTransactionId}</td>
-                    <td className="px-3 py-2">{child.netsuiteTransactionName || '—'}</td>
+                    <td className="px-3 py-2">
+                      {child.netsuiteTransactionId
+                        ? <span className="px-1.5 py-0.5 bg-purple-100 text-purple-800 rounded text-xs font-medium">NS Txn</span>
+                        : <span className="px-1.5 py-0.5 bg-orange-100 text-orange-800 rounded text-xs font-medium">GL Acct</span>
+                      }
+                    </td>
+                    <td className="px-3 py-2 font-mono text-xs">
+                      {child.netsuiteTransactionId || child.amountDescription || '—'}
+                    </td>
+                    <td className="px-3 py-2 text-xs">
+                      {child.netsuiteTransactionId
+                        ? (child.netsuiteTransactionName || '—')
+                        : (child.amountDescription ? getMappingLabel(child.amountDescription) : '—')
+                      }
+                    </td>
                     <td className="px-3 py-2 text-right font-mono">{fmt(child.netsuiteAmount ?? child.amount)}</td>
                     <td className="px-3 py-2 text-center">
                       <Button
@@ -232,53 +332,125 @@ export function SplitTransactionDialog({ isOpen, onClose, transaction, onSaved }
           </div>
         ) : (
           <div className="text-center py-4 text-sm text-muted-foreground">
-            No NS transactions added yet. Add one below.
+            No allocations added yet. Add one below.
           </div>
         )}
 
         {/* Add form - hidden when fully matched */}
         {!isFullyMatched && (
           <div className="p-4 border rounded-lg bg-white space-y-3">
-            <p className="text-sm font-medium">Add NetSuite Transaction</p>
-            <div className="grid grid-cols-[1fr_1fr_120px_auto] gap-2 items-end">
-              <div>
-                <label className="text-xs text-muted-foreground">NS Transaction ID</label>
-                <Input
-                  placeholder="e.g. 1517260"
-                  value={nsId}
-                  onChange={(e) => setNsId(e.target.value)}
-                  className="h-9"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground">NS Name (optional)</label>
-                <Input
-                  placeholder="e.g. CS44774"
-                  value={nsName}
-                  onChange={(e) => setNsName(e.target.value)}
-                  className="h-9"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground">Amount</label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  placeholder="15.00"
-                  value={nsAmount}
-                  onChange={(e) => setNsAmount(e.target.value)}
-                  className="h-9"
-                />
-              </div>
+            {/* Mode toggle */}
+            <div className="flex gap-2">
               <Button
-                onClick={handleAdd}
-                disabled={isSaving || !nsId.trim()}
                 size="sm"
-                className="h-9"
+                variant={addMode === 'ns_transaction' ? 'default' : 'outline'}
+                onClick={() => { setAddMode('ns_transaction'); setError(null) }}
+                className="h-8 text-xs"
               >
-                {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                NS Transaction
+              </Button>
+              <Button
+                size="sm"
+                variant={addMode === 'account_line' ? 'default' : 'outline'}
+                onClick={() => { setAddMode('account_line'); setError(null) }}
+                className="h-8 text-xs"
+              >
+                Account Line
               </Button>
             </div>
+
+            {addMode === 'ns_transaction' && (
+              <>
+                <p className="text-sm font-medium">Add NetSuite Transaction</p>
+                <div className="grid grid-cols-[1fr_1fr_120px_auto] gap-2 items-end">
+                  <div>
+                    <label className="text-xs text-muted-foreground">NS Transaction ID</label>
+                    <Input
+                      placeholder="e.g. 1517260"
+                      value={nsId}
+                      onChange={(e) => setNsId(e.target.value)}
+                      className="h-9"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground">NS Name (optional)</label>
+                    <Input
+                      placeholder="e.g. CS44774"
+                      value={nsName}
+                      onChange={(e) => setNsName(e.target.value)}
+                      className="h-9"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground">Amount</label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      placeholder="15.00"
+                      value={nsAmount}
+                      onChange={(e) => setNsAmount(e.target.value)}
+                      className="h-9"
+                    />
+                  </div>
+                  <Button
+                    onClick={handleAdd}
+                    disabled={isSaving || !nsId.trim()}
+                    size="sm"
+                    className="h-9"
+                  >
+                    {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                  </Button>
+                </div>
+              </>
+            )}
+
+            {addMode === 'account_line' && (
+              <>
+                <p className="text-sm font-medium">Add GL Account Line</p>
+                <p className="text-xs text-muted-foreground">Routes this amount to a specific NetSuite account on the deposit (e.g. marketplace tax).</p>
+                <div className="grid grid-cols-[1fr_120px_auto] gap-2 items-end">
+                  <div>
+                    <label className="text-xs text-muted-foreground">GL Account</label>
+                    <Select
+                      value={selectedMappingId}
+                      onValueChange={setSelectedMappingId}
+                      disabled={loadingMappings}
+                    >
+                      <SelectTrigger className="h-9">
+                        <SelectValue placeholder={loadingMappings ? 'Loading...' : 'Select account...'} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {payoutMappings.map(m => (
+                          <SelectItem key={m.id} value={m.netsuiteId}>
+                            {m.description || m.netsuiteId}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground">Amount</label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      placeholder="9.36"
+                      value={acctAmount}
+                      onChange={(e) => setAcctAmount(e.target.value)}
+                      className="h-9"
+                    />
+                  </div>
+                  <Button
+                    onClick={handleAdd}
+                    disabled={isSaving || !selectedMappingId}
+                    size="sm"
+                    className="h-9"
+                  >
+                    {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                  </Button>
+                </div>
+              </>
+            )}
+
             {error && <p className="text-xs text-red-600">{error}</p>}
           </div>
         )}

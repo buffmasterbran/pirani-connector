@@ -31,10 +31,24 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
   try {
     const { transactionId } = await resolveParams(params)
     const body = await request.json()
-    const { netsuiteTransactionId, netsuiteTransactionName, netsuiteAmount } = body
+    const { netsuiteTransactionId, netsuiteTransactionName, netsuiteAmount, amountDescription, amount } = body
 
-    if (!netsuiteTransactionId) {
-      return NextResponse.json({ error: 'netsuiteTransactionId is required' }, { status: 400 })
+    const isNsTransaction = !!netsuiteTransactionId
+    const isAccountLine = !netsuiteTransactionId && !!amountDescription
+
+    if (!isNsTransaction && !isAccountLine) {
+      return NextResponse.json(
+        { error: 'Either netsuiteTransactionId or amountDescription is required' },
+        { status: 400 },
+      )
+    }
+
+    const childAmount = isNsTransaction
+      ? (netsuiteAmount != null ? Number(netsuiteAmount) : null)
+      : Number(amount)
+
+    if (childAmount == null || isNaN(childAmount) || childAmount === 0) {
+      return NextResponse.json({ error: 'A valid amount is required' }, { status: 400 })
     }
 
     const parent = await prisma.payoutTransaction.findUnique({
@@ -63,12 +77,13 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
         type: parent.type,
         currency: parent.currency,
         processedAt: parent.processedAt,
-        amount: netsuiteAmount != null ? Number(netsuiteAmount) : null,
-        net: netsuiteAmount != null ? Number(netsuiteAmount) : null,
+        amount: childAmount,
+        net: childAmount,
         fee: 0,
-        netsuiteTransactionId: String(netsuiteTransactionId),
-        netsuiteTransactionName: netsuiteTransactionName ?? null,
-        netsuiteAmount: netsuiteAmount != null ? Number(netsuiteAmount) : null,
+        netsuiteTransactionId: isNsTransaction ? String(netsuiteTransactionId) : null,
+        netsuiteTransactionName: isNsTransaction ? (netsuiteTransactionName ?? null) : null,
+        netsuiteAmount: isNsTransaction ? childAmount : null,
+        amountDescription: isAccountLine ? String(amountDescription) : null,
         includeInNetSuite: true,
       },
     })

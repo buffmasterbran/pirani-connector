@@ -206,7 +206,7 @@ export function TransactionRow({
                 onClick={() => onToggleExpandSplit(transaction.id)}
               >
                 {expandedSplits.has(transaction.id) ? <ChevronDown className="h-3 w-3 mr-0.5" /> : <ChevronRight className="h-3 w-3 mr-0.5" />}
-                {transaction.children.length} NS txns
+                {transaction.children.length} split{transaction.children.length !== 1 ? 's' : ''}
               </Button>
               {onSplitTransaction && (
                 <Button

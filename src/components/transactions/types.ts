@@ -27,6 +27,7 @@ export interface Transaction {
     netsuiteTransactionName: string | null
     netsuiteAmount: number | null
     amount: number
+    amountDescription?: string | null
   }>
 }
 
