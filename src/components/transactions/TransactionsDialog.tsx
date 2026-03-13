@@ -2,12 +2,15 @@
 
 import { useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Button } from "@/components/ui/button"
+import { ClipboardList } from "lucide-react"
 import { TransactionsTable } from "./TransactionsTable"
 import { AddNetSuiteTransactionDialog } from "@/components/AddNetSuiteTransactionDialog"
 import { SplitTransactionDialog } from "@/components/SplitTransactionDialog"
 import { useTransactionData, type TransactionItem } from "./useTransactionData"
 import { TransactionFilters } from "./TransactionFilters"
 import { TransactionSummary } from "./TransactionSummary"
+import { AuditLogDialog } from "./AuditLogDialog"
 
 interface TransactionsDialogProps {
   isOpen: boolean
@@ -75,6 +78,7 @@ export function TransactionsDialog({
   const [isFetchingNS, setIsFetchingNS] = useState(false)
 
   // Dialog state
+  const [auditLogOpen, setAuditLogOpen] = useState(false)
   const [addNetSuiteDialogOpen, setAddNetSuiteDialogOpen] = useState(false)
   const [selectedTransactionForAdd, setSelectedTransactionForAdd] = useState<TransactionItem | null>(null)
   const [splitDialogOpen, setSplitDialogOpen] = useState(false)
@@ -575,10 +579,19 @@ export function TransactionsDialog({
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-[95vw] w-full max-h-[80vh] overflow-y-auto">
-        <DialogHeader>
+        <DialogHeader className="flex flex-row items-center justify-between pr-8">
           <DialogTitle>
             Transactions for Payout #{payoutId || ''}
           </DialogTitle>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setAuditLogOpen(true)}
+            className="flex items-center gap-1.5"
+          >
+            <ClipboardList className="h-4 w-4" />
+            Activity Log
+          </Button>
         </DialogHeader>
 
         {/* Summary Totals */}
@@ -665,6 +678,12 @@ export function TransactionsDialog({
           onSave={handleSaveNetSuite}
         />
       )}
+
+      <AuditLogDialog
+        isOpen={auditLogOpen}
+        onClose={() => setAuditLogOpen(false)}
+        payoutId={payoutId}
+      />
 
       <SplitTransactionDialog
         isOpen={splitDialogOpen}
