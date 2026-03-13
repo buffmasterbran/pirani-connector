@@ -59,6 +59,7 @@ export function TransactionSummary({
     { label: 'Refunds', shopify: totalRefunds, netsuite: nsRefunds, match: refundsMatch, showShopify: totalRefunds !== 0, showNetSuite: nsRefunds !== 0, isNegative: true },
     { label: 'Adjustments', shopify: totalAdjustments, netsuite: nsAdjustments, match: adjustmentsMatch, showShopify: totalAdjustments !== 0, showNetSuite: nsAdjustments !== 0, isNegative: false },
     { label: 'Marketplace sales tax', shopify: totalMarketplaceSalesTax, netsuite: 0, match: true, showShopify: totalMarketplaceSalesTax !== 0, showNetSuite: false, isNegative: false },
+    { label: 'Fees', shopify: totalFees, netsuite: nsFees, match: feesMatch, showShopify: totalFees !== 0, showNetSuite: nsFees !== 0, isNegative: true },
   ].filter(item => item.showShopify || item.showNetSuite) // Only show items that appear in at least one column
 
   return (

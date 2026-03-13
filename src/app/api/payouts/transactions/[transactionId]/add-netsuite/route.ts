@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { logTransactionChange } from '@/lib/audit-log'
 
 export async function POST(
   request: NextRequest,
@@ -55,6 +56,13 @@ export async function POST(
         netsuiteAmount: netsuiteAmountNum,
         amountMismatch,
       },
+    })
+
+    logTransactionChange(transactionId, transaction.payoutId, 'add_netsuite', {
+      netsuiteTransactionId,
+      netsuiteTransactionName,
+      netsuiteAmount: netsuiteAmountNum,
+      amountMismatch,
     })
 
     return NextResponse.json({

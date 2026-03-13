@@ -369,9 +369,16 @@ export function useTransactionData({
     }, 0)
   const nsFees = -nsFeesRaw // Fees are negative
 
-  // Calculate total as: charges - refunds - adjustments - fees
-  // This represents what actually hits the account
-  const totalNetSuiteAmount = nsCharges - Math.abs(nsRefunds) - Math.abs(nsAdjustments) - Math.abs(nsFees)
+  // Calculate NS marketplace sales tax (if any transactions have this type)
+  const nsMarketplaceSalesTax = includedTransactionsForNetSuite
+    .filter(t => t.type === 'marketplace_sales_tax' || (t.type && t.type.toLowerCase().includes('marketplace')))
+    .reduce((sum, t) => {
+      const amount = typeof t.amount === 'string' ? parseFloat(t.amount) : t.amount
+      return sum + (amount || 0)
+    }, 0)
+
+  // Calculate total: sum all components (refunds, fees are already negative)
+  const totalNetSuiteAmount = nsCharges + nsRefunds + nsAdjustments + nsMarketplaceSalesTax + nsFees
 
   const currency = payoutCurrency || localTransactions[0]?.currency || 'USD'
   const transactionsWithNS = localTransactions.filter(t => t.netsuiteTransactionId)

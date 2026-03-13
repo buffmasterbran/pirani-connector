@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { logTransactionChange } from '@/lib/audit-log'
 import crypto from 'crypto'
 
 type RouteContext = { params: Promise<{ transactionId: string }> | { transactionId: string } }
@@ -93,6 +94,14 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       data: { includeInNetSuite: false },
     })
 
+    logTransactionChange(transactionId, parent.payoutId, 'split', {
+      childId: child.id,
+      childAmount: childAmount,
+      netsuiteTransactionId: isNsTransaction ? netsuiteTransactionId : null,
+      amountDescription: isAccountLine ? amountDescription : null,
+      parentAmount: parent.amount,
+    })
+
     return NextResponse.json({ success: true, child })
   } catch (error) {
     console.error('Error adding split child:', error)
@@ -122,6 +131,13 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
     }
 
     await prisma.payoutTransaction.delete({ where: { id: childId } })
+
+    logTransactionChange(transactionId, child.payoutId, 'split_delete', {
+      deletedChildId: childId,
+      childAmount: child.amount,
+      childNetsuiteId: child.netsuiteTransactionName,
+      childAmountDescription: child.amountDescription,
+    })
 
     const remainingChildren = await prisma.payoutTransaction.count({
       where: { parentTransactionId: transactionId },

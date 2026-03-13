@@ -130,7 +130,15 @@ export function buildDropdownItems(
   const map = new Map<string, { description: string; amount: number }>()
 
   for (const txn of transactions) {
-    if (txn.amountDescription) {
+    // Skip amountDescription for transactions that already have a NS cash sale/payment
+    // — those go into payment.items via buildDepositItems, so adding their amount
+    // here would double-count them in the deposit.
+    const hasNsPaymentItem = txn.netsuiteTransactionId &&
+      String(txn.netsuiteTransactionId).trim() !== '' &&
+      (isCashSaleOrRefund(txn.netsuiteTransactionName || '') ||
+       isPaymentTransaction(txn.netsuiteTransactionName || ''))
+
+    if (txn.amountDescription && !hasNsPaymentItem) {
       const mapping = findPayoutMapping(txn.amountDescription, payoutMappings)
       if (mapping?.netsuiteId) {
         const e = map.get(mapping.netsuiteId) || { description: mapping.description || '', amount: 0 }

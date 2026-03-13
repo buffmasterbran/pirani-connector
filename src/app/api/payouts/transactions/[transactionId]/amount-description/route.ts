@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { logTransactionChange } from '@/lib/audit-log'
 
 export async function PATCH(
   request: NextRequest,
@@ -9,11 +10,21 @@ export async function PATCH(
     const { transactionId } = params
     const { amountDescription } = await request.json()
 
+    const before = await prisma.payoutTransaction.findUnique({
+      where: { id: transactionId },
+      select: { amountDescription: true, payoutId: true },
+    })
+
     const updatedTransaction = await prisma.payoutTransaction.update({
       where: { id: transactionId },
       data: {
         amountDescription: amountDescription || null,
       },
+    })
+
+    logTransactionChange(transactionId, updatedTransaction.payoutId, 'set_amount_desc', {
+      before: before?.amountDescription ?? null,
+      after: amountDescription || null,
     })
 
     return NextResponse.json({ success: true, data: updatedTransaction })

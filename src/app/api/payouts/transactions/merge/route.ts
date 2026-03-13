@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { logTransactionChange } from '@/lib/audit-log'
 
 export async function POST(request: NextRequest) {
   try {
@@ -130,6 +131,15 @@ export async function POST(request: NextRequest) {
       where: {
         id: { in: sourceTransactionIds },
       },
+    })
+
+    logTransactionChange(targetTransactionId, targetTransaction.payoutId, 'merge', {
+      sourceTransactionIds,
+      before: {
+        target: { amount: targetTransaction.amount, fee: targetTransaction.fee, net: targetTransaction.net },
+        sources: sourceTransactions.map(t => ({ id: t.id, type: t.type, amount: t.amount, fee: t.fee, net: t.net })),
+      },
+      after: { amount: combinedAmount, fee: combinedFee, net: combinedNet },
     })
 
     return NextResponse.json({

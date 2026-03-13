@@ -563,6 +563,19 @@ model Fulfillment {
   @@index([status])
 }
 
+model TransactionAuditLog {
+  id              Int      @id @default(autoincrement())
+  transactionId   String
+  payoutId        String
+  action          String   // merge, split, split_delete, toggle_include, set_amount_desc, set_fee_desc, set_other_fees_desc, add_netsuite, clear_netsuite, reassign_netsuite
+  details         Json?    // { before: {...}, after: {...}, sourceIds: [...], etc. }
+  createdAt       DateTime @default(now())
+
+  @@index([transactionId])
+  @@index([payoutId])
+  @@index([createdAt(sort: Desc)])
+}
+
 model CustomerAddress {
   id                Int      @id @default(autoincrement())
   customerId        Int
