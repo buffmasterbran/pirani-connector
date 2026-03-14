@@ -61,6 +61,19 @@ export function MergeTransactionsDialog({
       return
     }
 
+    // Check if amounts won't match NS and confirm with user
+    const nsTransaction = selectedTransactions.find(t => t.netsuiteTransactionId && t.netsuiteAmount != null)
+    if (nsTransaction && nsTransaction.netsuiteAmount != null) {
+      const nsAmt = Math.abs(nsTransaction.netsuiteAmount)
+      const willMatch = Math.abs(combinedAmount - nsAmt) <= 0.01
+      if (!willMatch) {
+        const confirmed = window.confirm(
+          `The combined amount (${currency} ${combinedAmount.toFixed(2)}) will not match the NetSuite amount (${currency} ${nsAmt.toFixed(2)}) for ${nsTransaction.netsuiteTransactionName}.\n\nAre you sure you want to merge?`
+        )
+        if (!confirmed) return
+      }
+    }
+
     setError(null)
     setIsMerging(true)
 
