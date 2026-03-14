@@ -2,128 +2,664 @@
 
 import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { HelpCircle, ChevronRight } from 'lucide-react'
+import { HelpCircle, ChevronRight, BookOpen, GitMerge, FileText, AlertTriangle, DollarSign, Tag, ClipboardList } from 'lucide-react'
+
+type FaqId = string
+
+function FaqItem({ id, icon, title, expandedFaq, setExpandedFaq, children }: {
+  id: FaqId
+  icon?: React.ReactNode
+  title: string
+  expandedFaq: FaqId | null
+  setExpandedFaq: (id: FaqId | null) => void
+  children: React.ReactNode
+}) {
+  const isExpanded = expandedFaq === id
+  return (
+    <div className="border rounded-lg overflow-hidden">
+      <button
+        onClick={() => setExpandedFaq(isExpanded ? null : id)}
+        className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          <ChevronRight
+            className={`h-5 w-5 text-slate-500 transition-transform ${isExpanded ? 'transform rotate-90' : ''}`}
+          />
+          {icon}
+          <span className="font-semibold text-slate-800">{title}</span>
+        </div>
+      </button>
+      {isExpanded && (
+        <div className="px-4 pb-4 pt-0 border-t bg-gray-50">
+          <div className="pt-4 space-y-3 text-sm text-slate-700">
+            {children}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Step({ number, title, children }: { number: number; title: string; children: React.ReactNode }) {
+  return (
+    <div className="flex gap-3">
+      <div className="flex-shrink-0 w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">{number}</div>
+      <div className="flex-1">
+        <p className="font-medium mb-1">{title}</p>
+        <div className="text-slate-600">{children}</div>
+      </div>
+    </div>
+  )
+}
+
+function Tip({ children, variant = 'info' }: { children: React.ReactNode; variant?: 'info' | 'warning' | 'success' }) {
+  const styles = {
+    info: 'bg-blue-50 border-blue-200 text-blue-800',
+    warning: 'bg-amber-50 border-amber-200 text-amber-800',
+    success: 'bg-green-50 border-green-200 text-green-800',
+  }
+  const labels = { info: 'Tip', warning: 'Important', success: 'Good to know' }
+  return (
+    <div className={`border rounded p-3 ${styles[variant]}`}>
+      <p className="font-medium mb-1">{labels[variant]}:</p>
+      <div className="text-sm">{children}</div>
+    </div>
+  )
+}
 
 export function HelpSection() {
-  const [expandedFaq, setExpandedFaq] = useState<string | null>(null)
+  const [expandedFaq, setExpandedFaq] = useState<FaqId | null>(null)
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-slate-800 mb-2">Help & FAQ</h2>
-        <p className="text-slate-600">Common questions and guidance for using the Shopify to NetSuite connector.</p>
+        <h2 className="text-2xl font-bold text-slate-800 mb-2">Help &amp; Workflows</h2>
+        <p className="text-slate-600">Standard operating procedures and guidance for payout reconciliation.</p>
       </div>
 
+      {/* ============ PAYOUT RECONCILIATION WORKFLOW ============ */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <HelpCircle className="h-5 w-5" />
-            Frequently Asked Questions
+            <BookOpen className="h-5 w-5 text-blue-600" />
+            Payout Reconciliation Workflow
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-2">
-            {/* FAQ Item: Shopify Tax Handling */}
-            <div className="border rounded-lg overflow-hidden">
-              <button
-                onClick={() => setExpandedFaq(expandedFaq === 'tax-handling' ? null : 'tax-handling')}
-                className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  <ChevronRight
-                    className={`h-5 w-5 text-slate-500 transition-transform ${
-                      expandedFaq === 'tax-handling' ? 'transform rotate-90' : ''
-                    }`}
-                  />
-                  <span className="font-semibold text-slate-800">
-                    Shopify Tax Adjustments
-                  </span>
-                </div>
-              </button>
-              {expandedFaq === 'tax-handling' && (
-                <div className="px-4 pb-4 pt-0 border-t bg-gray-50">
-                  <div className="pt-4 space-y-3 text-sm text-slate-700">
-                    <div>
-                      <p className="font-medium mb-2">Understanding Shopify Tax Handling:</p>
-                      <p>
-                        When Shopify Pay processes an order, they charge tax to the customer regardless of your tax settings because Shopify handles tax collection and remittance. This tax amount is then <strong>deducted from your payout</strong> as a pass-through - meaning you never actually receive the tax money.
-                      </p>
-                    </div>
-                    <div>
-                      <p className="font-medium mb-2">What happens when an order is cancelled?</p>
-                      <p>
-                        If an order is cancelled, Shopify will <strong>refund the tax</strong> to the customer. This creates a tax adjustment in your payout that needs to be properly categorized.
-                      </p>
-                    </div>
-                    <div className="bg-blue-50 border border-blue-200 rounded p-3">
-                      <p className="font-medium text-blue-900 mb-1">Recommendation:</p>
-                      <p className="text-blue-800">
-                        All tax adjustments should be set to <strong>&quot;Shopify Tax Adjustment&quot;</strong> in the dropdown. This ensures proper categorization in NetSuite and maintains accurate accounting records.
-                      </p>
-                      <p className="text-blue-800 mt-2 text-xs">
-                        <strong>Note:</strong> This is a recommendation, not a requirement. You can still choose other options if needed for your specific use case.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
 
-            {/* FAQ Item: Split Shopify Pay Payments */}
-            <div className="border rounded-lg overflow-hidden">
-              <button
-                onClick={() => setExpandedFaq(expandedFaq === 'split-payments' ? null : 'split-payments')}
-                className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  <ChevronRight
-                    className={`h-5 w-5 text-slate-500 transition-transform ${
-                      expandedFaq === 'split-payments' ? 'transform rotate-90' : ''
-                    }`}
-                  />
-                  <span className="font-semibold text-slate-800">
-                    Split Shopify Pay Payments Across Multiple Payouts
-                  </span>
-                </div>
-              </button>
-              {expandedFaq === 'split-payments' && (
-                <div className="px-4 pb-4 pt-0 border-t bg-gray-50">
-                  <div className="pt-4 space-y-3 text-sm text-slate-700">
-                    <div>
-                      <p className="font-medium mb-2">When Shopify Pay payments span multiple payouts:</p>
-                      <p>
-                        In some cases, Shopify Pay may split a single order&apos;s payment across <strong>two separate payouts</strong>. This typically happens when there are timing differences or payment processing delays.
-                      </p>
-                    </div>
-                    <div>
-                      <p className="font-medium mb-2">Required NetSuite workflow:</p>
-                      <ol className="list-decimal list-inside space-y-2 ml-2">
-                        <li>
-                          <strong>Delete the Cash Sale:</strong> The original cash sale created for the order must be deleted in NetSuite.
-                        </li>
-                        <li>
-                          <strong>Invoice the Sales Order:</strong> Convert the sales order to an invoice instead of using a cash sale.
-                        </li>
-                        <li>
-                          <strong>Match Payments:</strong> Apply payment matching to link the split payments from both payouts to the invoiced sales order.
-                        </li>
-                      </ol>
-                    </div>
-                    <div className="bg-yellow-50 border border-yellow-200 rounded p-3">
-                      <p className="font-medium text-yellow-900 mb-1">Important:</p>
-                      <p className="text-yellow-800">
-                        This workflow <strong>only applies</strong> when a Shopify Pay payment is split across <strong>2 payouts</strong>. For single-payout payments, use the standard cash sale workflow.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
+            <FaqItem
+              id="standard-workflow"
+              icon={<DollarSign className="h-4 w-4 text-green-600" />}
+              title="Standard Payout Workflow (Start Here)"
+              expandedFaq={expandedFaq}
+              setExpandedFaq={setExpandedFaq}
+            >
+              <p className="mb-3">Follow these steps for each payout to reconcile and push to NetSuite:</p>
+              <div className="space-y-4">
+                <Step number={1} title="Open the Payout">
+                  <p>Click <strong>&quot;View Transactions&quot;</strong> on the payout row. The transactions dialog shows the Shopify vs NetSuite summary at the top.</p>
+                </Step>
+                <Step number={2} title="Import Missing Orders">
+                  <p>If orders are missing from the DB, click <strong>&quot;Import Missing Orders&quot;</strong> in the filter bar. This fetches order data from Shopify.</p>
+                </Step>
+                <Step number={3} title="Fetch Missing NetSuite Transactions">
+                  <p>Click <strong>&quot;Get Missing NS Transactions&quot;</strong> to auto-match Shopify orders with their NetSuite cash sales, refunds, and payments by order number.</p>
+                </Step>
+                <Step number={4} title="Review Mismatches">
+                  <p>Check <strong>&quot;Orders with Issues&quot;</strong> to filter to transactions that need attention. Red rows indicate problems (missing NS IDs, amount mismatches).</p>
+                </Step>
+                <Step number={5} title="Handle Special Cases">
+                  <p>Address any order editing splits, tax adjustments, or other special transactions using the guides below.</p>
+                </Step>
+                <Step number={6} title="Assign Dropdowns for Fees &amp; Non-Order Transactions">
+                  <p>Use the <strong>Amount</strong>, <strong>Fee</strong>, and <strong>Other Fees</strong> dropdowns to assign GL accounts to non-order transactions (fees, shipping labels, credits, etc.).</p>
+                </Step>
+                <Step number={7} title="Verify Summary Matches">
+                  <p>The three-column summary at the top should show <strong>&quot;Match&quot;</strong> for Charges and Fees. If not, investigate remaining mismatches.</p>
+                </Step>
+                <Step number={8} title="Push to NetSuite">
+                  <p>Once matched, close the transactions dialog and click <strong>&quot;Push to NS&quot;</strong> on the payout row to create the NetSuite deposit.</p>
+                </Step>
+              </div>
+              <Tip variant="info">
+                <p>The deposit includes two sections: <strong>payment items</strong> (cash sales, refunds, payments that have NS IDs) and <strong>other items</strong> (fees and dropdown-assigned transactions mapped to GL accounts).</p>
+              </Tip>
+            </FaqItem>
 
-            {/* Placeholder for future FAQs */}
-            <div className="text-center py-8 text-slate-400 text-sm">
-              More help topics coming soon...
-            </div>
+            <FaqItem
+              id="amount-mismatch"
+              icon={<AlertTriangle className="h-4 w-4 text-red-500" />}
+              title="Amount Mismatch Warnings"
+              expandedFaq={expandedFaq}
+              setExpandedFaq={setExpandedFaq}
+            >
+              <p className="mb-2">When you see <strong className="text-red-600">&quot;Amount mismatch!&quot;</strong> on a transaction, it means the Shopify payout amount differs from the NetSuite transaction amount.</p>
+
+              <p className="font-medium mt-3 mb-2">Common causes:</p>
+              <ul className="list-disc list-inside space-y-2 ml-2">
+                <li><strong>Order Editing:</strong> The order was modified after the original charge, creating split captures. See &quot;Order Editing&quot; section below.</li>
+                <li><strong>Shopify Pay split across payouts:</strong> A single order&apos;s payment was split into multiple payouts by Shopify.</li>
+                <li><strong>Partial refunds or adjustments:</strong> The Shopify amount reflects a partial amount.</li>
+              </ul>
+
+              <Tip variant="warning">
+                <p>Shopify payout amounts are NOT order totals. They are the <strong>net payout for that transaction</strong> (order total minus Shopify fees). The NetSuite cash sale shows the <strong>full order total</strong>. These will almost never be exactly equal. The mismatch flag compares these two amounts.</p>
+              </Tip>
+            </FaqItem>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ============ ORDER EDITING ============ */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Tag className="h-5 w-5 text-amber-600" />
+            Order Editing (Product Added/Removed)
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+
+            <FaqItem
+              id="order-editing-overview"
+              icon={<Tag className="h-4 w-4 text-amber-600" />}
+              title="What is Order Editing?"
+              expandedFaq={expandedFaq}
+              setExpandedFaq={setExpandedFaq}
+            >
+              <p>When products are added or removed from an order after the original purchase using the Order Editing tool, Shopify creates <strong>additional captures</strong> for the price difference. This means one order can have <strong>multiple payout transactions</strong>.</p>
+
+              <p className="mt-2">Orders with this flag will show an amber <strong className="px-1.5 py-0.5 bg-amber-100 text-amber-800 rounded text-xs font-semibold">EDITED</strong> badge next to the order name (once the order has been imported with tags).</p>
+
+              <p className="mt-2">Shopify tags these orders with: <code className="bg-gray-200 px-1 rounded text-xs">orderediting, orderediting:product_added</code> or <code className="bg-gray-200 px-1 rounded text-xs">orderediting:product_removed</code></p>
+
+              <Tip variant="info">
+                <p>The EDITED badge only appears after orders are imported (or re-imported) with the tags field. Older orders imported before this feature will not show the badge.</p>
+              </Tip>
+            </FaqItem>
+
+            <FaqItem
+              id="order-editing-same-payout"
+              icon={<GitMerge className="h-4 w-4 text-green-600" />}
+              title="SOP: Edited Order - Both Charges in SAME Payout (Merge)"
+              expandedFaq={expandedFaq}
+              setExpandedFaq={setExpandedFaq}
+            >
+              <p className="mb-3">When both the original charge and the additional capture are in the <strong>same payout</strong>, simply merge them:</p>
+              <div className="space-y-4">
+                <Step number={1} title="Identify the split transactions">
+                  <p>Look for two (or more) transactions with the same order number. They will appear grouped with a &quot;2 transactions&quot; indicator.</p>
+                </Step>
+                <Step number={2} title="Select both transactions">
+                  <p>Check the checkboxes on both transactions.</p>
+                </Step>
+                <Step number={3} title="Click Merge">
+                  <p>The merge dialog will appear. Select the target transaction (the one with the NetSuite ID).</p>
+                </Step>
+                <Step number={4} title="Verify the match indicator">
+                  <p>The merge dialog shows a <strong className="text-green-600">green checkmark</strong> if the combined amount will match the NS cash sale, or a <strong className="text-red-600">red X</strong> if it will not. Only proceed if it shows green.</p>
+                </Step>
+                <Step number={5} title="Merge">
+                  <p>Click &quot;Merge Transactions.&quot; The combined transaction will now match the NetSuite cash sale.</p>
+                </Step>
+              </div>
+              <Tip variant="success">
+                <p>After merging, the amount mismatch flag is automatically recalculated. If the combined amount matches the NS amount, the mismatch warning will clear.</p>
+              </Tip>
+            </FaqItem>
+
+            <FaqItem
+              id="order-editing-cross-payout"
+              icon={<AlertTriangle className="h-4 w-4 text-red-500" />}
+              title="SOP: Edited Order - Charges in DIFFERENT Payouts (Invoice + Payments)"
+              expandedFaq={expandedFaq}
+              setExpandedFaq={setExpandedFaq}
+            >
+              <p className="mb-3">When the original charge and additional capture are in <strong>different payouts</strong>, you cannot merge them (deposits would not match). Instead, fix it in NetSuite:</p>
+              <div className="space-y-4">
+                <Step number={1} title="Identify the cross-payout split">
+                  <p>One payout will have a small charge (e.g., $9.46) with an NS cash sale matched, showing a large mismatch. The other payout will have the larger charge (e.g., $81.56) with no NS match.</p>
+                </Step>
+                <Step number={2} title="Delete the Cash Sale in NetSuite">
+                  <p>Go to NetSuite and delete the cash sale that was created for this order.</p>
+                </Step>
+                <Step number={3} title="Invoice the Sales Order">
+                  <p>In NetSuite, convert the sales order to an <strong>invoice</strong> for the full order amount.</p>
+                </Step>
+                <Step number={4} title="Create 2 Payments">
+                  <p>Create <strong>two separate payments</strong> against the invoice, one for each payout amount. Each payment should match the Shopify payout transaction amount.</p>
+                </Step>
+                <Step number={5} title="Update the web app">
+                  <p>In each payout, delete the old NS ID (trash icon) and add the new payment NS ID using the &quot;+&quot; button.</p>
+                </Step>
+              </div>
+              <Tip variant="warning">
+                <p>This is a manual process because each payout becomes its own NetSuite deposit. There is no way to merge transactions across payouts without breaking deposit totals.</p>
+              </Tip>
+            </FaqItem>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ============ TRANSACTION TYPES & DROPDOWNS ============ */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FileText className="h-5 w-5 text-purple-600" />
+            Transaction Types &amp; Dropdown Assignments
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+
+            <FaqItem
+              id="transaction-types"
+              icon={<FileText className="h-4 w-4 text-purple-600" />}
+              title="Understanding Transaction Types"
+              expandedFaq={expandedFaq}
+              setExpandedFaq={setExpandedFaq}
+            >
+              <p className="mb-2">Shopify&apos;s payout API returns these transaction types:</p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-gray-100">
+                      <th className="border p-2 text-left">Type</th>
+                      <th className="border p-2 text-left">Description</th>
+                      <th className="border p-2 text-left">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr><td className="border p-2 font-mono">charge</td><td className="border p-2">Order payment (most common)</td><td className="border p-2">Auto-matched to NS Cash Sale</td></tr>
+                    <tr><td className="border p-2 font-mono">refund</td><td className="border p-2">Order refund</td><td className="border p-2">Auto-matched to NS Refund</td></tr>
+                    <tr><td className="border p-2 font-mono">credit</td><td className="border p-2">Shop cash credit, marketplace tax</td><td className="border p-2">Assign via dropdown</td></tr>
+                    <tr><td className="border p-2 font-mono">debit</td><td className="border p-2">Shipping labels, adjustments</td><td className="border p-2">Assign via dropdown</td></tr>
+                    <tr><td className="border p-2 font-mono">dispute</td><td className="border p-2">Chargebacks</td><td className="border p-2">Assign via dropdown</td></tr>
+                    <tr><td className="border p-2 font-mono">payout</td><td className="border p-2">Payout-level entries</td><td className="border p-2">Usually excluded</td></tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <Tip variant="info">
+                <p>Shopify&apos;s API returns <strong>generic</strong> types (charge, credit, debit). The CSV export from Shopify shows <strong>specific</strong> types (marketplace_sales_tax, shop_cash_credit, etc.). The web app stores what the API returns.</p>
+              </Tip>
+            </FaqItem>
+
+            <FaqItem
+              id="dropdowns"
+              icon={<DollarSign className="h-4 w-4 text-purple-600" />}
+              title="Using Dropdown Assignments (Amount, Fee, Other Fees)"
+              expandedFaq={expandedFaq}
+              setExpandedFaq={setExpandedFaq}
+            >
+              <p className="mb-2">For transactions that do not have a NetSuite cash sale or refund (fees, credits, debits), use the dropdown menus to assign them to a GL account:</p>
+
+              <ul className="list-disc list-inside space-y-2 ml-2">
+                <li><strong>Amount dropdown:</strong> Assigns the transaction&apos;s <strong>amount</strong> to a GL account. Use for non-order transactions (credits, debits) that need to go to a specific account.</li>
+                <li><strong>Fee dropdown:</strong> Assigns the transaction&apos;s <strong>fee</strong> to a GL account. Most charges auto-map fees to the Shopify Fees account.</li>
+                <li><strong>Other Fees dropdown:</strong> For additional fee categorization when a transaction has fees that go to a different account than the standard Shopify Fees.</li>
+              </ul>
+
+              <p className="mt-3 font-medium">Current GL Account Mappings:</p>
+              <div className="overflow-x-auto mt-1">
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-gray-100">
+                      <th className="border p-2 text-left">Dropdown Option</th>
+                      <th className="border p-2 text-left">NS Account</th>
+                      <th className="border p-2 text-left">When to Use</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr><td className="border p-2">Shopify Fees</td><td className="border p-2">989</td><td className="border p-2">Standard Shopify transaction processing fees</td></tr>
+                    <tr><td className="border p-2">Shipping Label</td><td className="border p-2">513</td><td className="border p-2">Shopify shipping label purchases</td></tr>
+                    <tr><td className="border p-2">E-Com Tax Offset</td><td className="border p-2">1019</td><td className="border p-2">Marketplace sales tax / tax adjustments</td></tr>
+                    <tr><td className="border p-2">Shopify Advertising Fees</td><td className="border p-2">1003</td><td className="border p-2">Shopify advertising/marketing charges</td></tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <Tip variant="warning">
+                <p>A transaction with <strong>both</strong> a NetSuite ID (cash sale/payment) <strong>and</strong> an amount dropdown will be counted twice in the deposit &mdash; once as a payment item and once as an &quot;other&quot; item. Only assign dropdowns to transactions that do NOT have a NS cash sale or payment.</p>
+              </Tip>
+            </FaqItem>
+
+            <FaqItem
+              id="tax-handling"
+              icon={<DollarSign className="h-4 w-4 text-amber-600" />}
+              title="Shopify Tax Adjustments (Marketplace Sales Tax)"
+              expandedFaq={expandedFaq}
+              setExpandedFaq={setExpandedFaq}
+            >
+              <p>When Shopify collects marketplace sales tax, they charge tax to the customer and deduct it from your payout as a pass-through. You never receive this money.</p>
+
+              <p className="mt-2 font-medium">For tax adjustment transactions:</p>
+              <ul className="list-disc list-inside space-y-1 ml-2">
+                <li>Set the amount dropdown to <strong>&quot;E-Com Tax Offset&quot;</strong> (account 1019)</li>
+                <li>This maps to the tax offset GL account in NetSuite</li>
+              </ul>
+
+              <p className="mt-2 font-medium">When an order with marketplace tax is cancelled:</p>
+              <ul className="list-disc list-inside space-y-1 ml-2">
+                <li>Shopify refunds the tax to the customer</li>
+                <li>This creates a tax adjustment credit in your payout</li>
+                <li>Assign it to &quot;E-Com Tax Offset&quot; as well</li>
+              </ul>
+            </FaqItem>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ============ MERGING & SPLITTING ============ */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <GitMerge className="h-5 w-5 text-indigo-600" />
+            Merging &amp; Splitting Transactions
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+
+            <FaqItem
+              id="merging"
+              icon={<GitMerge className="h-4 w-4 text-indigo-600" />}
+              title="How to Merge Transactions"
+              expandedFaq={expandedFaq}
+              setExpandedFaq={setExpandedFaq}
+            >
+              <p className="mb-3">Use merge when multiple Shopify payout transactions should map to a single NetSuite cash sale (e.g., Order Editing splits within the same payout).</p>
+              <div className="space-y-4">
+                <Step number={1} title="Select transactions to merge">
+                  <p>Check the checkboxes on 2 or more transactions. A merge alert bar will appear above the table.</p>
+                </Step>
+                <Step number={2} title="Click Merge Selected">
+                  <p>The merge dialog opens showing all selected transactions.</p>
+                </Step>
+                <Step number={3} title="Choose the target (to keep)">
+                  <p>Select the transaction that should be kept. Usually this is the one with the NetSuite ID. The others will be deleted after their amounts are combined into the target.</p>
+                </Step>
+                <Step number={4} title="Check the match indicator">
+                  <p>The dialog shows whether the combined amount will match NetSuite:</p>
+                  <ul className="list-disc list-inside ml-2 mt-1">
+                    <li><strong className="text-green-600">Green check:</strong> Combined amount matches NS &mdash; safe to merge</li>
+                    <li><strong className="text-red-600">Red X:</strong> Combined amount does NOT match NS &mdash; merging may not fix the problem</li>
+                  </ul>
+                </Step>
+                <Step number={5} title="Confirm merge">
+                  <p>If amounts match, click &quot;Merge Transactions.&quot; If they do not match, a confirmation dialog will ask if you are sure.</p>
+                </Step>
+              </div>
+              <Tip variant="warning">
+                <p><strong>Only merge transactions in the same payout.</strong> Merging transactions from different payouts would break deposit totals.</p>
+              </Tip>
+            </FaqItem>
+
+            <FaqItem
+              id="splitting"
+              icon={<GitMerge className="h-4 w-4 text-orange-600" />}
+              title="How to Split Transactions"
+              expandedFaq={expandedFaq}
+              setExpandedFaq={setExpandedFaq}
+            >
+              <p>Use split when a single Shopify payout transaction needs to map to multiple NetSuite transactions. This is rare but can happen with combined orders.</p>
+              <div className="space-y-4 mt-3">
+                <Step number={1} title="Click the split icon on a transaction row">
+                  <p>The split dialog opens with the original transaction details.</p>
+                </Step>
+                <Step number={2} title="Define the split amounts">
+                  <p>Enter the amounts for each part. The parts must add up to the original total.</p>
+                </Step>
+                <Step number={3} title="Save the split">
+                  <p>The original transaction is kept as a parent, and child transactions are created for each part. Each child can then be matched to its own NS transaction.</p>
+                </Step>
+              </div>
+            </FaqItem>
+
+            <FaqItem
+              id="drag-drop"
+              icon={<GitMerge className="h-4 w-4 text-blue-600" />}
+              title="Reassigning NetSuite IDs (Drag &amp; Drop)"
+              expandedFaq={expandedFaq}
+              setExpandedFaq={setExpandedFaq}
+            >
+              <p>If a NetSuite ID was matched to the wrong Shopify transaction, you can drag it to the correct one:</p>
+              <div className="space-y-4 mt-3">
+                <Step number={1} title="Grab the NS ID">
+                  <p>Click and hold the NetSuite ID/name on the transaction that has the wrong match.</p>
+                </Step>
+                <Step number={2} title="Drag to the correct transaction">
+                  <p>Drop it onto the target transaction row. The NS ID will move from the source to the target.</p>
+                </Step>
+              </div>
+              <p className="mt-2">You can also manually add a NS ID using the &quot;+&quot; button, or delete one using the trash icon.</p>
+            </FaqItem>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ============ SPLIT PAYMENTS ACROSS PAYOUTS ============ */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-red-600" />
+            Split Payments Across Payouts
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+
+            <FaqItem
+              id="split-payments"
+              icon={<AlertTriangle className="h-4 w-4 text-red-500" />}
+              title="SOP: Shopify Pay Split Across 2 Payouts"
+              expandedFaq={expandedFaq}
+              setExpandedFaq={setExpandedFaq}
+            >
+              <p className="mb-2">Sometimes Shopify splits a single order&apos;s payment across two separate payouts. This can happen with:</p>
+              <ul className="list-disc list-inside space-y-1 ml-2 mb-3">
+                <li>Order Editing (products added/removed after purchase)</li>
+                <li>Shopify Pay timing differences</li>
+                <li>Payment processing delays</li>
+              </ul>
+
+              <p className="font-medium mb-2">How to identify:</p>
+              <ul className="list-disc list-inside space-y-1 ml-2 mb-3">
+                <li>A charge in one payout has an NS match but a large amount mismatch</li>
+                <li>Another payout has a charge for the same order with no NS match</li>
+                <li>The two amounts add up to the NS cash sale total</li>
+              </ul>
+
+              <p className="font-medium mb-2">Required NetSuite workflow:</p>
+              <div className="space-y-4">
+                <Step number={1} title="Delete the Cash Sale in NetSuite">
+                  <p>Find and delete the cash sale that was auto-created.</p>
+                </Step>
+                <Step number={2} title="Invoice the Sales Order">
+                  <p>Convert the sales order to an invoice for the full order amount.</p>
+                </Step>
+                <Step number={3} title="Create Payment 1">
+                  <p>Create a payment for the amount in the first payout. Apply it to the invoice.</p>
+                </Step>
+                <Step number={4} title="Create Payment 2">
+                  <p>Create a payment for the amount in the second payout. Apply it to the same invoice.</p>
+                </Step>
+                <Step number={5} title="Update both payouts in the web app">
+                  <p>In each payout, remove the old NS ID and add the new payment ID using the &quot;+&quot; button.</p>
+                </Step>
+              </div>
+
+              <Tip variant="warning">
+                <p>This is unavoidable when Shopify splits payments across payouts. Each payout is its own deposit in NetSuite, so both must have their own payment entry.</p>
+              </Tip>
+            </FaqItem>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ============ ACTIVITY LOG ============ */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ClipboardList className="h-5 w-5 text-teal-600" />
+            Activity Log &amp; Tracking Changes
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+
+            <FaqItem
+              id="activity-log"
+              icon={<ClipboardList className="h-4 w-4 text-teal-600" />}
+              title="Using the Activity Log"
+              expandedFaq={expandedFaq}
+              setExpandedFaq={setExpandedFaq}
+            >
+              <p>Every change made to payout transactions is logged. To view the log:</p>
+              <div className="space-y-4 mt-3">
+                <Step number={1} title="Open a payout's transactions">
+                  <p>Click &quot;View Transactions&quot; on any payout.</p>
+                </Step>
+                <Step number={2} title="Click &quot;Activity Log&quot;">
+                  <p>The button is in the top-right corner of the transactions dialog. A panel opens showing all recorded changes.</p>
+                </Step>
+              </div>
+
+              <p className="mt-3 font-medium">Actions that are logged:</p>
+              <ul className="list-disc list-inside space-y-1 ml-2">
+                <li><strong>Merges:</strong> Which transactions were merged, before/after amounts</li>
+                <li><strong>Splits:</strong> Original amount and resulting parts</li>
+                <li><strong>NS ID changes:</strong> Adding, removing, or reassigning NetSuite IDs</li>
+                <li><strong>Dropdown changes:</strong> Amount, Fee, and Other Fees description selections</li>
+                <li><strong>Include/Exclude toggles:</strong> When a transaction is included or excluded from the NS deposit</li>
+              </ul>
+
+              <Tip variant="info">
+                <p>Use the activity log to understand what changes have been made to a payout before pushing to NetSuite, or to troubleshoot why amounts look different than expected.</p>
+              </Tip>
+            </FaqItem>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ============ DEPOSIT CREATION ============ */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <DollarSign className="h-5 w-5 text-green-600" />
+            NetSuite Deposit Details
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+
+            <FaqItem
+              id="deposit-structure"
+              icon={<DollarSign className="h-4 w-4 text-green-600" />}
+              title="How NetSuite Deposits Are Built"
+              expandedFaq={expandedFaq}
+              setExpandedFaq={setExpandedFaq}
+            >
+              <p className="mb-2">When you click &quot;Push to NS,&quot; a deposit is created in NetSuite with two sections:</p>
+
+              <p className="font-medium mt-3">Payment Items (cashback section):</p>
+              <ul className="list-disc list-inside space-y-1 ml-2">
+                <li>Transactions with a NetSuite cash sale, refund, or payment ID</li>
+                <li>These reference the actual NS transaction by internal ID</li>
+                <li>Amount comes from the NS transaction</li>
+              </ul>
+
+              <p className="font-medium mt-3">Other Items (other deposits section):</p>
+              <ul className="list-disc list-inside space-y-1 ml-2">
+                <li>Transactions with <strong>dropdown assignments</strong> (amount, fee, or other fees descriptions)</li>
+                <li>Transactions that do NOT have a NS ID</li>
+                <li>Each maps to a GL account based on the dropdown selection</li>
+                <li>Standard fees (from transactions with NS IDs) are also included here</li>
+              </ul>
+
+              <Tip variant="warning">
+                <p>Make sure a transaction does not have <strong>both</strong> a NS ID and an amount dropdown, or it will be double-counted in the deposit (once as a payment item, once as an other item).</p>
+              </Tip>
+            </FaqItem>
+
+            <FaqItem
+              id="exclude-transactions"
+              icon={<FileText className="h-4 w-4 text-gray-500" />}
+              title="Excluding Transactions from Deposits"
+              expandedFaq={expandedFaq}
+              setExpandedFaq={setExpandedFaq}
+            >
+              <p>If a transaction should not be included in the NetSuite deposit:</p>
+              <ul className="list-disc list-inside space-y-1 ml-2 mt-2">
+                <li>Use the <strong>&quot;Ignore&quot;</strong> option in the amount dropdown</li>
+                <li>Or toggle the include/exclude setting on the transaction</li>
+              </ul>
+              <p className="mt-2">Excluded transactions will not appear in the deposit&apos;s payment items or other items, and will not count toward the summary totals.</p>
+            </FaqItem>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ============ TROUBLESHOOTING ============ */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <HelpCircle className="h-5 w-5 text-slate-600" />
+            Troubleshooting
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+
+            <FaqItem
+              id="troubleshoot-mismatch"
+              icon={<AlertTriangle className="h-4 w-4 text-red-500" />}
+              title="Charges Mismatch but Everything Looks Right"
+              expandedFaq={expandedFaq}
+              setExpandedFaq={setExpandedFaq}
+            >
+              <p className="font-medium mb-2">Check these common causes:</p>
+              <ol className="list-decimal list-inside space-y-2 ml-2">
+                <li><strong>Order Editing splits:</strong> Look for orders with multiple transactions (grouped rows with &quot;2 transactions&quot; label). These need to be merged.</li>
+                <li><strong>Marketplace sales tax:</strong> Tax credits/debits may not have been assigned to a GL account via dropdown yet.</li>
+                <li><strong>Excluded transactions:</strong> A transaction may have been accidentally excluded. Check for any that show as ignored.</li>
+                <li><strong>Missing NS matches:</strong> Some transactions may not have been matched yet. Try &quot;Get Missing NS Transactions&quot; again.</li>
+                <li><strong>Bookkeeper changes:</strong> Check the Activity Log to see if any merges, splits, or reassignments were made that might explain the discrepancy.</li>
+              </ol>
+            </FaqItem>
+
+            <FaqItem
+              id="troubleshoot-deposit-amount"
+              icon={<DollarSign className="h-4 w-4 text-red-500" />}
+              title="NS Deposit Amount Does Not Match Payout Amount"
+              expandedFaq={expandedFaq}
+              setExpandedFaq={setExpandedFaq}
+            >
+              <p className="font-medium mb-2">The deposit total should equal the Shopify payout total. If it does not:</p>
+              <ol className="list-decimal list-inside space-y-2 ml-2">
+                <li><strong>Double-counted transactions:</strong> Check if any transaction has both a NS ID AND an amount dropdown assigned. Remove the dropdown if so.</li>
+                <li><strong>Missing fee assignments:</strong> Fees from non-order transactions may need dropdown assignments to appear in the deposit.</li>
+                <li><strong>Shipping labels:</strong> Shipping label debits need to be assigned to the &quot;Shipping Label&quot; dropdown (account 513).</li>
+                <li><strong>Unassigned credits/debits:</strong> All non-order transactions (credits, debits, disputes) need dropdown assignments or they will be missing from the deposit.</li>
+              </ol>
+            </FaqItem>
+
+            <FaqItem
+              id="troubleshoot-missing-orders"
+              icon={<HelpCircle className="h-4 w-4 text-slate-500" />}
+              title="Orders Not Showing Order Names"
+              expandedFaq={expandedFaq}
+              setExpandedFaq={setExpandedFaq}
+            >
+              <p>If transactions show order IDs but no order names (like &quot;#77277&quot;):</p>
+              <ol className="list-decimal list-inside space-y-2 ml-2 mt-2">
+                <li>Click <strong>&quot;Import Missing Orders&quot;</strong> in the filter bar</li>
+                <li>This fetches order details from Shopify and links them to payout transactions</li>
+                <li>After import, order names, source info, and tags will be populated</li>
+              </ol>
+            </FaqItem>
           </div>
         </CardContent>
       </Card>
