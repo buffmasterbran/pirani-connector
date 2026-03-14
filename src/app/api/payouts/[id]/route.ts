@@ -15,6 +15,8 @@ export async function PATCH(
         where: { id: payoutId },
         data: {
           netsuiteDepositId: null,
+          pushedToNsBy: null,
+          pushedToNsAt: null,
         },
       })
 
