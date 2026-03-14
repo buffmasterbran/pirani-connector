@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Button } from "@/components/ui/button"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
-import { GitMerge, AlertTriangle } from "lucide-react"
+import { GitMerge, AlertTriangle, CheckCircle2, XCircle } from "lucide-react"
 
 interface Transaction {
   id: string
@@ -18,6 +18,7 @@ interface Transaction {
   currency: string
   netsuiteTransactionId?: string | null
   netsuiteTransactionName?: string | null
+  netsuiteAmount?: number | null
 }
 
 interface MergeTransactionsDialogProps {
@@ -164,6 +165,34 @@ export function MergeTransactionsDialog({
                   <span className="font-bold text-lg">{currency} {combinedNet.toFixed(2)}</span>
                 </div>
               </div>
+
+              {(() => {
+                const nsTransaction = selectedTransactions.find(t => t.netsuiteTransactionId && t.netsuiteAmount != null)
+                if (!nsTransaction || nsTransaction.netsuiteAmount == null) return null
+                const nsAmt = Math.abs(nsTransaction.netsuiteAmount)
+                const willMatch = Math.abs(combinedAmount - nsAmt) <= 0.01
+                return (
+                  <div className={`mt-3 p-3 rounded-md flex items-center gap-2 ${willMatch ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                    {willMatch ? (
+                      <CheckCircle2 className="h-5 w-5 text-green-600 flex-shrink-0" />
+                    ) : (
+                      <XCircle className="h-5 w-5 text-red-500 flex-shrink-0" />
+                    )}
+                    <div className="text-sm">
+                      {willMatch ? (
+                        <span className="text-green-800 font-medium">
+                          Amounts will match NS {nsTransaction.netsuiteTransactionName} ({currency} {nsAmt.toFixed(2)})
+                        </span>
+                      ) : (
+                        <span className="text-red-700">
+                          <span className="font-medium">Will not match NS {nsTransaction.netsuiteTransactionName}</span>
+                          {' — '}Combined: {currency} {combinedAmount.toFixed(2)} vs NS: {currency} {nsAmt.toFixed(2)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
 
             {error && (
