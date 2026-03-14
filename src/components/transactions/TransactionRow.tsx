@@ -109,6 +109,11 @@ export function TransactionRow({
           ) : (
             transaction.order_name || '\u2014'
           )}
+          {(transaction as any).order_edited && (
+            <span className="ml-1 px-1.5 py-0.5 bg-amber-100 text-amber-800 rounded text-[10px] font-semibold" title="Order was edited (products added/removed) — may split across payouts">
+              EDITED
+            </span>
+          )}
         </TableCell>
         <TableCell>
           {(() => {

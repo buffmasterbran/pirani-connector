@@ -123,18 +123,21 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
     const payoutData = transactions[0]?.payout
 
     const mapTransaction = (transaction: any) => {
-      const orderLineData = transaction.orderLine 
+      const orderLineData = transaction.orderLine
         ? {
             name: transaction.orderLine.shopifyOrderName,
             sourceName: (transaction.orderLine as any).sourceName ?? null,
             appId: (transaction.orderLine as any).appId ?? null,
+            tags: (transaction.orderLine as any).tags ?? null,
           }
         : (transaction.shopifyOrderId ? orderNameMap.get(transaction.shopifyOrderId) : null)
-      
+
       const orderName = orderLineData?.name ?? null
       const sourceName = orderLineData?.sourceName ?? null
       const appId = orderLineData?.appId ?? null
+      const tags = (orderLineData as any)?.tags ?? null
       const isWebOrder = sourceName === 'web' || sourceName === 'checkout'
+      const orderEdited = tags ? /orderediting/.test(tags) : false
 
       return {
         id: transaction.id,
@@ -143,6 +146,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
         source_name: sourceName,
         app_id: appId,
         is_web_order: isWebOrder,
+        order_edited: orderEdited,
         amount: transaction.amount ?? 0,
         fee: transaction.fee ?? 0,
         net: transaction.net ?? 0,

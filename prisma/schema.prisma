@@ -55,6 +55,7 @@ model OrderLine {
   lineItemTotal          Float?
   lineItemNet            Float?
   lineItemMetadata       String?
+  tags                   String?   // Comma-separated Shopify order tags
   sourceName             String?   // Shopify order source_name (e.g., 'web', '3890849' for Shop App)
   appId                  Int?      // Shopify app_id
   isDeleted              Boolean   @default(false)

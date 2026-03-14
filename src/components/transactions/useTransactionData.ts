@@ -7,6 +7,7 @@ export interface TransactionItem {
   source_name?: string | null
   app_id?: number | null
   is_web_order?: boolean | null
+  order_edited?: boolean
   amount: string | number
   fee: string | number
   net: string | number

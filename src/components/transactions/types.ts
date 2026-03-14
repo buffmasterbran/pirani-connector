@@ -5,6 +5,7 @@ export interface Transaction {
   source_name?: string | null
   app_id?: number | null
   is_web_order?: boolean
+  order_edited?: boolean
   amount: number
   fee: number
   net: number
