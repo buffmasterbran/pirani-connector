@@ -74,7 +74,6 @@ export async function POST(request: NextRequest) {
     let netsuiteTransactionId = targetTransaction.netsuiteTransactionId
     let netsuiteTransactionName = targetTransaction.netsuiteTransactionName
     let netsuiteAmount = targetTransaction.netsuiteAmount
-    let amountMismatch = targetTransaction.amountMismatch
 
     // If target doesn't have NetSuite ID but a source does, use the source's
     if (!netsuiteTransactionId) {
@@ -83,8 +82,13 @@ export async function POST(request: NextRequest) {
         netsuiteTransactionId = sourceWithNetSuite.netsuiteTransactionId
         netsuiteTransactionName = sourceWithNetSuite.netsuiteTransactionName
         netsuiteAmount = sourceWithNetSuite.netsuiteAmount
-        amountMismatch = sourceWithNetSuite.amountMismatch
       }
+    }
+
+    // Recalculate amountMismatch after merge
+    let amountMismatch = false
+    if (netsuiteAmount !== null && netsuiteAmount !== undefined) {
+      amountMismatch = Math.abs(combinedAmount - Math.abs(netsuiteAmount)) > 0.01
     }
 
     // Combine dropdown descriptions (prefer target's, fallback to source's)
