@@ -109,6 +109,8 @@ export async function POST(
 ) {
   try {
     const payoutId = params.id
+    const body = await request.json().catch(() => ({}))
+    const pushedBy = body.pushedBy || null
 
     const payout = await prisma.payout.findUnique({
       where: { id: payoutId },
@@ -229,7 +231,11 @@ export async function POST(
 
     await prisma.payout.update({
       where: { id: payoutId },
-      data: { netsuiteDepositId: depositId },
+      data: {
+        netsuiteDepositId: depositId,
+        pushedToNsBy: pushedBy,
+        pushedToNsAt: new Date(),
+      },
     })
 
     console.log(`✅ Deposit created: ${depositId} with ${validDepositItems.length} items` +

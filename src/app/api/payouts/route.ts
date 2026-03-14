@@ -69,6 +69,8 @@ export async function GET() {
         transactionCount: (payout as any)._count?.transactions ?? 0,
         netsuiteDepositNumber: payout.netsuiteDepositId ?? null,
         netsuiteDepositId: payout.netsuiteDepositId ?? null,
+        pushedToNsBy: (payout as any).pushedToNsBy ?? null,
+        pushedToNsAt: (payout as any).pushedToNsAt ? toISO((payout as any).pushedToNsAt) : null,
         createdAt: toISO(payout.createdAt),
         updatedAt: toISO(payout.updatedAt),
         transactions: [],

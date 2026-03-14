@@ -78,6 +78,8 @@ model Payout {
   payoutDate        DateTime?
   type              String?
   netsuiteDepositId String?
+  pushedToNsBy      String?
+  pushedToNsAt      DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 

@@ -21,6 +21,8 @@ interface Payout {
   addedToDatabaseAt?: string
   netsuiteDepositNumber?: string | null
   netsuiteDepositId?: string | null
+  pushedToNsBy?: string | null
+  pushedToNsAt?: string | null
 }
 
 interface Transaction {
@@ -42,6 +44,8 @@ interface SavedPayout {
   status: string
   netsuiteDepositNumber: string | null
   netsuiteDepositId: string | null
+  pushedToNsBy?: string | null
+  pushedToNsAt?: string | null
   transactionCount?: number
   transactions: Array<{
     id: string
@@ -169,7 +173,9 @@ export function PayoutsSection() {
             ...payout,
             inDatabase: isInDatabase,
             addedToDatabaseAt: (savedPayout as any)?.createdAt || undefined,
-            netsuiteDepositNumber: (savedPayout as any)?.netsuiteDepositNumber || null
+            netsuiteDepositNumber: (savedPayout as any)?.netsuiteDepositNumber || null,
+            pushedToNsBy: (savedPayout as any)?.pushedToNsBy || null,
+            pushedToNsAt: (savedPayout as any)?.pushedToNsAt || null,
           }
         })
 
@@ -476,6 +482,11 @@ export function PayoutsSection() {
     const payoutId = netsuitePreviewDialog.payoutId
     const apiUrl = `/api/payouts/${payoutId}/create-deposit`
 
+    const savedName = typeof window !== 'undefined' ? localStorage.getItem('pirani_push_user') : null
+    const pushedBy = window.prompt('Your name (for audit trail):', savedName || '')
+    if (!pushedBy || !pushedBy.trim()) return
+    localStorage.setItem('pirani_push_user', pushedBy.trim())
+
     setNetsuitePreviewDialog(prev => ({ ...prev, isLoading: true }))
 
     const callApi = async (body: any): Promise<any> => {
@@ -505,7 +516,7 @@ export function PayoutsSection() {
     }
 
     try {
-      const result = await callApi({})
+      const result = await callApi({ pushedBy: pushedBy.trim() })
       setNetsuitePreviewDialog({ isOpen: false, payoutId: null, previewData: null, isLoading: false })
 
       if (result.message === 'Deposit already created') {
@@ -668,7 +679,9 @@ export function PayoutsSection() {
     inDatabase: true,
     addedToDatabaseAt: p.date,
     netsuiteDepositNumber: p.netsuiteDepositNumber,
-    netsuiteDepositId: p.netsuiteDepositId
+    netsuiteDepositId: p.netsuiteDepositId,
+    pushedToNsBy: p.pushedToNsBy,
+    pushedToNsAt: p.pushedToNsAt,
   })), ...payouts.filter(p => !p.inDatabase)]
 
   // Helper function to check if a payout has transactions with issues (missing cash sales, etc.)
@@ -969,6 +982,11 @@ export function PayoutsSection() {
                               <X className="h-3 w-3" />
                             </button>
                           </div>
+                        )}
+                        {payout.pushedToNsBy && (
+                          <span className="text-xs text-muted-foreground" title={payout.pushedToNsAt ? new Date(payout.pushedToNsAt).toLocaleString() : ''}>
+                            by {payout.pushedToNsBy}{payout.pushedToNsAt ? ` on ${new Date(payout.pushedToNsAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : ''}
+                          </span>
                         )}
                         {payout.inDatabase && !payout.netsuiteDepositNumber && (
                           <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
