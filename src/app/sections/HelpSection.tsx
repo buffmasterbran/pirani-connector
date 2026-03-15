@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { HelpCircle, ChevronRight, BookOpen, GitMerge, FileText, AlertTriangle, DollarSign, Tag, ClipboardList } from 'lucide-react'
+import { HelpCircle, ChevronRight, BookOpen, GitMerge, FileText, AlertTriangle, DollarSign, Tag, ClipboardList, ShieldCheck } from 'lucide-react'
 
 type FaqId = string
 
@@ -333,12 +333,12 @@ export function HelpSection() {
               expandedFaq={expandedFaq}
               setExpandedFaq={setExpandedFaq}
             >
-              <p>When Shopify collects marketplace sales tax, they charge tax to the customer and deduct it from your payout as a pass-through. You never receive this money.</p>
+              <p>When Shopify collects marketplace sales tax (Shop App, Facebook, TikTok, etc.), they charge tax to the customer and deduct it from your payout as a separate <strong>tax_adjustment</strong>. You never receive this money &mdash; Shopify remits it directly to the state.</p>
 
-              <p className="mt-2 font-medium">For tax adjustment transactions:</p>
+              <p className="mt-2 font-medium">For tax adjustment transactions in a payout:</p>
               <ul className="list-disc list-inside space-y-1 ml-2">
                 <li>Set the amount dropdown to <strong>&quot;E-Com Tax Offset&quot;</strong> (account 1019)</li>
-                <li>This maps to the tax offset GL account in NetSuite</li>
+                <li>This posts the deduction to the Marketplace Tax Pass-Through GL</li>
               </ul>
 
               <p className="mt-2 font-medium">When an order with marketplace tax is cancelled:</p>
@@ -347,6 +347,239 @@ export function HelpSection() {
                 <li>This creates a tax adjustment credit in your payout</li>
                 <li>Assign it to &quot;E-Com Tax Offset&quot; as well</li>
               </ul>
+
+              <Tip variant="warning">
+                <p>Tax adjustments often appear on a <strong>different payout</strong> than the order charge. For example, the charge might be on Monday&apos;s payout but the tax deduction on Wednesday&apos;s. This is normal &mdash; the pass-through GL account balances out over time. See &quot;Marketplace Tax &mdash; Full Guide&quot; below for details.</p>
+              </Tip>
+            </FaqItem>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ============ MARKETPLACE TAX - FULL GUIDE ============ */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ShieldCheck className="h-5 w-5 text-emerald-600" />
+            Marketplace Tax &mdash; Full Guide
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+
+            <FaqItem
+              id="tax-why"
+              icon={<HelpCircle className="h-4 w-4 text-emerald-600" />}
+              title="Why Marketplace Orders Handle Tax Differently"
+              expandedFaq={expandedFaq}
+              setExpandedFaq={setExpandedFaq}
+            >
+              <p className="mb-2">When a customer buys through a <strong>marketplace channel</strong> (Shop App, Facebook, TikTok), Shopify is legally the &quot;marketplace facilitator.&quot; They collect sales tax from the customer and remit it directly to the state. Pirani never touches this tax money.</p>
+
+              <p className="mt-2 font-medium">What happens in the payout:</p>
+              <ol className="list-decimal list-inside space-y-1 ml-2">
+                <li>Customer pays $134.75 + $8.10 tax = <strong>$142.85</strong></li>
+                <li>Shopify takes their processing fee (~$4.94)</li>
+                <li>Payout <strong>charge</strong> = $137.91 (includes tax, minus fees)</li>
+                <li>Payout <strong>tax_adjustment</strong> = -$8.10 (Shopify deducts the tax they&apos;re remitting)</li>
+                <li>Net deposit to bank = $129.81 (subtotal minus fees)</li>
+              </ol>
+
+              <Tip variant="warning">
+                <p>The charge and tax_adjustment <strong>often land on different payouts</strong>. The charge might be on Monday&apos;s payout, and the tax deduction on Wednesday&apos;s. This is normal Shopify behavior.</p>
+              </Tip>
+            </FaqItem>
+
+            <FaqItem
+              id="tax-vs-direct"
+              icon={<ShieldCheck className="h-4 w-4 text-emerald-600" />}
+              title="Marketplace Orders vs Direct Website Orders"
+              expandedFaq={expandedFaq}
+              setExpandedFaq={setExpandedFaq}
+            >
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-gray-100">
+                      <th className="border p-2 text-left"></th>
+                      <th className="border p-2 text-left">Direct Website (pirani.life)</th>
+                      <th className="border p-2 text-left">Marketplace (Shop App, FB, TikTok)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr><td className="border p-2 font-medium">Who collects tax?</td><td className="border p-2">Pirani (you)</td><td className="border p-2">Shopify (marketplace facilitator)</td></tr>
+                    <tr><td className="border p-2 font-medium">Who remits tax?</td><td className="border p-2">Pirani (you)</td><td className="border p-2">Shopify</td></tr>
+                    <tr><td className="border p-2 font-medium">Taxable in NetSuite?</td><td className="border p-2 text-green-700 font-semibold">Yes &mdash; NS calculates tax</td><td className="border p-2 text-red-700 font-semibold">No &mdash; push as non-taxable</td></tr>
+                    <tr><td className="border p-2 font-medium">Tax GL account</td><td className="border p-2">Sales Tax Payable (liability)</td><td className="border p-2">Marketplace Tax Pass-Through</td></tr>
+                    <tr><td className="border p-2 font-medium">Payout has tax_adjustment?</td><td className="border p-2">No</td><td className="border p-2">Yes (negative debit)</td></tr>
+                    <tr><td className="border p-2 font-medium">Order Source Mapping</td><td className="border p-2">Taxable = Yes</td><td className="border p-2">Taxable = No</td></tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <Tip variant="info">
+                <p>This is NOT about whether the customer&apos;s state has nexus. It&apos;s about <strong>who is responsible for remitting the tax</strong>. Marketplace = Shopify remits. Direct = Pirani remits.</p>
+              </Tip>
+            </FaqItem>
+
+            <FaqItem
+              id="tax-wrong-way"
+              icon={<AlertTriangle className="h-4 w-4 text-red-500" />}
+              title="What Goes Wrong if Marketplace Orders Are Taxable in NS"
+              expandedFaq={expandedFaq}
+              setExpandedFaq={setExpandedFaq}
+            >
+              <p className="mb-2">If a marketplace order is pushed as <strong>taxable</strong> in NetSuite:</p>
+
+              <ol className="list-decimal list-inside space-y-2 ml-2">
+                <li>NS calculates tax (e.g., $8.10) and posts it to <strong>Sales Tax Payable</strong></li>
+                <li>Meanwhile, Shopify deducts $8.10 as a tax_adjustment in the payout</li>
+                <li>The tax_adjustment goes to the <strong>Marketplace Tax Pass-Through</strong> GL (a different account)</li>
+                <li>Now you have $8.10 sitting in Sales Tax Payable that <strong>will never be relieved</strong>, because Shopify already remitted the tax &mdash; you don&apos;t owe it</li>
+                <li>And the Pass-Through GL has a -$8.10 with no offsetting credit</li>
+              </ol>
+
+              <Tip variant="warning">
+                <p><strong>Both accounts drift over time.</strong> Sales Tax Payable grows with phantom liabilities you don&apos;t owe, and the Pass-Through GL accumulates unmatched debits. This is why marketplace orders must ALWAYS be non-taxable in NS.</p>
+              </Tip>
+            </FaqItem>
+
+            <FaqItem
+              id="tax-correct-flow"
+              icon={<ShieldCheck className="h-4 w-4 text-green-600" />}
+              title="Correct GL Flow for Marketplace Orders"
+              expandedFaq={expandedFaq}
+              setExpandedFaq={setExpandedFaq}
+            >
+              <p className="mb-2">When set up correctly, the marketplace tax creates a clean pass-through that nets to $0:</p>
+
+              <p className="font-medium mt-3 mb-1">Step 1: Cash Sale is pushed as non-taxable</p>
+              <ul className="list-disc list-inside space-y-1 ml-2">
+                <li>Product lines: $134.75 &rarr; Revenue</li>
+                <li>&quot;Marketplace Tax&quot; line item: $8.10 &rarr; <strong>credits</strong> Pass-Through GL</li>
+                <li>CS total: $142.85 (matches what customer paid)</li>
+              </ul>
+
+              <p className="font-medium mt-3 mb-1">Step 2: Payout deposit includes the tax_adjustment</p>
+              <ul className="list-disc list-inside space-y-1 ml-2">
+                <li>Charge: $137.91 (= $142.85 - $4.94 fee)</li>
+                <li>Tax adjustment: -$8.10 &rarr; <strong>debits</strong> Pass-Through GL</li>
+              </ul>
+
+              <p className="font-medium mt-3 mb-1">Net result:</p>
+              <ul className="list-disc list-inside space-y-1 ml-2">
+                <li>Pass-Through GL: +$8.10 (from CS) - $8.10 (from deposit) = <strong>$0</strong></li>
+                <li>Revenue: $134.75 (correct &mdash; the actual sale amount)</li>
+                <li>Sales Tax Payable: untouched (correct &mdash; you don&apos;t owe this tax)</li>
+              </ul>
+
+              <Tip variant="success">
+                <p>Even when the charge and tax_adjustment are on different payouts (which is common), the Pass-Through GL self-clears over time. At month-end, any small residual balance is just timing from recent orders.</p>
+              </Tip>
+            </FaqItem>
+
+            <FaqItem
+              id="tax-ns-setup"
+              icon={<FileText className="h-4 w-4 text-emerald-600" />}
+              title="NetSuite Setup Required (One-Time)"
+              expandedFaq={expandedFaq}
+              setExpandedFaq={setExpandedFaq}
+            >
+              <p className="mb-3">Before marketplace tax handling works automatically, these need to be set up in NetSuite:</p>
+
+              <div className="space-y-4">
+                <Step number={1} title="Create GL Account: Marketplace Tax Pass-Through">
+                  <p>Type: <strong>Other Current Liability</strong>. This is where marketplace tax flows in (from the CS line) and out (from the deposit tax_adjustment). It should net to ~$0 over time.</p>
+                </Step>
+                <Step number={2} title="Create Non-Inventory Item: Marketplace Tax">
+                  <p>Create a non-inventory item called &quot;Marketplace Tax&quot; that posts to the Pass-Through GL account. This item gets added as an extra line on marketplace cash sales.</p>
+                </Step>
+                <Step number={3} title="Configure Order Source Mappings">
+                  <p>In the web app Settings &rarr; Order Source Mappings, set <strong>Taxable = No</strong> for all marketplace sources: Shop App, Facebook, TikTok, etc. Leave your direct website source as Taxable = Yes.</p>
+                </Step>
+                <Step number={4} title="Provide IDs to the web app">
+                  <p>The web app needs the NS account ID for the Pass-Through GL and the NS item ID for the &quot;Marketplace Tax&quot; item so it can automatically add the tax line when pushing marketplace orders.</p>
+                </Step>
+              </div>
+
+              <Tip variant="info">
+                <p>This is a one-time setup. Once configured, marketplace orders will automatically push as non-taxable with the tax pass-through line, and the GL will self-balance.</p>
+              </Tip>
+            </FaqItem>
+
+            <FaqItem
+              id="tax-source-mappings"
+              icon={<Tag className="h-4 w-4 text-emerald-600" />}
+              title="Order Source Mapping &amp; Taxable Settings"
+              expandedFaq={expandedFaq}
+              setExpandedFaq={setExpandedFaq}
+            >
+              <p className="mb-2">Go to <strong>Settings &rarr; Order Source Mappings</strong> to view and configure source mappings. Each mapping controls how orders from that source are handled:</p>
+
+              <div className="overflow-x-auto mt-2">
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-gray-100">
+                      <th className="border p-2 text-left">Source</th>
+                      <th className="border p-2 text-left">Type</th>
+                      <th className="border p-2 text-left">Taxable in NS?</th>
+                      <th className="border p-2 text-left">Why</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr><td className="border p-2">Online Store (web)</td><td className="border p-2">Direct</td><td className="border p-2 text-green-700 font-semibold">Yes</td><td className="border p-2">Pirani collects &amp; remits tax</td></tr>
+                    <tr><td className="border p-2">Shop App (3890849)</td><td className="border p-2">Marketplace</td><td className="border p-2 text-red-700 font-semibold">No</td><td className="border p-2">Shopify remits tax</td></tr>
+                    <tr><td className="border p-2">Facebook (2329312)</td><td className="border p-2">Marketplace</td><td className="border p-2 text-red-700 font-semibold">No</td><td className="border p-2">Shopify remits tax</td></tr>
+                    <tr><td className="border p-2">TikTok</td><td className="border p-2">Marketplace</td><td className="border p-2 text-red-700 font-semibold">No</td><td className="border p-2">Shopify remits tax</td></tr>
+                    <tr><td className="border p-2">Draft Orders</td><td className="border p-2">Direct</td><td className="border p-2 text-green-700 font-semibold">Yes</td><td className="border p-2">Pirani collects &amp; remits tax</td></tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <Tip variant="warning">
+                <p>If a source is not mapped, orders from that source <strong>cannot be pushed</strong> to NetSuite. Make sure all active sources have a mapping configured.</p>
+              </Tip>
+            </FaqItem>
+
+            <FaqItem
+              id="tax-why-not-alternatives"
+              icon={<HelpCircle className="h-4 w-4 text-slate-500" />}
+              title="Why Not Just [X]? — Alternatives We Considered"
+              expandedFaq={expandedFaq}
+              setExpandedFaq={setExpandedFaq}
+            >
+              <p className="mb-3 font-medium">We evaluated several approaches before settling on the line-item pass-through. Here&apos;s why each alternative doesn&apos;t work:</p>
+
+              <div className="space-y-4">
+                <div className="border-l-4 border-red-300 pl-3">
+                  <p className="font-medium text-red-800">&quot;Just push tax adjustments to the same Sales Tax Payable account&quot;</p>
+                  <p className="text-sm mt-1">We have <strong>separate liability accounts per state</strong> (NC=210, FL=435, SC=473, etc.). NS calculates tax to the correct state account, but the tax_adjustment in the payout has no state info &mdash; it&apos;s just a lump sum. We&apos;d have to guess which state account to post to, and getting it wrong inflates one state&apos;s liability while deflating another.</p>
+                </div>
+
+                <div className="border-l-4 border-red-300 pl-3">
+                  <p className="font-medium text-red-800">&quot;Do a monthly journal entry to correct the drift&quot;</p>
+                  <p className="text-sm mt-1">Same per-state problem. The JE would need to break down each tax_adjustment by state to move the right amount from each state&apos;s Sales Tax Payable to the offset account. Shopify doesn&apos;t give us state-level breakdowns on tax adjustments, making this manual and error-prone every month.</p>
+                </div>
+
+                <div className="border-l-4 border-red-300 pl-3">
+                  <p className="font-medium text-red-800">&quot;Let NS calculate tax and just ignore the tax adjustments&quot;</p>
+                  <p className="text-sm mt-1">The tax adjustments are real money being deducted from the payout. Ignoring them means the deposit total won&apos;t match the bank deposit, and the state liability accounts grow with tax that Shopify already remitted &mdash; you&apos;d be paying tax twice.</p>
+                </div>
+
+                <div className="border-l-4 border-red-300 pl-3">
+                  <p className="font-medium text-red-800">&quot;Push marketplace orders as taxable and send tax adjustments to E-Com Tax Offset&quot;</p>
+                  <p className="text-sm mt-1">Tax goes to state-specific Sales Tax Payable, but the offset goes to a single E-Com Tax Offset account. The state accounts accumulate phantom liabilities that never get relieved, and the offset account accumulates unmatched debits. Both drift indefinitely.</p>
+                </div>
+
+                <div className="border-l-4 border-green-400 pl-3">
+                  <p className="font-medium text-green-800">Winner: &quot;Non-taxable CS + Marketplace Tax line item + Pass-Through GL&quot;</p>
+                  <p className="text-sm mt-1">No state-specific accounts involved. All marketplace tax flows through <strong>one</strong> pass-through GL. The CS line credits it, the deposit tax_adjustment debits it, and it nets to $0 over time regardless of state. No monthly JE, no manual work, fully automated.</p>
+                </div>
+              </div>
+
+              <Tip variant="info">
+                <p>The key insight: marketplace tax should never touch your state Sales Tax Payable accounts because <strong>Shopify remits that tax, not you</strong>. By pushing non-taxable with a pass-through line, the tax stays completely separate from your actual tax obligations.</p>
+              </Tip>
             </FaqItem>
           </div>
         </CardContent>

@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Database, Trash2, Loader2, HelpCircle } from 'lucide-react'
+import { Database, Trash2, Loader2, HelpCircle, MapPin } from 'lucide-react'
 import JsonView from '@uiw/react-json-view'
 import {
   type PaymentMethodMapping,
@@ -255,6 +255,34 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
     itemId: ''
   })
 
+  // Order source mappings state
+  const [orderSourceMappings, setOrderSourceMappings] = useState<Array<{
+    id: number
+    appId: number | null
+    sourceName: string | null
+    isTaxable: boolean
+    friendlyName: string
+    isActive: boolean
+  }>>([])
+
+  const [orderSourceMappingEditDialog, setOrderSourceMappingEditDialog] = useState<{
+    isOpen: boolean
+    mapping: {
+      id: number
+      appId: number | null
+      sourceName: string | null
+      friendlyName: string
+      isTaxable: boolean
+      isActive: boolean
+    } | null
+  }>({
+    isOpen: false,
+    mapping: null
+  })
+
+  // Tax helper dialog state
+  const [taxHelperDialogOpen, setTaxHelperDialogOpen] = useState(false)
+
   // ============================================================
   // HELPER FUNCTIONS
   // ============================================================
@@ -385,6 +413,9 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
         case 'Payout Mapping':
           await handleDeletePayoutMapping(parseInt(itemId))
           closeDeleteConfirmDialog()
+          return
+        case 'Order Source Mapping':
+          await handleDeleteOrderSourceMapping(parseInt(itemId))
           return
         default:
           console.log(`Unknown item type: ${itemType}`)
@@ -1223,6 +1254,122 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
   // EFFECTS
   // ============================================================
 
+  // ============================================================
+  // ORDER SOURCE MAPPING FUNCTIONS
+  // ============================================================
+
+  const fetchOrderSourceMappings = async () => {
+    try {
+      const response = await fetch('/api/mappings/order-source-mappings')
+      const result = await response.json()
+      if (result.success && result.data) {
+        setOrderSourceMappings(result.data)
+      }
+    } catch (error) {
+      console.error('Error fetching order source mappings:', error)
+    }
+  }
+
+  const handleAddOrderSourceMapping = () => {
+    setOrderSourceMappingEditDialog({
+      isOpen: true,
+      mapping: {
+        id: 0,
+        isTaxable: true,
+        appId: null,
+        sourceName: null,
+        friendlyName: '',
+        isActive: true
+      }
+    })
+  }
+
+  const handleEditOrderSourceMapping = (mapping: {
+    id: number
+    appId: number | null
+    sourceName: string | null
+    friendlyName: string
+    isTaxable: boolean
+    isActive: boolean
+  }) => {
+    setOrderSourceMappingEditDialog({
+      isOpen: true,
+      mapping: { ...mapping }
+    })
+  }
+
+  const handleSaveOrderSourceMapping = async (mapping: {
+    id: number
+    appId: number | null
+    sourceName: string | null
+    friendlyName: string
+    isTaxable: boolean
+    isActive: boolean
+  }) => {
+    try {
+      if (mapping.id === 0) {
+        const response = await fetch('/api/mappings/order-source-mappings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            appId: mapping.appId,
+            sourceName: mapping.sourceName,
+            friendlyName: mapping.friendlyName,
+            isTaxable: mapping.isTaxable,
+            isActive: mapping.isActive,
+          }),
+        })
+        const result = await response.json()
+        if (result.success) {
+          await fetchOrderSourceMappings()
+          setOrderSourceMappingEditDialog({ isOpen: false, mapping: null })
+        } else {
+          alert(`Error creating order source mapping: ${result.error || 'Unknown error'}`)
+        }
+      } else {
+        const response = await fetch(`/api/mappings/order-source-mappings/${mapping.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            appId: mapping.appId,
+            sourceName: mapping.sourceName,
+            friendlyName: mapping.friendlyName,
+            isTaxable: mapping.isTaxable,
+            isActive: mapping.isActive,
+          }),
+        })
+        const result = await response.json()
+        if (result.success) {
+          await fetchOrderSourceMappings()
+          setOrderSourceMappingEditDialog({ isOpen: false, mapping: null })
+        } else {
+          alert(`Error updating order source mapping: ${result.error || 'Unknown error'}`)
+        }
+      }
+    } catch (error) {
+      console.error('Error saving order source mapping:', error)
+      alert(`Error saving order source mapping: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
+  const handleDeleteOrderSourceMapping = async (mappingId: number) => {
+    try {
+      const response = await fetch(`/api/mappings/order-source-mappings/${mappingId}`, {
+        method: 'DELETE',
+      })
+      const result = await response.json()
+      if (result.success) {
+        await fetchOrderSourceMappings()
+        closeDeleteConfirmDialog()
+      } else {
+        alert(`Error deleting order source mapping: ${result.error || 'Unknown error'}`)
+      }
+    } catch (error) {
+      console.error('Error deleting order source mapping:', error)
+      alert(`Error deleting order source mapping: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
   // Load all mappings on mount
   useEffect(() => {
     fetchPaymentMappings()
@@ -1231,6 +1378,7 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
     fetchOrderItemMappings()
     fetchCustomerMappings()
     fetchPayoutMappings()
+    fetchOrderSourceMappings()
   }, [])
 
   // Load payment method data when Payment tab is active
@@ -1344,7 +1492,7 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
 
         {/* Navigation Tabs */}
         <div className="flex space-x-1 border-b">
-          {['Payment', 'Shipment', 'Order', 'Order Item'].map((tab) => (
+          {['Payment', 'Shipment', 'Order', 'Order Item', 'Source'].map((tab) => (
             <Button
               key={tab}
               variant="ghost"
@@ -2400,6 +2548,250 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
           </Card>
         )}
 
+        {/* Source Mappings Tab */}
+        {activeMappingTab === 'Source' && (
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <MapPin className="h-5 w-5" />
+                  Order Source Mappings
+                </CardTitle>
+                <p className="text-sm text-slate-600 mt-1">
+                  Map Shopify order sources to display names and tax settings. Orders from unmapped sources cannot be pushed to NetSuite.
+                </p>
+              </div>
+              <Button onClick={handleAddOrderSourceMapping} className="bg-blue-600 hover:bg-blue-700 text-white">
+                Add Mapping
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {/* Tax info banner */}
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                  <h4 className="text-sm font-semibold text-amber-900 mb-1">How &quot;Taxable in NS&quot; affects order pushing</h4>
+                  <ul className="text-sm text-amber-800 space-y-1 list-disc pl-4">
+                    <li><strong>Taxable = Yes</strong> (e.g., your Shopify store): NetSuite calculates tax on the cash sale. You collect and remit the tax.</li>
+                    <li><strong>Taxable = No</strong> (e.g., Shop App, Facebook, TikTok): The cash sale pushes as non-taxable with a &quot;Marketplace Tax&quot; line item. Shopify/marketplace collects and remits the tax. Tax deductions appear as tax_adjustment debits in the payout.</li>
+                  </ul>
+                  <p className="text-xs text-amber-700 mt-2">
+                    See the Payout Mappings tax helper for details on how tax adjustments flow through the GL.
+                  </p>
+                </div>
+
+                {/* Order Source Mappings Table */}
+                <div className="border rounded-lg">
+                  <table className="w-full">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">App ID</th>
+                        <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">Source Name</th>
+                        <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">Friendly Name</th>
+                        <th className="px-4 py-3 text-center text-sm font-medium text-slate-700">Taxable in NS</th>
+                        <th className="px-4 py-3 text-center text-sm font-medium text-slate-700">Active</th>
+                        <th className="px-4 py-3 text-right text-sm font-medium text-slate-700">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {orderSourceMappings.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-500">
+                            No order source mappings found. Click &quot;Add Mapping&quot; to create one.
+                          </td>
+                        </tr>
+                      ) : (
+                        orderSourceMappings.map((mapping) => (
+                          <tr key={mapping.id}>
+                            <td className="px-4 py-3 text-sm text-slate-900 font-mono">
+                              {mapping.appId ?? '\u2014'}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-slate-600">
+                              {mapping.sourceName ?? '\u2014'}
+                            </td>
+                            <td className="px-4 py-3 text-sm font-medium text-slate-900">
+                              {mapping.friendlyName}
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                mapping.isTaxable
+                                  ? 'bg-green-100 text-green-800'
+                                  : 'bg-orange-100 text-orange-800'
+                              }`}>
+                                {mapping.isTaxable ? 'Yes' : 'No'}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                mapping.isActive
+                                  ? 'bg-green-100 text-green-800'
+                                  : 'bg-gray-100 text-gray-800'
+                              }`}>
+                                {mapping.isActive ? 'Active' : 'Inactive'}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <div className="flex items-center justify-end gap-2">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleEditOrderSourceMapping(mapping)}
+                                >
+                                  Edit
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => openDeleteConfirmDialog('Order Source Mapping', mapping.friendlyName, mapping.id.toString())}
+                                >
+                                  <Trash2 className="h-4 w-4 text-red-500" />
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Edit/Create Order Source Mapping Dialog */}
+        <Dialog open={orderSourceMappingEditDialog.isOpen} onOpenChange={(open) => {
+          if (!open) {
+            setOrderSourceMappingEditDialog({ isOpen: false, mapping: null })
+          }
+        }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                {orderSourceMappingEditDialog.mapping?.id === 0 ? 'Create' : 'Edit'} Order Source Mapping
+              </DialogTitle>
+            </DialogHeader>
+            {orderSourceMappingEditDialog.mapping && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    App ID (optional)
+                  </label>
+                  <Input
+                    type="number"
+                    value={orderSourceMappingEditDialog.mapping.appId || ''}
+                    onChange={(e) => setOrderSourceMappingEditDialog({
+                      ...orderSourceMappingEditDialog,
+                      mapping: {
+                        ...orderSourceMappingEditDialog.mapping!,
+                        appId: e.target.value ? Number(e.target.value) : null,
+                        sourceName: e.target.value ? null : orderSourceMappingEditDialog.mapping!.sourceName
+                      }
+                    })}
+                    placeholder="e.g., 2329312, 3890849"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">
+                    Shopify app_id (e.g., 2329312 for Facebook, 3890849 for Shop App)
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Source Name (optional)
+                  </label>
+                  <Input
+                    value={orderSourceMappingEditDialog.mapping.sourceName || ''}
+                    onChange={(e) => setOrderSourceMappingEditDialog({
+                      ...orderSourceMappingEditDialog,
+                      mapping: {
+                        ...orderSourceMappingEditDialog.mapping!,
+                        sourceName: e.target.value || null,
+                        appId: e.target.value ? null : orderSourceMappingEditDialog.mapping!.appId
+                      }
+                    })}
+                    placeholder="e.g., web, checkout"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">
+                    Shopify source_name (e.g., &apos;web&apos;, &apos;checkout&apos;). Either App ID or Source Name must be provided.
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Friendly Name *
+                  </label>
+                  <Input
+                    value={orderSourceMappingEditDialog.mapping.friendlyName}
+                    onChange={(e) => setOrderSourceMappingEditDialog({
+                      ...orderSourceMappingEditDialog,
+                      mapping: {
+                        ...orderSourceMappingEditDialog.mapping!,
+                        friendlyName: e.target.value
+                      }
+                    })}
+                    placeholder="e.g., Facebook, Shop App, Web"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">
+                    Display name shown in the transactions table
+                  </p>
+                </div>
+                <div className="space-y-3 border-t pt-3">
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      checked={orderSourceMappingEditDialog.mapping.isTaxable}
+                      onChange={(e) => setOrderSourceMappingEditDialog({
+                        ...orderSourceMappingEditDialog,
+                        mapping: {
+                          ...orderSourceMappingEditDialog.mapping!,
+                          isTaxable: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4"
+                    />
+                    <label className="text-sm font-medium text-slate-700">
+                      Taxable in NetSuite
+                    </label>
+                  </div>
+                  <p className="text-xs text-slate-500 pl-6">
+                    {orderSourceMappingEditDialog.mapping.isTaxable
+                      ? 'NetSuite will calculate tax on the cash sale. Use for direct sales (your Shopify store).'
+                      : 'NetSuite will NOT calculate tax. A "Marketplace Tax" line item will be added instead. Use for marketplace orders where Shopify collects and remits tax (Shop App, Facebook, TikTok).'}
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    checked={orderSourceMappingEditDialog.mapping.isActive}
+                    onChange={(e) => setOrderSourceMappingEditDialog({
+                      ...orderSourceMappingEditDialog,
+                      mapping: {
+                        ...orderSourceMappingEditDialog.mapping!,
+                        isActive: e.target.checked
+                      }
+                    })}
+                    className="w-4 h-4"
+                  />
+                  <label className="text-sm font-medium text-slate-700">
+                    Active
+                  </label>
+                </div>
+                <div className="flex justify-end space-x-2 pt-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => setOrderSourceMappingEditDialog({ isOpen: false, mapping: null })}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                    onClick={() => handleSaveOrderSourceMapping(orderSourceMappingEditDialog.mapping!)}
+                  >
+                    {orderSourceMappingEditDialog.mapping.id === 0 ? 'Create' : 'Save'}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
       </div>
     )
   }
@@ -2672,9 +3064,15 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Payout Mappings</CardTitle>
-            <Button onClick={handleAddPayoutMapping} className="bg-blue-600 hover:bg-blue-700 text-white">
-              Add Mapping
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button onClick={() => setTaxHelperDialogOpen(true)} variant="outline" className="flex items-center gap-2">
+                <HelpCircle className="h-4 w-4" />
+                Tax Helper
+              </Button>
+              <Button onClick={handleAddPayoutMapping} className="bg-blue-600 hover:bg-blue-700 text-white">
+                Add Mapping
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
@@ -2866,6 +3264,97 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
                 </div>
               </div>
             )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Tax Helper Dialog */}
+        <Dialog open={taxHelperDialogOpen} onOpenChange={setTaxHelperDialogOpen}>
+          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <HelpCircle className="h-5 w-5 text-blue-600" />
+                Marketplace Tax &mdash; How It Works
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 text-sm">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <h4 className="font-semibold text-blue-900 mb-2">The Problem</h4>
+                <p className="text-blue-800">
+                  Marketplace channels (Shop App, Facebook, TikTok) charge sales tax to the customer and remit it directly to the state.
+                  Shopify then deducts this tax from your payout as a <strong>tax_adjustment</strong> debit. You never touch this money.
+                </p>
+                <p className="text-blue-800 mt-2">
+                  If NetSuite also calculates tax on these orders, the tax goes to your state-specific Sales Tax Payable accounts
+                  (NC, FL, SC, etc.) &mdash; creating phantom liabilities you don&apos;t actually owe. The tax adjustments in the payout
+                  can&apos;t offset them because they don&apos;t have state-level info.
+                </p>
+              </div>
+
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                <h4 className="font-semibold text-green-900 mb-2">The Solution: Non-Taxable + Line Item Pass-Through</h4>
+                <ol className="list-decimal list-inside space-y-2 text-green-800">
+                  <li>Marketplace orders push to NS as <strong>non-taxable</strong> (no NS tax calculation)</li>
+                  <li>A &quot;Marketplace Tax&quot; line item is added for the exact Shopify tax amount &rarr; <strong>credits</strong> the Pass-Through GL</li>
+                  <li>The cash sale total matches what the customer paid (subtotal + tax)</li>
+                  <li>In the payout deposit, the tax_adjustment &rarr; <strong>debits</strong> the same Pass-Through GL</li>
+                  <li>Pass-Through GL nets to <strong>$0</strong> over time</li>
+                </ol>
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                <h4 className="font-semibold text-amber-900 mb-2">Which Payout Mapping to Use for Tax Adjustments</h4>
+                <p className="text-amber-800">
+                  Your tax_adjustment transactions should use a payout mapping that points to the
+                  <strong> Marketplace Tax Pass-Through</strong> GL account. This is the same account that the
+                  &quot;Marketplace Tax&quot; line item on the cash sale posts to.
+                </p>
+                <p className="text-amber-800 mt-2">
+                  <strong>Current setup:</strong> &quot;E-Com Tax Offset&quot; (account 1019) is used for tax adjustments.
+                  Make sure this account matches the GL that the &quot;Marketplace Tax&quot; NS item posts to.
+                </p>
+              </div>
+
+              <div className="border rounded-lg p-4">
+                <h4 className="font-semibold text-slate-800 mb-2">Example: Order #76975 (Shop App, shipping to MI)</h4>
+                <div className="grid grid-cols-2 gap-4 text-xs">
+                  <div>
+                    <p className="font-medium mb-1">Cash Sale (non-taxable):</p>
+                    <ul className="space-y-1 text-slate-600">
+                      <li>Product lines: $134.75 &rarr; Revenue</li>
+                      <li>&quot;Marketplace Tax&quot; line: $8.10 &rarr; Pass-Through GL</li>
+                      <li>CS total: $142.85</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <p className="font-medium mb-1">Payout Deposit:</p>
+                    <ul className="space-y-1 text-slate-600">
+                      <li>Charge: $137.91 ($142.85 - $4.94 fee)</li>
+                      <li>Tax adjustment: -$8.10 &rarr; Pass-Through GL</li>
+                      <li>Net GL: +$8.10 - $8.10 = $0</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                <h4 className="font-semibold text-red-900 mb-2">Important: Tax Adjustments May Be on Different Payouts</h4>
+                <p className="text-red-800">
+                  The charge and tax_adjustment often appear on <strong>different payouts</strong> (e.g., charge on Monday,
+                  tax deduction on Wednesday). This is normal. The Pass-Through GL still nets to $0 over time &mdash;
+                  there may just be a small residual balance at any point from recent transactions that haven&apos;t fully settled.
+                </p>
+              </div>
+
+              <div className="border-t pt-4">
+                <h4 className="font-semibold text-slate-800 mb-2">NetSuite Setup Required (One-Time)</h4>
+                <ol className="list-decimal list-inside space-y-1 text-slate-700">
+                  <li>Create GL account: <strong>&quot;Marketplace Tax Pass-Through&quot;</strong> (Other Current Liability)</li>
+                  <li>Create non-inventory item: <strong>&quot;Marketplace Tax&quot;</strong> posting to that GL</li>
+                  <li>In Mappings &rarr; Orders &rarr; Source tab: set marketplace sources to <strong>Taxable = No</strong></li>
+                  <li>Ensure the payout mapping for tax adjustments points to the same GL account</li>
+                </ol>
+              </div>
+            </div>
           </DialogContent>
         </Dialog>
       </div>
