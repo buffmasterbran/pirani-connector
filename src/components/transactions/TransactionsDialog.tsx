@@ -614,6 +614,32 @@ export function TransactionsDialog({
           transactionsWithNS={transactionsWithNS}
         />
 
+        {/* Tax adjustment helper notice */}
+        {(() => {
+          const taxAdjustments = localTransactions.filter(t => t.adjustmentReason === 'tax_adjustment')
+          if (taxAdjustments.length === 0) return null
+          const totalTaxAdj = taxAdjustments.reduce((sum, t) => {
+            const amt = typeof t.amount === 'string' ? parseFloat(t.amount) : (t.amount || 0)
+            return sum + amt
+          }, 0)
+          return (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm">
+              <div className="font-semibold text-amber-900 mb-1">
+                {taxAdjustments.length} tax adjustment{taxAdjustments.length !== 1 ? 's' : ''} ({currency} {totalTaxAdj.toFixed(2)})
+              </div>
+              <p className="text-amber-800">
+                These are marketplace tax deductions (Shopify collected and remitted tax on behalf of the seller).
+                They should be mapped to a marketplace tax GL account in your deposit.
+              </p>
+              <p className="text-amber-700 mt-1 text-xs">
+                If the related cash sale in NetSuite already has tax calculated (created before the &quot;Taxable in NS&quot; source mapping was configured),
+                you may need to: delete the cash sale in NS, set the order source to non-taxable in Settings &gt; Order Source Mappings,
+                then re-push the order to create a tax-free cash sale.
+              </p>
+            </div>
+          )
+        })()}
+
         {/* Filters + Action buttons */}
         <TransactionFilters
           filterMissingCashSale={filterMissingCashSale}
