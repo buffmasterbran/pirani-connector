@@ -166,6 +166,7 @@ model OrderSourceMapping {
   appId       Int?     // Shopify app_id (e.g., 2329312, 3890849)
   sourceName  String?  // Shopify source_name (e.g., 'web', 'checkout')
   friendlyName String  // Display name (e.g., 'Facebook', 'Shop App', 'Web')
+  isTaxable   Boolean  @default(true) // Whether NS should calculate tax for orders from this source
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

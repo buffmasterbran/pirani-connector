@@ -20,6 +20,7 @@ export function SettingsSection({ hideSensitiveData, onToggleSensitiveData }: Se
     id: number
     appId: number | null
     sourceName: string | null
+    isTaxable: boolean
     friendlyName: string
     isActive: boolean
   }>>([])
@@ -32,6 +33,7 @@ export function SettingsSection({ hideSensitiveData, onToggleSensitiveData }: Se
       appId: number | null
       sourceName: string | null
       friendlyName: string
+      isTaxable: boolean
       isActive: boolean
     } | null
   }>({
@@ -67,6 +69,7 @@ export function SettingsSection({ hideSensitiveData, onToggleSensitiveData }: Se
       isOpen: true,
       mapping: {
         id: 0,
+        isTaxable: true,
         appId: null,
         sourceName: null,
         friendlyName: '',
@@ -80,6 +83,7 @@ export function SettingsSection({ hideSensitiveData, onToggleSensitiveData }: Se
     appId: number | null
     sourceName: string | null
     friendlyName: string
+    isTaxable: boolean
     isActive: boolean
   }) => {
     setOrderSourceMappingEditDialog({
@@ -93,6 +97,7 @@ export function SettingsSection({ hideSensitiveData, onToggleSensitiveData }: Se
     appId: number | null
     sourceName: string | null
     friendlyName: string
+    isTaxable: boolean
     isActive: boolean
   }) => {
     try {
@@ -107,6 +112,7 @@ export function SettingsSection({ hideSensitiveData, onToggleSensitiveData }: Se
             appId: mapping.appId,
             sourceName: mapping.sourceName,
             friendlyName: mapping.friendlyName,
+            isTaxable: mapping.isTaxable,
             isActive: mapping.isActive,
           }),
         })
@@ -130,6 +136,7 @@ export function SettingsSection({ hideSensitiveData, onToggleSensitiveData }: Se
             appId: mapping.appId,
             sourceName: mapping.sourceName,
             friendlyName: mapping.friendlyName,
+            isTaxable: mapping.isTaxable,
             isActive: mapping.isActive,
           }),
         })
@@ -273,7 +280,7 @@ export function SettingsSection({ hideSensitiveData, onToggleSensitiveData }: Se
                 Order Source Mappings
               </CardTitle>
               <p className="text-sm text-slate-600 mt-1">
-                Map Shopify order sources (app IDs and source names) to friendly display names.
+                Map Shopify order sources to display names and tax settings. Orders from unmapped sources cannot be pushed to NetSuite.
               </p>
             </div>
             <Button onClick={handleAddOrderSourceMapping} className="bg-blue-600 hover:bg-blue-700 text-white">
@@ -282,6 +289,15 @@ export function SettingsSection({ hideSensitiveData, onToggleSensitiveData }: Se
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
+              {/* Tax info banner */}
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                <h4 className="text-sm font-semibold text-amber-900 mb-1">How &quot;Taxable in NS&quot; affects payouts</h4>
+                <ul className="text-sm text-amber-800 space-y-1 list-disc pl-4">
+                  <li><strong>Taxable = Yes</strong> (e.g., your Shopify store): NetSuite calculates tax on the cash sale. No tax adjustments appear in the payout. Use this for direct sales where you collect and remit tax.</li>
+                  <li><strong>Taxable = No</strong> (e.g., Shop App, Facebook): Shopify/marketplace collects and remits tax. The cash sale in NS should have no tax. Tax deductions appear as &quot;tax_adjustment&quot; debits in the payout and should be mapped to a marketplace tax GL account in your payout deposit settings.</li>
+                </ul>
+              </div>
+
               {/* Order Source Mappings Table */}
               <div className="border rounded-lg">
                 <table className="w-full">
@@ -290,6 +306,7 @@ export function SettingsSection({ hideSensitiveData, onToggleSensitiveData }: Se
                       <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">App ID</th>
                       <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">Source Name</th>
                       <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">Friendly Name</th>
+                      <th className="px-4 py-3 text-center text-sm font-medium text-slate-700">Taxable in NS</th>
                       <th className="px-4 py-3 text-center text-sm font-medium text-slate-700">Active</th>
                       <th className="px-4 py-3 text-right text-sm font-medium text-slate-700">Actions</th>
                     </tr>
@@ -297,7 +314,7 @@ export function SettingsSection({ hideSensitiveData, onToggleSensitiveData }: Se
                   <tbody className="divide-y divide-slate-200">
                     {orderSourceMappings.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500">
+                        <td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-500">
                           No order source mappings found. Click &quot;Add Mapping&quot; to create one.
                         </td>
                       </tr>
@@ -312,6 +329,15 @@ export function SettingsSection({ hideSensitiveData, onToggleSensitiveData }: Se
                           </td>
                           <td className="px-4 py-3 text-sm font-medium text-slate-900">
                             {mapping.friendlyName}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                              mapping.isTaxable
+                                ? 'bg-green-100 text-green-800'
+                                : 'bg-orange-100 text-orange-800'
+                            }`}>
+                              {mapping.isTaxable ? 'Yes' : 'No'}
+                            </span>
                           </td>
                           <td className="px-4 py-3 text-center">
                             <span className={`px-2 py-1 rounded-full text-xs font-medium ${
@@ -578,6 +604,30 @@ export function SettingsSection({ hideSensitiveData, onToggleSensitiveData }: Se
                 />
                 <p className="text-xs text-slate-500 mt-1">
                   Display name shown in the transactions table
+                </p>
+              </div>
+              <div className="space-y-3 border-t pt-3">
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    checked={orderSourceMappingEditDialog.mapping.isTaxable}
+                    onChange={(e) => setOrderSourceMappingEditDialog({
+                      ...orderSourceMappingEditDialog,
+                      mapping: {
+                        ...orderSourceMappingEditDialog.mapping!,
+                        isTaxable: e.target.checked
+                      }
+                    })}
+                    className="w-4 h-4"
+                  />
+                  <label className="text-sm font-medium text-slate-700">
+                    Taxable in NetSuite
+                  </label>
+                </div>
+                <p className="text-xs text-slate-500 pl-6">
+                  {orderSourceMappingEditDialog.mapping.isTaxable
+                    ? 'NetSuite will calculate tax on the cash sale. Use for direct sales (your Shopify store).'
+                    : 'NetSuite will NOT calculate tax. Use for marketplace orders where Shopify collects and remits tax (Shop App, Facebook, TikTok). Tax adjustments will appear in the payout.'}
                 </p>
               </div>
               <div className="flex items-center space-x-2">
