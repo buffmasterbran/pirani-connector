@@ -830,6 +830,18 @@ export async function buildNetSuiteSalesOrderPayload(
   payload.custbody_pirtech_storefront = 'Shopify'
   payload.custbody_pirtech_order_num = firstLine.shopifyOrderName
 
+  // FarApp autobill fields — set alongside pirtech fields during transition
+  // The fa_autobill_ue.js script checks custbody_fa_channel and reads custbody_fa_order_total
+  // For marketplace orders: taxTotal=0 so autobill doesn't override non-taxable status
+  payload.custbody_fa_channel = 'Shopify'
+  payload.custbody_fa_order_total = JSON.stringify({
+    orderTotal: firstLine.orderTotal || 0,
+    taxTotal: isMarketplaceOrder ? 0 : (firstLine.orderTax || 0),
+    shippingTax: '0.0',
+    shippingCost: firstLine.orderShipping || 0,
+    discountTotal: firstLine.orderDiscount || 0,
+  })
+
   // Check for blocking errors (missing mappings) — prevent push
   const blockingErrors = errors.filter((e) => e.startsWith('BLOCKING:'))
   if (blockingErrors.length > 0) {
