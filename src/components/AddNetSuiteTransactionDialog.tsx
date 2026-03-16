@@ -22,6 +22,7 @@ interface AddNetSuiteTransactionDialogProps {
     netsuiteTransactionId: string
     netsuiteTransactionName: string
     netsuiteAmount: number
+    netsuiteTransactionType?: string
   }) => Promise<void>
 }
 
@@ -72,12 +73,20 @@ export function AddNetSuiteTransactionDialog({
       return
     }
 
+    // Derive type from checkbox selection
+    const selectedType = transactionType.customerRefund ? 'customerRefund'
+      : transactionType.refund ? 'cashRefund'
+      : transactionType.payment ? 'payment'
+      : transactionType.cashSale ? 'cashSale'
+      : undefined
+
     setIsSaving(true)
     try {
       await onSave({
         netsuiteTransactionId: netsuiteTransactionId.trim(),
         netsuiteTransactionName: netsuiteTransactionName.trim(),
         netsuiteAmount: amount,
+        netsuiteTransactionType: selectedType,
       })
       
       // Reset form

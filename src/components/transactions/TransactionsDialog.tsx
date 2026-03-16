@@ -321,6 +321,7 @@ export function TransactionsDialog({
     netsuiteTransactionId: string
     netsuiteTransactionName: string
     netsuiteAmount: number
+    netsuiteTransactionType?: string
   }) => {
     if (!selectedTransactionForAdd) {
       throw new Error('No transaction selected')

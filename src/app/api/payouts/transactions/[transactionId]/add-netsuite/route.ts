@@ -8,7 +8,7 @@ export async function POST(
 ) {
   try {
     const { transactionId } = params
-    const { netsuiteTransactionId, netsuiteTransactionName, netsuiteAmount } = await request.json()
+    const { netsuiteTransactionId, netsuiteTransactionName, netsuiteAmount, netsuiteTransactionType } = await request.json()
 
     if (!netsuiteTransactionId || !netsuiteTransactionName || netsuiteAmount === undefined) {
       return NextResponse.json(
@@ -53,6 +53,7 @@ export async function POST(
       data: {
         netsuiteTransactionId: String(netsuiteTransactionId),
         netsuiteTransactionName: netsuiteTransactionName,
+        netsuiteTransactionType: netsuiteTransactionType || null,
         netsuiteAmount: netsuiteAmountNum,
         amountMismatch,
       },

@@ -285,7 +285,7 @@ export function TransactionRow({
               {child.netsuiteTransactionId && (
                 <div className="flex items-center gap-1">
                   <a
-                    href={getNetSuiteUrl(child.netsuiteTransactionId, transaction.type, child.netsuiteTransactionName)}
+                    href={getNetSuiteUrl(child.netsuiteTransactionId, transaction.type, child.netsuiteTransactionName, null)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-green-700 hover:text-green-900 hover:underline font-mono"

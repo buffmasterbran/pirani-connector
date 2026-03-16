@@ -14,6 +14,7 @@ export interface Transaction {
   processedAt: string | null
   netsuiteTransactionId?: string | null
   netsuiteTransactionName?: string | null
+  netsuiteTransactionType?: string | null
   netsuiteAmount?: number | null
   amountMismatch?: boolean
   includeInNetSuite?: boolean

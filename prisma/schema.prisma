@@ -100,6 +100,7 @@ model PayoutTransaction {
   adjustmentReason        String?
   netsuiteTransactionId   String?
   netsuiteTransactionName String?
+  netsuiteTransactionType String?
   netsuiteAmount          Float?
   amountMismatch          Boolean   @default(false)
   includeInNetSuite       Boolean   @default(true)

@@ -15,9 +15,20 @@ import React from "react"
 import type { Transaction } from "./types"
 
 // Helper function to get NetSuite URL based on transaction type
-export function getNetSuiteUrl(transactionId: string, transactionType: string | undefined, netsuiteTransactionName?: string | null): string {
+export function getNetSuiteUrl(transactionId: string, transactionType: string | undefined, netsuiteTransactionName?: string | null, netsuiteTransactionType?: string | null): string {
   const baseUrl = 'https://7913744.app.netsuite.com/app/accounting/transactions'
 
+  // If the user explicitly selected a type via checkbox, use it directly
+  if (netsuiteTransactionType) {
+    switch (netsuiteTransactionType) {
+      case 'customerRefund': return `${baseUrl}/custrfnd.nl?id=${transactionId}`
+      case 'cashRefund': return `${baseUrl}/cashrfnd.nl?id=${transactionId}`
+      case 'payment': return `${baseUrl}/custpymt.nl?id=${transactionId}`
+      case 'cashSale': return `${baseUrl}/cashsale.nl?id=${transactionId}`
+    }
+  }
+
+  // Fallback: guess from name/type for legacy transactions without saved type
   const netsuiteNameUpper = (netsuiteTransactionName || '').toUpperCase().trim()
 
   const isCustomerRefundByName = netsuiteNameUpper.startsWith('CUSTRFND') ||
@@ -77,7 +88,7 @@ export function DraggableNetSuiteId({
           <div className="flex items-center gap-2">
             {transaction.netsuiteTransactionName && transaction.netsuiteTransactionId ? (
               <a
-                href={getNetSuiteUrl(transaction.netsuiteTransactionId!, transaction.type, transaction.netsuiteTransactionName)}
+                href={getNetSuiteUrl(transaction.netsuiteTransactionId!, transaction.type, transaction.netsuiteTransactionName, transaction.netsuiteTransactionType)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-sm font-medium text-red-600 hover:text-red-800 hover:underline"
@@ -123,7 +134,7 @@ export function DraggableNetSuiteId({
           <div className="flex items-center gap-2">
             {transaction.netsuiteTransactionId ? (
               <a
-                href={getNetSuiteUrl(transaction.netsuiteTransactionId!, transaction.type, transaction.netsuiteTransactionName || null)}
+                href={getNetSuiteUrl(transaction.netsuiteTransactionId!, transaction.type, transaction.netsuiteTransactionName || null, transaction.netsuiteTransactionType)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-sm font-medium text-green-600 hover:text-green-800 hover:underline"

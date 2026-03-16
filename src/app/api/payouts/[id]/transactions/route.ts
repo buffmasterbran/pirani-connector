@@ -155,6 +155,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
         processedAt: toISO(transaction.processedAt),
         netsuiteTransactionId: transaction.netsuiteTransactionId ?? null,
         netsuiteTransactionName: transaction.netsuiteTransactionName ?? null,
+        netsuiteTransactionType: transaction.netsuiteTransactionType ?? null,
         netsuiteAmount: transaction.netsuiteAmount ?? null,
         amountMismatch: transaction.amountMismatch ?? false,
         includeInNetSuite: transaction.includeInNetSuite ?? true,
