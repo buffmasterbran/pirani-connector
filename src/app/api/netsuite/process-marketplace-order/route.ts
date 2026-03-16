@@ -25,15 +25,26 @@ async function lookupTaxAdjustment(orderName: string, transactionId?: string): P
     })
     if (!txn?.payoutId) return 0
 
+    // Normalize order name: #56476 → 56476 (bare) and #56476 (with hash)
+    const bare = orderName.startsWith('#') ? orderName.substring(1) : orderName
+    const withHash = orderName.startsWith('#') ? orderName : `#${orderName}`
+
     // Find sibling Tax Adjustment transactions in the same payout for the same order
+    // Match by order name via orderLine (most reliable) OR by shopifyOrderId
     const taxTxns = await prisma.payoutTransaction.findMany({
       where: {
         payoutId: txn.payoutId,
         adjustmentReason: 'Tax Adjustment',
-        ...(txn.shopifyOrderId ? { shopifyOrderId: txn.shopifyOrderId } : {}),
+        OR: [
+          { orderLine: { shopifyOrderName: withHash } },
+          { orderLine: { shopifyOrderName: bare } },
+          ...(txn.shopifyOrderId ? [{ shopifyOrderId: txn.shopifyOrderId }] : []),
+        ],
       },
-      select: { amount: true },
+      select: { id: true, amount: true, shopifyOrderId: true },
     })
+
+    console.log(`🏪 Tax lookup for ${orderName} in payout ${txn.payoutId}: found ${taxTxns.length} tax adjustment(s)`, taxTxns.map(t => ({ id: t.id, amount: Number(t.amount), shopifyOrderId: t.shopifyOrderId })))
 
     if (taxTxns.length === 0) return 0
 
