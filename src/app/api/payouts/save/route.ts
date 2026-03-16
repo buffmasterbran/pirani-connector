@@ -135,10 +135,120 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Batch update order lines
-    if (allShopifyOrderIds.length > 0) {
+    // Auto-split transactions that have adjustment_order_transactions (e.g. Shop Cash)
+    // Shopify merges multiple orders into one payout line — this splits them back out
+    const transactionsToAutoSplit = allTransactions.filter(
+      (t: any) => Array.isArray(t.adjustment_order_transactions) && t.adjustment_order_transactions.length > 1
+    )
+
+    if (transactionsToAutoSplit.length > 0) {
+      console.log(`🔀 Auto-splitting ${transactionsToAutoSplit.length} merged transactions`)
+
+      // Collect all order IDs from the splits so we can look up orderLineIds
+      const splitOrderIds = new Set<string>()
+      for (const t of transactionsToAutoSplit) {
+        for (const sub of t.adjustment_order_transactions) {
+          if (sub.order_id) splitOrderIds.add(String(sub.order_id))
+        }
+      }
+
+      // Look up any orderLineIds we don't already have
+      const missingOrderIds = [...splitOrderIds].filter(id => !orderLineMap.has(id))
+      if (missingOrderIds.length > 0) {
+        const extraOrderLines = await prisma.orderLine.findMany({
+          where: { shopifyOrderId: { in: missingOrderIds }, isDeleted: false },
+          select: { id: true, shopifyOrderId: true },
+          distinct: ['shopifyOrderId'],
+        })
+        for (const ol of extraOrderLines) {
+          orderLineMap.set(ol.shopifyOrderId, ol.id)
+        }
+      }
+
+      // Also look up order names for display
+      const orderNameMap = new Map<string, string>()
+      const orderIdsForNames = [...splitOrderIds]
+      if (orderIdsForNames.length > 0) {
+        const orderLines = await prisma.orderLine.findMany({
+          where: { shopifyOrderId: { in: orderIdsForNames }, isDeleted: false },
+          select: { shopifyOrderId: true, shopifyOrderName: true },
+          distinct: ['shopifyOrderId'],
+        })
+        for (const ol of orderLines) {
+          if (ol.shopifyOrderName) orderNameMap.set(ol.shopifyOrderId, ol.shopifyOrderName)
+        }
+      }
+
+      for (const transaction of transactionsToAutoSplit) {
+        const parentId = String(transaction.id)
+        const subs: any[] = transaction.adjustment_order_transactions
+
+        // Check if this parent already has children (re-import case)
+        const existingChildren = await prisma.payoutTransaction.count({
+          where: { parentTransactionId: parentId },
+        })
+        if (existingChildren > 0) {
+          console.log(`🔀 Skipping ${parentId} — already has ${existingChildren} split children`)
+          continue
+        }
+
+        const parentCurrency = transaction.currency ?? payout.currency ?? null
+        const processedAtRaw = transaction.processed_at ?? transaction.processedAt ?? null
+        const processedAt = processedAtRaw ? new Date(processedAtRaw) : payoutDate ?? null
+
+        // Create child for each order in the merged transaction
+        for (let j = 0; j < subs.length; j++) {
+          const sub = subs[j]
+          const childOrderId = sub.order_id ? String(sub.order_id) : null
+          const childAmount = sub.amount != null ? Number(sub.amount) : 0
+          const childOrderLineId = childOrderId ? (orderLineMap.get(childOrderId) ?? null) : null
+          const orderName = childOrderId ? (orderNameMap.get(childOrderId) ?? null) : null
+          const childId = `${parentId}-auto-${j}`
+
+          await prisma.payoutTransaction.create({
+            data: {
+              id: childId,
+              payoutId,
+              shopifyOrderId: childOrderId,
+              orderLineId: childOrderLineId,
+              parentTransactionId: parentId,
+              type: transaction.type ?? null,
+              currency: parentCurrency,
+              processedAt,
+              amount: childAmount,
+              net: childAmount,
+              fee: 0,
+              includeInNetSuite: true,
+              amountDescription: orderName ? `Order ${orderName}` : null,
+            },
+          })
+        }
+
+        // Set parent to excluded
+        await prisma.payoutTransaction.update({
+          where: { id: parentId },
+          data: { includeInNetSuite: false },
+        })
+
+        const orderNames = subs.map((s: any) => {
+          const oid = s.order_id ? String(s.order_id) : '?'
+          return orderNameMap.get(oid) || oid
+        }).join(', ')
+        console.log(`🔀 Split ${parentId} into ${subs.length} children: ${orderNames}`)
+      }
+    }
+
+    // Batch update order lines (include split child order IDs too)
+    const allOrderIdsForUpdate = new Set(allShopifyOrderIds)
+    for (const t of transactionsToAutoSplit) {
+      for (const sub of (t.adjustment_order_transactions ?? [])) {
+        if (sub.order_id) allOrderIdsForUpdate.add(String(sub.order_id))
+      }
+    }
+    const orderIdsToUpdate = [...allOrderIdsForUpdate]
+    if (orderIdsToUpdate.length > 0) {
       await prisma.orderLine.updateMany({
-        where: { shopifyOrderId: { in: allShopifyOrderIds } },
+        where: { shopifyOrderId: { in: orderIdsToUpdate } },
         data: {
           shopifyPayoutId: payoutId,
           shopifyPayoutStatus: payout.status ?? null,

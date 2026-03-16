@@ -238,6 +238,15 @@ export function SplitTransactionDialog({ isOpen, onClose, transaction, onSaved }
           <DialogTitle>Split Transaction into Multiple NS Matches</DialogTitle>
         </DialogHeader>
 
+        {/* How splits work */}
+        <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
+          <p className="font-medium">How splits work:</p>
+          <p className="mt-1 text-xs text-blue-700">
+            When you split a transaction, the original parent line is automatically set to &quot;Ignore&quot; in the deposit.
+            Only the child allocations below are included. This prevents double-counting.
+          </p>
+        </div>
+
         {/* Original transaction info */}
         <div className="p-4 bg-slate-50 rounded-lg border space-y-2">
           <div className="flex justify-between text-sm">

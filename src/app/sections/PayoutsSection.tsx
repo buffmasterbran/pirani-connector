@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { TransactionsDialog } from '@/components/transactions'
 import { Loader, LoaderWithText } from '@/components/Loader'
-import { Download, Filter, X, Loader2 } from 'lucide-react'
+import { Download, Filter, X, Loader2, Search } from 'lucide-react'
 import JsonView from '@uiw/react-json-view'
 import { safeToLocaleDateString } from '@/lib/dateUtils'
 
@@ -87,6 +87,8 @@ export function PayoutsSection() {
   const [sortField, setSortField] = useState<'id' | 'date' | 'amount' | 'status'>('date')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [payoutSearchTerm, setPayoutSearchTerm] = useState('')
+  const [isSearchingTransactions, setIsSearchingTransactions] = useState(false)
+  const [transactionSearchResults, setTransactionSearchResults] = useState<Map<string, { payoutId: string; matches: any[] }> | null>(null)
   const [isPayoutFiltersOpen, setIsPayoutFiltersOpen] = useState(false)
   const [filters, setFilters] = useState({
     netsuiteStatus: {
@@ -661,6 +663,39 @@ export function PayoutsSection() {
     }
   }
 
+  // Search payout transactions by order name/number
+  const searchPayoutTransactions = async (query: string) => {
+    const trimmed = query.trim()
+    if (!trimmed) {
+      setTransactionSearchResults(null)
+      return
+    }
+
+    // If it looks like an order number (has digits), search transactions
+    const hasDigits = /\d/.test(trimmed)
+    if (!hasDigits) {
+      setTransactionSearchResults(null)
+      return
+    }
+
+    setIsSearchingTransactions(true)
+    try {
+      const res = await fetch(`/api/payouts/search?q=${encodeURIComponent(trimmed)}`)
+      const data = await res.json()
+      if (res.ok && data.results) {
+        const resultMap = new Map<string, { payoutId: string; matches: any[] }>()
+        for (const r of data.results) {
+          resultMap.set(r.payoutId, r)
+        }
+        setTransactionSearchResults(resultMap)
+      }
+    } catch (e) {
+      console.error('Transaction search failed:', e)
+    } finally {
+      setIsSearchingTransactions(false)
+    }
+  }
+
   // --- Effects ---
 
   useEffect(() => {
@@ -707,15 +742,22 @@ export function PayoutsSection() {
   const filteredPayouts = allPayouts.filter(payout => {
     // Search filter
     if (payoutSearchTerm.trim()) {
-      const searchLower = payoutSearchTerm.toLowerCase()
-      const payoutId = String(payout.id).toLowerCase()
-      const amount = String(payout.amount).toLowerCase()
-      const currency = payout.currency.toLowerCase()
+      // If we have transaction search results, filter to matching payouts
+      if (transactionSearchResults !== null) {
+        if (!transactionSearchResults.has(String(payout.id))) {
+          return false
+        }
+      } else {
+        const searchLower = payoutSearchTerm.toLowerCase()
+        const payoutId = String(payout.id).toLowerCase()
+        const amount = String(payout.amount).toLowerCase()
+        const currency = payout.currency.toLowerCase()
 
-      if (!payoutId.includes(searchLower) &&
-          !amount.includes(searchLower) &&
-          !currency.includes(searchLower)) {
-        return false
+        if (!payoutId.includes(searchLower) &&
+            !amount.includes(searchLower) &&
+            !currency.includes(searchLower)) {
+          return false
+        }
       }
     }
 
@@ -789,13 +831,51 @@ export function PayoutsSection() {
                 {/* Compact Controls */}
                 <div className="flex flex-wrap items-center gap-4 mb-6 pb-4 border-b">
                   {/* Search Bar */}
-                  <div className="flex items-center gap-3 flex-1 min-w-[300px]">
-                    <Input
-                      placeholder="Search payouts by ID, amount, or currency..."
-                      value={payoutSearchTerm}
-                      onChange={(e) => setPayoutSearchTerm(e.target.value)}
-                      className="h-9 flex-1"
-                    />
+                  <div className="flex items-center gap-2 flex-1 min-w-[300px]">
+                    <div className="relative flex-1">
+                      <Input
+                        placeholder="Search by payout ID, amount, or order number (press Enter)..."
+                        value={payoutSearchTerm}
+                        onChange={(e) => {
+                          setPayoutSearchTerm(e.target.value)
+                          // Clear transaction search when typing (will re-search on Enter)
+                          if (transactionSearchResults !== null) {
+                            setTransactionSearchResults(null)
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            searchPayoutTransactions(payoutSearchTerm)
+                          }
+                        }}
+                        className="h-9 flex-1 pr-8"
+                      />
+                      {isSearchingTransactions && (
+                        <Loader2 className="h-4 w-4 animate-spin absolute right-2 top-2.5 text-muted-foreground" />
+                      )}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-9 px-2"
+                      onClick={() => searchPayoutTransactions(payoutSearchTerm)}
+                      disabled={isSearchingTransactions}
+                    >
+                      <Search className="h-4 w-4" />
+                    </Button>
+                    {transactionSearchResults !== null && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-9 px-2 text-muted-foreground"
+                        onClick={() => {
+                          setPayoutSearchTerm('')
+                          setTransactionSearchResults(null)
+                        }}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
 
                   {/* Status View Toggle */}
@@ -865,6 +945,29 @@ export function PayoutsSection() {
                     {sortedPayouts.length} of {allPayouts.length}
                   </div>
                 </div>
+
+          {/* Transaction Search Results Banner */}
+          {transactionSearchResults !== null && (
+            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-sm font-medium text-blue-800">
+                Found order in {transactionSearchResults.size} payout{transactionSearchResults.size !== 1 ? 's' : ''}
+              </p>
+              <div className="mt-1 space-y-1">
+                {[...transactionSearchResults.values()].map(result => (
+                  <div key={result.payoutId} className="text-xs text-blue-700">
+                    <span className="font-mono">Payout {result.payoutId}</span>
+                    {' — '}
+                    {result.matches.map((m: any, i: number) => (
+                      <span key={i}>
+                        {i > 0 && ', '}
+                        {m.orderName} ({m.type}: ${Math.abs(m.amount).toFixed(2)})
+                      </span>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Payouts Display */}
           {isLoading ? (
