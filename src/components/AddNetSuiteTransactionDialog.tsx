@@ -226,7 +226,7 @@ export function AddNetSuiteTransactionDialog({
                   htmlFor="type-refund"
                   className="text-sm font-normal cursor-pointer"
                 >
-                  Refund
+                  Cash Refund
                 </Label>
               </div>
               <div className="flex items-center space-x-2">
