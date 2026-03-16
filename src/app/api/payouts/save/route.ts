@@ -196,13 +196,14 @@ export async function POST(request: NextRequest) {
         const processedAtRaw = transaction.processed_at ?? transaction.processedAt ?? null
         const processedAt = processedAtRaw ? new Date(processedAtRaw) : payoutDate ?? null
 
-        // Create child for each order in the merged transaction
+        // Create a standalone transaction for each order in the merged transaction
+        // These are top-level rows (no parentTransactionId) so they show as individual
+        // lines that can be matched to NS payments normally
         for (let j = 0; j < subs.length; j++) {
           const sub = subs[j]
           const childOrderId = sub.order_id ? String(sub.order_id) : null
           const childAmount = sub.amount != null ? Number(sub.amount) : 0
           const childOrderLineId = childOrderId ? (orderLineMap.get(childOrderId) ?? null) : null
-          const orderName = childOrderId ? (orderNameMap.get(childOrderId) ?? null) : null
           const childId = `${parentId}-auto-${j}`
 
           await prisma.payoutTransaction.create({
@@ -211,7 +212,6 @@ export async function POST(request: NextRequest) {
               payoutId,
               shopifyOrderId: childOrderId,
               orderLineId: childOrderLineId,
-              parentTransactionId: parentId,
               type: transaction.type ?? null,
               currency: parentCurrency,
               processedAt,
@@ -219,12 +219,34 @@ export async function POST(request: NextRequest) {
               net: childAmount,
               fee: 0,
               includeInNetSuite: true,
-              amountDescription: orderName ? `Order ${orderName}` : null,
             },
           })
         }
 
-        // Set parent to excluded
+        // Create a separate fee line if the merged transaction had a fee
+        const parentFee = transaction.fee != null ? Number(transaction.fee) : 0
+        if (parentFee !== 0) {
+          const feeId = `${parentId}-auto-fee`
+          await prisma.payoutTransaction.create({
+            data: {
+              id: feeId,
+              payoutId,
+              shopifyOrderId: null,
+              orderLineId: null,
+              type: 'shop_cash_fee',
+              currency: parentCurrency,
+              processedAt,
+              amount: parentFee,
+              net: parentFee,
+              fee: 0,
+              includeInNetSuite: true,
+              feeDescription: 'Shop Cash Fee',
+            },
+          })
+          console.log(`🔀 Created Shop Cash Fee line: ${parentFee}`)
+        }
+
+        // Set the merged parent to excluded (it's replaced by the individual rows above)
         await prisma.payoutTransaction.update({
           where: { id: parentId },
           data: { includeInNetSuite: false },
@@ -234,7 +256,7 @@ export async function POST(request: NextRequest) {
           const oid = s.order_id ? String(s.order_id) : '?'
           return orderNameMap.get(oid) || oid
         }).join(', ')
-        console.log(`🔀 Split ${parentId} into ${subs.length} children: ${orderNames}`)
+        console.log(`🔀 Split ${parentId} into ${subs.length} children + fee: ${orderNames}`)
       }
     }
 
