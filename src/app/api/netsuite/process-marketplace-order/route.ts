@@ -34,7 +34,7 @@ async function lookupTaxAdjustment(orderName: string, transactionId?: string): P
     const taxTxns = await prisma.payoutTransaction.findMany({
       where: {
         payoutId: txn.payoutId,
-        adjustmentReason: 'Tax Adjustment',
+        adjustmentReason: { in: ['Tax Adjustment', 'tax_adjustment'] },
         OR: [
           { orderLine: { shopifyOrderName: withHash } },
           { orderLine: { shopifyOrderName: bare } },
