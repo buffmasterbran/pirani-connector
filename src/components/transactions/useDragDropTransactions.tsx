@@ -20,9 +20,12 @@ export function getNetSuiteUrl(transactionId: string, transactionType: string | 
 
   const netsuiteNameUpper = (netsuiteTransactionName || '').toUpperCase().trim()
 
-  const isRefundByName = netsuiteNameUpper.startsWith('RFND') ||
-                         netsuiteNameUpper.includes('CASH REFUND') ||
-                         netsuiteNameUpper.includes('REFUND')
+  const isCustomerRefundByName = netsuiteNameUpper.startsWith('CUSTRFND') ||
+                                 netsuiteNameUpper.includes('CUSTOMER REFUND')
+
+  const isCashRefundByName = netsuiteNameUpper.startsWith('RFND') ||
+                              netsuiteNameUpper.includes('CASH REFUND') ||
+                              (netsuiteNameUpper.includes('REFUND') && !isCustomerRefundByName)
 
   const isPaymentByName = netsuiteNameUpper.startsWith('CUSTPYMT') ||
                          netsuiteNameUpper.startsWith('PYMT') ||
@@ -30,12 +33,15 @@ export function getNetSuiteUrl(transactionId: string, transactionType: string | 
                          netsuiteNameUpper.includes('PAYMENT')
 
   const transactionTypeLower = (transactionType || '').toLowerCase().trim()
-  const isRefundByType = transactionTypeLower === 'refund'
+  const isCustomerRefundByType = transactionTypeLower === 'customerrefund' || transactionTypeLower === 'custrfnd'
+  const isCashRefundByType = transactionTypeLower === 'refund' || transactionTypeLower === 'cashrefund'
   const isPaymentByType = transactionTypeLower === 'payment' || transactionTypeLower === 'custpymt'
 
   if (isPaymentByName || isPaymentByType) {
     return `${baseUrl}/custpymt.nl?id=${transactionId}`
-  } else if (isRefundByName || isRefundByType) {
+  } else if (isCustomerRefundByName || isCustomerRefundByType) {
+    return `${baseUrl}/custrfnd.nl?id=${transactionId}`
+  } else if (isCashRefundByName || isCashRefundByType) {
     return `${baseUrl}/cashrfnd.nl?id=${transactionId}`
   } else {
     return `${baseUrl}/cashsale.nl?id=${transactionId}`
