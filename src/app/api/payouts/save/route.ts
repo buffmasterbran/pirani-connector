@@ -152,10 +152,12 @@ export async function POST(request: NextRequest) {
       }
 
       // Collect all order IDs from the splits so we can look up orderLineIds
+      // Shopify nests order info: sub.order.id and sub.order.name
       const splitOrderIds = new Set<string>()
       for (const t of transactionsToAutoSplit) {
         for (const sub of t.adjustment_order_transactions) {
-          if (sub.order_id) splitOrderIds.add(String(sub.order_id))
+          const orderId = sub.order?.id ?? sub.order_id
+          if (orderId) splitOrderIds.add(String(orderId))
         }
       }
 
@@ -206,12 +208,18 @@ export async function POST(request: NextRequest) {
         // Create a standalone transaction for each order in the merged transaction
         // These are top-level rows (no parentTransactionId) so they show as individual
         // lines that can be matched to NS payments normally
+        let totalChildFees = 0
         for (let j = 0; j < subs.length; j++) {
           const sub = subs[j]
-          const childOrderId = sub.order_id ? String(sub.order_id) : null
+          // Shopify nests: sub.order.id, sub.order.name, sub.fees, sub.net
+          const childOrderId = sub.order?.id ? String(sub.order.id) : (sub.order_id ? String(sub.order_id) : null)
+          const childOrderName = sub.order?.name ?? null
           const childAmount = sub.amount != null ? Number(sub.amount) : 0
+          const childFee = sub.fees != null ? Number(sub.fees) : 0
+          const childNet = sub.net != null ? Number(sub.net) : childAmount
           const childOrderLineId = childOrderId ? (orderLineMap.get(childOrderId) ?? null) : null
           const childId = `${parentId}-auto-${j}`
+          totalChildFees += childFee
 
           await prisma.payoutTransaction.create({
             data: {
@@ -223,16 +231,20 @@ export async function POST(request: NextRequest) {
               currency: parentCurrency,
               processedAt,
               amount: childAmount,
-              net: childAmount,
-              fee: 0,
+              net: childNet,
+              fee: childFee ? -Math.abs(childFee) : 0,
               includeInNetSuite: true,
             },
           })
+
+          console.log(`🔀   Child ${j}: ${childOrderName || childOrderId || '?'} = $${childAmount} (fee: $${childFee})`)
         }
 
-        // Create a separate fee line if the merged transaction had a fee
+        // Create a separate fee line for the total Shop Cash fees
+        // (individual fees are already on each child row, but this captures any rounding diff)
         const parentFee = transaction.fee != null ? Number(transaction.fee) : 0
-        if (parentFee !== 0) {
+        const feeDiff = Math.abs(parentFee) - totalChildFees
+        if (Math.abs(feeDiff) > 0.01) {
           const feeId = `${parentId}-auto-fee`
           await prisma.payoutTransaction.create({
             data: {
@@ -243,14 +255,14 @@ export async function POST(request: NextRequest) {
               type: 'shop_cash_fee',
               currency: parentCurrency,
               processedAt,
-              amount: parentFee,
-              net: parentFee,
+              amount: -Math.abs(feeDiff),
+              net: -Math.abs(feeDiff),
               fee: 0,
               includeInNetSuite: true,
-              feeDescription: 'Shop Cash Fee',
+              feeDescription: 'Shop Cash Fee (rounding)',
             },
           })
-          console.log(`🔀 Created Shop Cash Fee line: ${parentFee}`)
+          console.log(`🔀 Created Shop Cash Fee rounding line: ${feeDiff}`)
         }
 
         // Set the merged parent to excluded (it's replaced by the individual rows above)
@@ -260,10 +272,9 @@ export async function POST(request: NextRequest) {
         })
 
         const orderNames = subs.map((s: any) => {
-          const oid = s.order_id ? String(s.order_id) : '?'
-          return orderNameMap.get(oid) || oid
+          return s.order?.name || s.order_id || '?'
         }).join(', ')
-        console.log(`🔀 Split ${parentId} into ${subs.length} children + fee: ${orderNames}`)
+        console.log(`🔀 Split ${parentId} into ${subs.length} children: ${orderNames}`)
       }
     }
 
@@ -271,7 +282,8 @@ export async function POST(request: NextRequest) {
     const allOrderIdsForUpdate = new Set(allShopifyOrderIds)
     for (const t of transactionsToAutoSplit) {
       for (const sub of (t.adjustment_order_transactions ?? [])) {
-        if (sub.order_id) allOrderIdsForUpdate.add(String(sub.order_id))
+        const orderId = sub.order?.id ?? sub.order_id
+        if (orderId) allOrderIdsForUpdate.add(String(orderId))
       }
     }
     const orderIdsToUpdate = [...allOrderIdsForUpdate]
