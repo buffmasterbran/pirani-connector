@@ -144,6 +144,13 @@ export async function POST(request: NextRequest) {
     if (transactionsToAutoSplit.length > 0) {
       console.log(`🔀 Auto-splitting ${transactionsToAutoSplit.length} merged transactions`)
 
+      // Log the first transaction's adjustment_order_transactions structure for debugging
+      if (transactionsToAutoSplit.length > 0) {
+        const sample = transactionsToAutoSplit[0]
+        console.log(`🔀 Sample adjustment_order_transactions:`, JSON.stringify(sample.adjustment_order_transactions?.slice(0, 2)))
+        console.log(`🔀 Sample transaction keys:`, Object.keys(sample).join(', '))
+      }
+
       // Collect all order IDs from the splits so we can look up orderLineIds
       const splitOrderIds = new Set<string>()
       for (const t of transactionsToAutoSplit) {
