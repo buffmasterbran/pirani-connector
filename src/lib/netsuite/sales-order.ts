@@ -210,6 +210,7 @@ export async function buildNetSuiteSalesOrderPayload(
   let marketplaceSource: string | null = null
   let sourceMapping: { isTaxable: boolean; friendlyName: string } | null = null
 
+  console.log(`🏪 Marketplace check: appId=${firstLine.appId}, sourceName=${firstLine.sourceName}`)
   if (firstLine.appId || firstLine.sourceName) {
     const sourceWhere: any[] = []
     if (firstLine.appId) {
@@ -218,12 +219,14 @@ export async function buildNetSuiteSalesOrderPayload(
     if (firstLine.sourceName) {
       sourceWhere.push({ sourceName: firstLine.sourceName })
     }
+    console.log(`🏪 Looking up OrderSourceMapping with:`, JSON.stringify(sourceWhere))
     const mapping = await prisma.orderSourceMapping.findFirst({
       where: {
         isActive: true,
         OR: sourceWhere,
       },
     })
+    console.log(`🏪 Source mapping result:`, mapping ? `found "${mapping.friendlyName}" (isTaxable=${mapping.isTaxable})` : 'not found')
     if (mapping) {
       sourceMapping = { isTaxable: mapping.isTaxable, friendlyName: mapping.friendlyName }
       if (!mapping.isTaxable) {
@@ -231,6 +234,8 @@ export async function buildNetSuiteSalesOrderPayload(
         marketplaceSource = mapping.friendlyName
       }
     }
+  } else {
+    console.log(`🏪 No appId or sourceName on order — skipping marketplace check`)
   }
 
   // Fetch marketplace tax settings from MappingDefaults

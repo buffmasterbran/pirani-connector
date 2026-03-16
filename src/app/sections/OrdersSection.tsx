@@ -784,40 +784,34 @@ export function OrdersSection() {
     fetchShipmentMappings()
   }, [])
 
-  // Search orders in database when search term is entered
-  useEffect(() => {
+  // Search orders in database (triggered on Enter key)
+  const runOrderSearch = async () => {
     const searchTerm = orderSearchTerm.trim()
 
     if (!searchTerm) {
-      // Clear search results when search is empty
       setSearchedOrders([])
       setIsSearchingOrders(false)
       return
     }
 
-    // Debounce search to avoid too many API calls
-    const timeoutId = setTimeout(async () => {
-      setIsSearchingOrders(true)
-      try {
-        const response = await fetch(`/api/orders?search=${encodeURIComponent(searchTerm)}`)
-        const data = await response.json()
+    setIsSearchingOrders(true)
+    try {
+      const response = await fetch(`/api/orders?search=${encodeURIComponent(searchTerm)}`)
+      const data = await response.json()
 
-        if (response.ok && data.orders) {
-          setSearchedOrders(data.orders)
-        } else {
-          console.error('Error searching orders:', data.error)
-          setSearchedOrders([])
-        }
-      } catch (error) {
-        console.error('Error searching orders:', error)
+      if (response.ok && data.orders) {
+        setSearchedOrders(data.orders)
+      } else {
+        console.error('Error searching orders:', data.error)
         setSearchedOrders([])
-      } finally {
-        setIsSearchingOrders(false)
       }
-    }, 300) // 300ms debounce
-
-    return () => clearTimeout(timeoutId)
-  }, [orderSearchTerm])
+    } catch (error) {
+      console.error('Error searching orders:', error)
+      setSearchedOrders([])
+    } finally {
+      setIsSearchingOrders(false)
+    }
+  }
 
   // Detect missing mappings when orders are loaded
   useEffect(() => {
@@ -890,9 +884,20 @@ export function OrdersSection() {
             {/* Search Bar */}
             <div className="flex items-center gap-3 flex-1 min-w-[300px]">
               <Input
-                placeholder="Search orders by name, ID, amount, or currency..."
+                placeholder="Search orders by name, ID, amount, or currency... (press Enter)"
                 value={orderSearchTerm}
-                onChange={(e) => setOrderSearchTerm(e.target.value)}
+                onChange={(e) => {
+                  setOrderSearchTerm(e.target.value)
+                  if (!e.target.value.trim()) {
+                    setSearchedOrders([])
+                    setIsSearchingOrders(false)
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    runOrderSearch()
+                  }
+                }}
                 className="h-9 flex-1"
               />
             </div>
