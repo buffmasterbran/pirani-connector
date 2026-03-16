@@ -774,6 +774,11 @@ export async function buildNetSuiteSalesOrderPayload(
     }
   }
 
+  // Set paymentoption to same value as paymentMethod (required for autobill SO→CS)
+  if (payload.paymentMethod) {
+    payload.paymentoption = { id: (payload.paymentMethod as any).id }
+  }
+
   // Add shipping method if available
   if (firstLine.shippingLines) {
     try {
