@@ -42,11 +42,11 @@ export async function deleteRecord(
 export async function getRecord(
   recordType: string,
   id: string,
-  expandSubResources?: string[]
+  expandSubResources?: boolean
 ): Promise<{ success: boolean; data?: any; error?: string }> {
   let url = `${buildRecordUrl(recordType)}/${id}`
-  if (expandSubResources && expandSubResources.length > 0) {
-    url += `?expandSubResources=${expandSubResources.join(',')}`
+  if (expandSubResources) {
+    url += `?expandSubResources=true`
   }
   const authorization = generateOAuthHeader('GET', url)
 

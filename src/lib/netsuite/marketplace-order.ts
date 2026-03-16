@@ -140,7 +140,7 @@ export async function updateSOForMarketplace(soId: string): Promise<StepResult> 
   }
 
   // Read the current SO to get tax amount
-  const soResult = await getRecord('salesOrder', soId, ['item'])
+  const soResult = await getRecord('salesOrder', soId, true)
   if (!soResult.success || !soResult.data) {
     return {
       step: 'update-sales-order',
