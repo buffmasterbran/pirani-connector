@@ -283,6 +283,14 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
   // Tax helper dialog state
   const [taxHelperDialogOpen, setTaxHelperDialogOpen] = useState(false)
 
+  // Marketplace tax config state
+  const [marketplaceNonTaxableTaxCode, setMarketplaceNonTaxableTaxCode] = useState<string>('')
+  const [marketplaceTaxItem, setMarketplaceTaxItem] = useState<string>('')
+  const [salestaxitemList, setSalestaxitemList] = useState<Array<{ id: string; name: string }>>([])
+  const [nonInventoryItemList, setNonInventoryItemList] = useState<Array<{ id: string; name: string }>>([])
+  const [isLoadingSalestaxitems, setIsLoadingSalestaxitems] = useState(false)
+  const [isLoadingNonInventoryItems, setIsLoadingNonInventoryItems] = useState(false)
+
   // ============================================================
   // HELPER FUNCTIONS
   // ============================================================
@@ -1255,6 +1263,106 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
   // ============================================================
 
   // ============================================================
+  // MARKETPLACE TAX CONFIG FUNCTIONS
+  // ============================================================
+
+  const fetchSalestaxitemList = async () => {
+    if (salestaxitemList.length > 0) return
+    setIsLoadingSalestaxitems(true)
+    try {
+      const response = await fetch('/api/netsuite/lists?field=salestaxitem')
+      const result = await response.json()
+      if (result.success && result.items) {
+        setSalestaxitemList(result.items)
+      }
+    } catch (error) {
+      console.error('Error fetching sales tax items:', error)
+    } finally {
+      setIsLoadingSalestaxitems(false)
+    }
+  }
+
+  const fetchNonInventoryItemList = async () => {
+    if (nonInventoryItemList.length > 0) return
+    setIsLoadingNonInventoryItems(true)
+    try {
+      const response = await fetch('/api/netsuite/lists?field=nonInventoryItem')
+      const result = await response.json()
+      if (result.success && result.items) {
+        setNonInventoryItemList(result.items)
+      }
+    } catch (error) {
+      console.error('Error fetching non-inventory items:', error)
+    } finally {
+      setIsLoadingNonInventoryItems(false)
+    }
+  }
+
+  const fetchMarketplaceNonTaxableTaxCode = async () => {
+    try {
+      const response = await fetch('/api/mappings/defaults?key=marketplace_nontaxable_taxcode')
+      const result = await response.json()
+      if (result.success && result.value) {
+        setMarketplaceNonTaxableTaxCode(result.value)
+      }
+    } catch (error) {
+      console.error('Error fetching marketplace non-taxable tax code:', error)
+    }
+  }
+
+  const fetchMarketplaceTaxItem = async () => {
+    try {
+      const response = await fetch('/api/mappings/defaults?key=marketplace_tax_item')
+      const result = await response.json()
+      if (result.success && result.value) {
+        setMarketplaceTaxItem(result.value)
+      }
+    } catch (error) {
+      console.error('Error fetching marketplace tax item:', error)
+    }
+  }
+
+  const saveMarketplaceNonTaxableTaxCode = async (value: string) => {
+    try {
+      const response = await fetch('/api/mappings/defaults', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          key: 'marketplace_nontaxable_taxcode',
+          value,
+          description: 'Tax code applied to Sales Orders for marketplace sources (typically "None")',
+        }),
+      })
+      const result = await response.json()
+      if (result.success) {
+        setMarketplaceNonTaxableTaxCode(value)
+      }
+    } catch (error) {
+      console.error('Error saving marketplace non-taxable tax code:', error)
+    }
+  }
+
+  const saveMarketplaceTaxItem = async (value: string) => {
+    try {
+      const response = await fetch('/api/mappings/defaults', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          key: 'marketplace_tax_item',
+          value,
+          description: 'Non-inventory item that posts marketplace-collected tax to a pass-through GL account',
+        }),
+      })
+      const result = await response.json()
+      if (result.success) {
+        setMarketplaceTaxItem(value)
+      }
+    } catch (error) {
+      console.error('Error saving marketplace tax item:', error)
+    }
+  }
+
+  // ============================================================
   // ORDER SOURCE MAPPING FUNCTIONS
   // ============================================================
 
@@ -1397,6 +1505,12 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
     if (activeMappingTab === 'Order') {
       fetchDefaultDiscountItem()
       fetchDiscountItemNetSuiteList()
+    }
+    if (activeMappingTab === 'Source') {
+      fetchSalestaxitemList()
+      fetchNonInventoryItemList()
+      fetchMarketplaceNonTaxableTaxCode()
+      fetchMarketplaceTaxItem()
     }
   }, [activeMappingTab])
 
@@ -2577,6 +2691,48 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
                   <p className="text-xs text-amber-700 mt-2">
                     See the Payout Mappings tax helper for details on how tax adjustments flow through the GL.
                   </p>
+                </div>
+
+                {/* Marketplace Tax Config */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-white border rounded-lg p-4">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Non-Taxable Tax Code</label>
+                    <p className="text-xs text-slate-500 mb-2">Tax code applied to Sales Orders for marketplace sources (typically &quot;None&quot;)</p>
+                    <Select
+                      value={marketplaceNonTaxableTaxCode}
+                      onValueChange={(value) => saveMarketplaceNonTaxableTaxCode(value)}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder={isLoadingSalestaxitems ? 'Loading...' : 'Select tax code'} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {salestaxitemList.map((item) => (
+                          <SelectItem key={item.id} value={item.id}>
+                            {item.name} (ID: {item.id})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="bg-white border rounded-lg p-4">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Marketplace Tax Item</label>
+                    <p className="text-xs text-slate-500 mb-2">Non-inventory item that posts marketplace-collected tax to a pass-through GL account</p>
+                    <Select
+                      value={marketplaceTaxItem}
+                      onValueChange={(value) => saveMarketplaceTaxItem(value)}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder={isLoadingNonInventoryItems ? 'Loading...' : 'Select item'} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {nonInventoryItemList.map((item) => (
+                          <SelectItem key={item.id} value={item.id}>
+                            {item.name} (ID: {item.id})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
 
                 {/* Order Source Mappings Table */}

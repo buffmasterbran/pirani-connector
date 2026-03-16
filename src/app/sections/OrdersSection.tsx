@@ -1721,6 +1721,28 @@ export function OrdersSection() {
                     </div>
                   )}
 
+                  {/* Marketplace order notice */}
+                  {pushWorkflow.step2.data.isMarketplaceOrder && (
+                    <div className="bg-purple-50 border border-purple-200 rounded p-2">
+                      <p className="text-xs font-medium text-purple-800 mb-1">
+                        Marketplace Order — {pushWorkflow.step2.data.marketplaceSource || 'Unknown Source'}
+                      </p>
+                      <ul className="text-xs text-purple-700 space-y-0.5">
+                        <li>- Tax code set to non-taxable (NS will not calculate tax)</li>
+                        {pushWorkflow.step2.data.payload?.taxItem ? (
+                          <li>- Tax item: ID {pushWorkflow.step2.data.payload.taxItem.id}</li>
+                        ) : (
+                          <li className="text-orange-700">- No non-taxable tax code configured</li>
+                        )}
+                        {pushWorkflow.step2.data.payload?.item?.items?.some((i: any) => i.description?.startsWith('Marketplace Tax')) ? (
+                          <li>- &quot;Marketplace Tax&quot; line item added for collected tax</li>
+                        ) : (
+                          <li>- No tax to pass through (order tax is $0)</li>
+                        )}
+                      </ul>
+                    </div>
+                  )}
+
                   {/* Blocking errors (missing mappings) */}
                   {pushWorkflow.step2.data.warnings && pushWorkflow.step2.data.warnings.some((w: string) => w.startsWith('BLOCKING:')) && (
                     <div className="bg-red-50 border border-red-300 rounded p-2">

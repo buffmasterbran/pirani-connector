@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     console.log(`🚀 Building NetSuite sales order payload for Shopify order: ${shopifyOrderId}`)
 
     // Build the payload (resolveCustomer is called internally — 3-tier lookup/create)
-    const { payload, errors, customerWasCreated } = await buildNetSuiteSalesOrderPayload(shopifyOrderId)
+    const { payload, errors, customerWasCreated, isMarketplaceOrder, marketplaceSource } = await buildNetSuiteSalesOrderPayload(shopifyOrderId)
 
     // Log any warnings/errors
     if (errors.length > 0) {
@@ -109,6 +109,8 @@ export async function POST(request: NextRequest) {
       salesOrderId: result.salesOrderId,
       salesOrderName: result.salesOrderName,
       customerWasCreated,
+      isMarketplaceOrder,
+      marketplaceSource,
       warnings: errors.length > 0 ? errors : undefined,
       payload, // Include payload for debugging/review
       responseDebug: result.responseDebug, // NetSuite response details for debugging
@@ -146,7 +148,7 @@ export async function GET(request: NextRequest) {
 
     console.log(`🔍 Previewing NetSuite sales order payload for Shopify order: ${shopifyOrderId}`)
 
-    const { payload, errors, customerWasCreated } = await buildNetSuiteSalesOrderPayload(shopifyOrderId)
+    const { payload, errors, customerWasCreated, isMarketplaceOrder, marketplaceSource } = await buildNetSuiteSalesOrderPayload(shopifyOrderId)
 
     // Fetch customer and address details for preview
     const orderLines = await prisma.orderLine.findMany({
@@ -223,6 +225,8 @@ export async function GET(request: NextRequest) {
       payload,
       customerInfo,
       customerWasCreated,
+      isMarketplaceOrder,
+      marketplaceSource,
       addressInfo,
       warnings: errors.length > 0 ? errors : undefined,
       validation: {

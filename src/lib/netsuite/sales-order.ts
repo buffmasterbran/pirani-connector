@@ -61,6 +61,7 @@ export interface NetSuiteSalesOrderPayload {
   item: {
     items: Array<{
       item: {
+        id?: string // Internal ID - used for non-inventory items (e.g., marketplace tax item)
         refName?: string // Item reference name (SKU or item name) - preferred method
         itemid?: string // SKU (Stock Keeping Unit) - fallback if refName not available
       }
@@ -71,6 +72,9 @@ export interface NetSuiteSalesOrderPayload {
   }
   subtotal?: number
   taxTotal?: number
+  taxItem?: {
+    id: string // Tax code internal ID (e.g., "-7" for "None")
+  }
   shippingCost?: number
   total?: number
   currency?: {
@@ -92,7 +96,7 @@ export interface NetSuiteSalesOrderPayload {
  */
 export async function buildNetSuiteSalesOrderPayload(
   shopifyOrderId: string
-): Promise<{ payload: NetSuiteSalesOrderPayload; errors: string[]; customerWasCreated: boolean }> {
+): Promise<{ payload: NetSuiteSalesOrderPayload; errors: string[]; customerWasCreated: boolean; isMarketplaceOrder: boolean; marketplaceSource: string | null }> {
   const errors: string[] = []
 
   // Fetch all order lines for this order
@@ -200,6 +204,55 @@ export async function buildNetSuiteSalesOrderPayload(
     where: { settingKey: 'default_discount_item' },
   })
   let discountItemId = discountItemSetting?.settingValue || null
+
+  // Fetch OrderSourceMapping for this order's source (marketplace tax handling)
+  let isMarketplaceOrder = false
+  let marketplaceSource: string | null = null
+  let sourceMapping: { isTaxable: boolean; friendlyName: string } | null = null
+
+  if (firstLine.appId || firstLine.sourceName) {
+    const sourceWhere: any[] = []
+    if (firstLine.appId) {
+      sourceWhere.push({ appId: Number(firstLine.appId) })
+    }
+    if (firstLine.sourceName) {
+      sourceWhere.push({ sourceName: firstLine.sourceName })
+    }
+    const mapping = await prisma.orderSourceMapping.findFirst({
+      where: {
+        isActive: true,
+        OR: sourceWhere,
+      },
+    })
+    if (mapping) {
+      sourceMapping = { isTaxable: mapping.isTaxable, friendlyName: mapping.friendlyName }
+      if (!mapping.isTaxable) {
+        isMarketplaceOrder = true
+        marketplaceSource = mapping.friendlyName
+      }
+    }
+  }
+
+  // Fetch marketplace tax settings from MappingDefaults
+  let marketplaceTaxItemId: string | null = null
+  let nonTaxableTaxCodeId: string | null = null
+
+  if (isMarketplaceOrder) {
+    try {
+      const [taxItemSetting, taxCodeSetting] = await Promise.all([
+        prisma.mappingDefaults.findUnique({ where: { settingKey: 'marketplace_tax_item' } }),
+        prisma.mappingDefaults.findUnique({ where: { settingKey: 'marketplace_nontaxable_taxcode' } }),
+      ])
+      if (taxItemSetting?.isActive && taxItemSetting.settingValue) {
+        marketplaceTaxItemId = taxItemSetting.settingValue
+      }
+      if (taxCodeSetting?.isActive && taxCodeSetting.settingValue) {
+        nonTaxableTaxCodeId = taxCodeSetting.settingValue
+      }
+    } catch (error) {
+      console.warn('Could not fetch marketplace tax settings:', error)
+    }
+  }
 
   // Fetch Shopify order data if needed for Order Line mappings
   let shopifyOrderDataForLineItems: any = null
@@ -547,6 +600,31 @@ export async function buildNetSuiteSalesOrderPayload(
     total: firstLine.orderTotal || undefined,
   }
 
+  // Apply marketplace tax logic for non-taxable sources
+  if (isMarketplaceOrder) {
+    const orderTax = firstLine.orderTax || 0
+
+    // Set the non-taxable tax code on the order
+    if (nonTaxableTaxCodeId) {
+      payload.taxItem = { id: nonTaxableTaxCodeId }
+      payload.taxTotal = undefined // Let NS calculate (should be $0 with "None" tax code)
+    } else {
+      errors.push('Marketplace order but no non-taxable tax code configured. Go to Mappings > Orders > Source tab to set the "Non-Taxable Tax Code". NS may still calculate tax.')
+    }
+
+    // Add "Marketplace Tax" line item for the Shopify tax amount
+    if (orderTax > 0 && marketplaceTaxItemId) {
+      payload.item.items.push({
+        item: { id: marketplaceTaxItemId },
+        quantity: 1,
+        rate: orderTax,
+        description: `Marketplace Tax (collected by ${marketplaceSource || 'marketplace'})`,
+      })
+    } else if (orderTax > 0 && !marketplaceTaxItemId) {
+      errors.push(`Marketplace order has $${orderTax.toFixed(2)} tax but no Marketplace Tax Item configured. Go to Mappings > Orders > Source tab to set the "Marketplace Tax Item".`)
+    }
+  }
+
   // Apply all active order field mappings dynamically
   for (const mapping of orderFieldMappings) {
     const value = getMappingValue(mapping)
@@ -753,7 +831,7 @@ export async function buildNetSuiteSalesOrderPayload(
     // Still return the payload for preview, but the POST handler should check for blocking errors
   }
 
-  return { payload, errors, customerWasCreated }
+  return { payload, errors, customerWasCreated, isMarketplaceOrder, marketplaceSource }
 }
 
 /**
