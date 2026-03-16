@@ -13,6 +13,9 @@ interface TransactionFiltersProps {
   setFilterMissingCashSale: (value: boolean) => void
   webOrderFilter: 'all' | 'web' | 'non-web'
   setWebOrderFilter: (value: 'all' | 'web' | 'non-web') => void
+  adjustmentReasonFilter: string
+  setAdjustmentReasonFilter: (value: string) => void
+  adjustmentReasonOptions: string[]
   searchTerm: string
   setSearchTerm: (value: string) => void
 
@@ -36,6 +39,9 @@ export function TransactionFilters({
   setFilterMissingCashSale,
   webOrderFilter,
   setWebOrderFilter,
+  adjustmentReasonFilter,
+  setAdjustmentReasonFilter,
+  adjustmentReasonOptions,
   searchTerm,
   setSearchTerm,
   calculateFilterCounts,
@@ -240,6 +246,26 @@ export function TransactionFilters({
                 </option>
               </select>
             </div>
+            {adjustmentReasonOptions.length > 0 && (
+              <div className="flex items-center gap-2">
+                <label htmlFor="adjustment-reason-filter" className="text-sm font-medium">
+                  Adjustment:
+                </label>
+                <select
+                  id="adjustment-reason-filter"
+                  value={adjustmentReasonFilter}
+                  onChange={(e) => setAdjustmentReasonFilter(e.target.value)}
+                  className="px-2 py-1 text-sm border rounded-md"
+                >
+                  <option value="all">All Types</option>
+                  {adjustmentReasonOptions.map(reason => (
+                    <option key={reason} value={reason}>
+                      {reason.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
           {missingNSTransactionsCount > 0 && (
             <Button

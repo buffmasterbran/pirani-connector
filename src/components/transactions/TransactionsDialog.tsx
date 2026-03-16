@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { ClipboardList } from "lucide-react"
@@ -11,6 +11,7 @@ import { useTransactionData, type TransactionItem } from "./useTransactionData"
 import { TransactionFilters } from "./TransactionFilters"
 import { TransactionSummary } from "./TransactionSummary"
 import { AuditLogDialog } from "./AuditLogDialog"
+import { MarketplaceOrderDialog } from "./MarketplaceOrderDialog"
 
 interface TransactionsDialogProps {
   isOpen: boolean
@@ -70,6 +71,7 @@ export function TransactionsDialog({
   // Filter state
   const [filterMissingCashSale, setFilterMissingCashSale] = useState(false)
   const [webOrderFilter, setWebOrderFilter] = useState<'all' | 'web' | 'non-web'>('all')
+  const [adjustmentReasonFilter, setAdjustmentReasonFilter] = useState<string>('all')
   const [searchTerm, setSearchTerm] = useState('')
 
   // Import/fetch state
@@ -83,6 +85,8 @@ export function TransactionsDialog({
   const [selectedTransactionForAdd, setSelectedTransactionForAdd] = useState<TransactionItem | null>(null)
   const [splitDialogOpen, setSplitDialogOpen] = useState(false)
   const [selectedTransactionForSplit, setSelectedTransactionForSplit] = useState<TransactionItem | null>(null)
+  const [marketplaceDialogOpen, setMarketplaceDialogOpen] = useState(false)
+  const [selectedMarketplaceTransaction, setSelectedMarketplaceTransaction] = useState<TransactionItem | null>(null)
 
   // Helper function to safely refresh transactions, deferring to next frame to prevent hook order issues
   const safeRefreshTransactions = () => {
@@ -494,6 +498,15 @@ export function TransactionsDialog({
     }
   }
 
+  // Compute unique adjustment reasons for filter dropdown
+  const adjustmentReasonOptions = useMemo(() => {
+    const reasons = new Set<string>()
+    localTransactions.forEach(t => {
+      if (t.adjustmentReason) reasons.add(t.adjustmentReason)
+    })
+    return [...reasons].sort()
+  }, [localTransactions])
+
   // --- Filtered transactions for the table ---
 
   const getFilteredTransactions = () => {
@@ -545,6 +558,11 @@ export function TransactionsDialog({
         }
         return true
       })
+    }
+
+    // Apply adjustment reason filter
+    if (adjustmentReasonFilter !== 'all') {
+      filtered = filtered.filter(t => t.adjustmentReason === adjustmentReasonFilter)
     }
 
     // When filterMissingCashSale is checked, show all transactions for Order IDs
@@ -647,6 +665,9 @@ export function TransactionsDialog({
           setFilterMissingCashSale={setFilterMissingCashSale}
           webOrderFilter={webOrderFilter}
           setWebOrderFilter={setWebOrderFilter}
+          adjustmentReasonFilter={adjustmentReasonFilter}
+          setAdjustmentReasonFilter={setAdjustmentReasonFilter}
+          adjustmentReasonOptions={adjustmentReasonOptions}
           searchTerm={searchTerm}
           setSearchTerm={setSearchTerm}
           calculateFilterCounts={calculateFilterCounts}
@@ -678,6 +699,10 @@ export function TransactionsDialog({
             onSplitTransaction={(transaction) => {
               setSelectedTransactionForSplit(transaction as any)
               setSplitDialogOpen(true)
+            }}
+            onProcessMarketplaceOrder={(transaction) => {
+              setSelectedMarketplaceTransaction(transaction as any)
+              setMarketplaceDialogOpen(true)
             }}
           />
         </div>
@@ -737,6 +762,34 @@ export function TransactionsDialog({
         } : null}
         onSaved={() => {
           if (onRefreshTransactions) onRefreshTransactions()
+        }}
+      />
+
+      <MarketplaceOrderDialog
+        isOpen={marketplaceDialogOpen}
+        onClose={() => {
+          setMarketplaceDialogOpen(false)
+          setSelectedMarketplaceTransaction(null)
+        }}
+        transaction={selectedMarketplaceTransaction ? {
+          id: selectedMarketplaceTransaction.id,
+          source_order_id: selectedMarketplaceTransaction.source_order_id,
+          order_name: selectedMarketplaceTransaction.order_name || null,
+          amount: typeof selectedMarketplaceTransaction.amount === 'string'
+            ? parseFloat(selectedMarketplaceTransaction.amount)
+            : selectedMarketplaceTransaction.amount || 0,
+          fee: typeof selectedMarketplaceTransaction.fee === 'string'
+            ? parseFloat(selectedMarketplaceTransaction.fee)
+            : selectedMarketplaceTransaction.fee || 0,
+          net: typeof selectedMarketplaceTransaction.net === 'string'
+            ? parseFloat(selectedMarketplaceTransaction.net)
+            : selectedMarketplaceTransaction.net || 0,
+          type: selectedMarketplaceTransaction.type,
+          currency: selectedMarketplaceTransaction.currency || 'USD',
+          processedAt: selectedMarketplaceTransaction.processedAt,
+        } : null}
+        onComplete={() => {
+          safeRefreshTransactions()
         }}
       />
     </Dialog>

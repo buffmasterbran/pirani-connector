@@ -32,6 +32,7 @@ export interface NetSuiteResponse {
     cashsales: NetSuiteCashSale[]
     refunds: NetSuiteRefund[]
     payments?: NetSuitePayment[]
+    customerRefunds?: NetSuiteRefund[]
   }
 }
 
@@ -42,6 +43,7 @@ export interface NetSuiteTransactionRequest {
   cashsales: string[]
   refunds: string[]
   payments?: string[]
+  customerRefunds?: string[]
 }
 
 export interface NetSuiteCustomer {

@@ -4,7 +4,7 @@ import {
 } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Plus, Split, ChevronDown, ChevronRight } from "lucide-react"
+import { Plus, Split, ChevronDown, ChevronRight, Store } from "lucide-react"
 import { safeFormatDate } from "@/lib/dateUtils"
 import React from "react"
 import type { Transaction, DisplayTransaction, OrderSourceMapping, FeesDescriptionOption } from "./types"
@@ -31,6 +31,7 @@ interface TransactionRowProps {
   onUpdateAmountDescription?: (transactionId: string, description: string | null) => Promise<void>
   onToggleInclude?: (transactionId: string, include: boolean) => Promise<void>
   onSplitTransaction?: (transaction: Transaction) => void
+  onProcessMarketplaceOrder?: (transaction: Transaction) => void
 }
 
 export function TransactionRow({
@@ -53,6 +54,7 @@ export function TransactionRow({
   onUpdateAmountDescription,
   onToggleInclude,
   onSplitTransaction,
+  onProcessMarketplaceOrder,
 }: TransactionRowProps) {
   const isFirstInGroup = transaction.isGrouped && transaction.groupIndex === 0
   const showGroupIndicator = transaction.isGrouped && isFirstInGroup
@@ -64,6 +66,14 @@ export function TransactionRow({
     : null
 
   const isCashSaleRefund = isCashSaleOrRefund(transaction)
+
+  // Check if this is a marketplace (non-taxable) order that can be processed
+  const isMarketplaceOrder = onProcessMarketplaceOrder && orderSourceMappings.some(m =>
+    m.isActive && m.isTaxable === false && (
+      (transaction.app_id && m.appId === transaction.app_id) ||
+      (transaction.source_name && m.sourceName === transaction.source_name)
+    )
+  )
 
   return (
     <React.Fragment>
@@ -253,6 +263,17 @@ export function TransactionRow({
                   title="Split into multiple NS transactions"
                 >
                   <Split className="h-3 w-3" />
+                </Button>
+              )}
+              {isMarketplaceOrder && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 p-0 text-orange-600 hover:text-orange-800 hover:bg-orange-50"
+                  onClick={() => onProcessMarketplaceOrder!(transaction)}
+                  title="Process marketplace order (delete CS, create invoice + payment)"
+                >
+                  <Store className="h-3 w-3" />
                 </Button>
               )}
             </div>

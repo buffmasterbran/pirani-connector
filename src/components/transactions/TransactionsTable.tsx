@@ -34,7 +34,8 @@ export function TransactionsTable({
   onUpdateFeeDescription,
   onToggleInclude,
   onMergeTransactions,
-  onSplitTransaction
+  onSplitTransaction,
+  onProcessMarketplaceOrder
 }: TransactionsTableProps) {
 
   // Helper function to get friendly name for order source
@@ -319,6 +320,7 @@ export function TransactionsTable({
               onUpdateAmountDescription={onUpdateAmountDescription}
               onToggleInclude={onToggleInclude}
               onSplitTransaction={onSplitTransaction}
+              onProcessMarketplaceOrder={onProcessMarketplaceOrder}
             />
           ))}
         </TableBody>

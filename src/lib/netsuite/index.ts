@@ -37,6 +37,20 @@ export {
 } from './sales-order'
 export type { NetSuiteSalesOrderPayload } from './sales-order'
 
+// REST Helpers (generic CRUD)
+export { deleteRecord, getRecord, patchRecord, createRecord, transformRecord } from './rest-helpers'
+
+// Marketplace Order Processing
+export {
+  checkOrderState,
+  deleteCashSale,
+  updateSOForMarketplace,
+  createInvoiceFromSO,
+  createPaymentForInvoice,
+  processMarketplaceOrder,
+} from './marketplace-order'
+export type { MarketplaceOrderState, OrderStateRecord, StepResult } from './marketplace-order'
+
 // Types
 export type {
   NetSuiteCashSale,

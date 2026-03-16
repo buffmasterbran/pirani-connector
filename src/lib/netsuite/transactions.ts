@@ -32,7 +32,7 @@ async function fetchChunk(refList: string): Promise<SuiteQLTransactionRow[]> {
       BUILTIN.DF(Transaction.type) AS typename
     FROM Transaction
     WHERE Transaction.otherrefnum IN (${refList})
-      AND Transaction.type IN ('CashSale', 'CashRfnd', 'CustPymt')
+      AND Transaction.type IN ('CashSale', 'CashRfnd', 'CustPymt', 'CustRfnd')
     ORDER BY Transaction.otherrefnum, Transaction.type
   `
 
@@ -67,6 +67,7 @@ export async function fetchNetSuiteTransactions(
     ...(request.cashsales || []),
     ...(request.refunds || []),
     ...(request.payments || []),
+    ...(request.customerRefunds || []),
   ]
 
   if (allRefs.length === 0) {
@@ -97,6 +98,7 @@ export async function fetchNetSuiteTransactions(
   const cashsales: NetSuiteCashSale[] = []
   const refunds: NetSuiteRefund[] = []
   const payments: NetSuitePayment[] = []
+  const customerRefunds: NetSuiteRefund[] = []
 
   for (const row of allRows) {
     const mapped = {
@@ -115,6 +117,9 @@ export async function fetchNetSuiteTransactions(
       case 'CashRfnd':
         refunds.push(mapped)
         break
+      case 'CustRfnd':
+        customerRefunds.push(mapped)
+        break
       case 'CustPymt':
         payments.push(mapped)
         break
@@ -123,8 +128,8 @@ export async function fetchNetSuiteTransactions(
 
   return {
     status: 'success',
-    message: `Found ${cashsales.length} cash sales, ${payments.length} payments, and ${refunds.length} refunds.`,
-    details: { cashsales, refunds, payments },
+    message: `Found ${cashsales.length} cash sales, ${payments.length} payments, ${refunds.length} cash refunds, and ${customerRefunds.length} customer refunds.`,
+    details: { cashsales, refunds, payments, customerRefunds },
   }
 }
 
@@ -165,6 +170,21 @@ export function matchNetSuiteTransactions(
         type: 'Cash Refund',
       })
       continue
+    }
+
+    if (netsuiteData.details.customerRefunds) {
+      const customerRefund = netsuiteData.details.customerRefunds.find(
+        (cr) => cr.otherrefnum === orderName
+      )
+      if (customerRefund) {
+        matches.set(transaction.order_name!, {
+          id: customerRefund.id,
+          tranid: customerRefund.tranid,
+          amount: customerRefund.amount,
+          type: 'Customer Refund',
+        })
+        continue
+      }
     }
 
     if (netsuiteData.details.payments) {

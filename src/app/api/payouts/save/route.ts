@@ -233,6 +233,7 @@ export async function POST(request: NextRequest) {
               amount: childAmount,
               net: childNet,
               fee: childFee ? -Math.abs(childFee) : 0,
+              adjustmentReason: transaction.adjustment_reason ?? null,
               includeInNetSuite: true,
             },
           })

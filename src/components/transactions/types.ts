@@ -39,6 +39,7 @@ export interface OrderSourceMapping {
   sourceName: string | null
   friendlyName: string
   isActive: boolean
+  isTaxable?: boolean
 }
 
 export interface DisplayTransaction extends Transaction {
@@ -67,4 +68,5 @@ export interface TransactionsTableProps {
   onToggleInclude?: (transactionId: string, include: boolean) => Promise<void>
   onMergeTransactions?: (sourceTransactionIds: string[], targetTransactionId: string) => Promise<void>
   onSplitTransaction?: (transaction: Transaction) => void
+  onProcessMarketplaceOrder?: (transaction: Transaction) => void
 }

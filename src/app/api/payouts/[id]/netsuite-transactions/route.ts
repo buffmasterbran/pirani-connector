@@ -27,6 +27,7 @@ function classifyTransactions(payout: NonNullable<Awaited<ReturnType<typeof load
   const cashSales: string[] = []
   const refunds: string[] = []
   const payments: string[] = []
+  const customerRefunds: string[] = []
 
   for (const txn of transactionsNeedingNS) {
     const orderName =
@@ -34,15 +35,17 @@ function classifyTransactions(payout: NonNullable<Awaited<ReturnType<typeof load
       (txn.shopifyOrderId ? `#${txn.shopifyOrderId}` : null)
     if (!orderName) continue
 
-    const isRefund = txn.type === 'refund' || txn.amount === null || (txn.amount !== null && txn.amount < 0)
+    const isCustomerRefund = txn.type === 'customerRefund' || txn.type === 'custrfnd' || txn.type?.toLowerCase() === 'customerrefund'
+    const isRefund = txn.type === 'refund' || txn.type === 'cashRefund' || txn.amount === null || (txn.amount !== null && txn.amount < 0)
     const isPayment = txn.type === 'payment' || txn.type === 'custpymt' || txn.type?.toLowerCase().includes('payment')
 
-    if (isPayment) payments.push(orderName)
+    if (isCustomerRefund) customerRefunds.push(orderName)
+    else if (isPayment) payments.push(orderName)
     else if (isRefund) refunds.push(orderName)
     else cashSales.push(orderName)
   }
 
-  return { cashSales, refunds, payments, transactionsNeedingNS }
+  return { cashSales, refunds, payments, customerRefunds, transactionsNeedingNS }
 }
 
 export async function POST(
@@ -59,7 +62,7 @@ export async function POST(
     }
     const payout = payoutOrNull
 
-    const { cashSales, refunds, payments, transactionsNeedingNS } = classifyTransactions(payout)
+    const { cashSales, refunds, payments, customerRefunds, transactionsNeedingNS } = classifyTransactions(payout)
 
     if (transactionsNeedingNS.length === 0) {
       return NextResponse.json({ success: true, message: 'All transactions already have NetSuite IDs', updated: 0, errors: [] })
@@ -74,9 +77,10 @@ export async function POST(
       cashsales: cashSales,
       refunds: refunds,
       payments: payments.length > 0 ? payments : undefined,
+      customerRefunds: customerRefunds.length > 0 ? customerRefunds : undefined,
     }
 
-    console.log(`📦 Fetching NS transactions: ${cashSales.length} CS, ${refunds.length} RF, ${payments.length} PM`)
+    console.log(`📦 Fetching NS transactions: ${cashSales.length} CS, ${refunds.length} RF, ${payments.length} PM, ${customerRefunds.length} CR`)
     const nsResponse = await fetchNetSuiteTransactions(nsRequest)
 
     if (nsResponse.status !== 'success') {
@@ -87,9 +91,10 @@ export async function POST(
       cashsales: nsResponse.details.cashsales,
       refunds: nsResponse.details.refunds,
       payments: nsResponse.details.payments || [],
+      customerRefunds: nsResponse.details.customerRefunds || [],
     }
 
-    console.log(`✅ NS results: ${nsResults.cashsales.length} CS, ${nsResults.refunds.length} RF, ${nsResults.payments.length} PM`)
+    console.log(`✅ NS results: ${nsResults.cashsales.length} CS, ${nsResults.refunds.length} RF, ${nsResults.payments.length} PM, ${nsResults.customerRefunds.length} CR`)
 
     // Match NS results against DB transactions
     const transactionMap = new Map<string, Array<typeof payout.transactions[0]>>()
@@ -159,8 +164,9 @@ export async function POST(
       }
     }
 
-    matchNS(nsResults.cashsales, t => !isRefundTxn(t), false)
-    matchNS(nsResults.refunds, t => isRefundTxn(t), true)
+    matchNS(nsResults.cashsales, t => !isRefundTxn(t) && t.type !== 'customerRefund' && t.type !== 'custrfnd', false)
+    matchNS(nsResults.refunds, t => isRefundTxn(t) && t.type !== 'customerRefund' && t.type !== 'custrfnd', true)
+    matchNS(nsResults.customerRefunds, t => t.type === 'customerRefund' || t.type === 'custrfnd' || t.type?.toLowerCase() === 'customerrefund', true)
     matchNS(nsResults.payments, t => t.type === 'payment' || t.type === 'custpymt' || (t.type?.toLowerCase().includes('payment') ?? false), true)
 
     // Bulk update matched transactions in chunks (Postgres max 32767 bind vars, 6 per row)
@@ -208,6 +214,7 @@ export async function POST(
       cashSalesMatched: nsResults.cashsales.length,
       refundsMatched: nsResults.refunds.length,
       paymentsMatched: nsResults.payments.length,
+      customerRefundsMatched: nsResults.customerRefunds.length,
       errors: errors.length > 0 ? errors : undefined,
     })
   } catch (error) {
