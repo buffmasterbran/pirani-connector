@@ -183,7 +183,7 @@ export function MarketplaceOrderDialog({
     }
 
     updateStep('update-sales-order', { status: 'running', detail: `Updating ${st.salesOrder.tranid}...` })
-    const data = await callApi({ orderName, step: 'update-sales-order', salesOrderId: st.salesOrder.id })
+    const data = await callApi({ orderName, step: 'update-sales-order', salesOrderId: st.salesOrder.id, transactionId: transaction?.id })
 
     if (data.success) {
       updateStep('update-sales-order', { status: 'success', detail: data.result?.detail })

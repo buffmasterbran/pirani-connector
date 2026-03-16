@@ -12,6 +12,41 @@ import {
 export const dynamic = 'force-dynamic'
 
 /**
+ * Look up the tax amount from sibling "Tax Adjustment" payout transactions
+ * for the same order. Returns the absolute tax amount (positive number).
+ */
+async function lookupTaxAdjustment(orderName: string, transactionId?: string): Promise<number> {
+  try {
+    // Find the payout ID from the transaction
+    if (!transactionId) return 0
+    const txn = await prisma.payoutTransaction.findUnique({
+      where: { id: transactionId },
+      select: { payoutId: true, shopifyOrderId: true },
+    })
+    if (!txn?.payoutId) return 0
+
+    // Find sibling Tax Adjustment transactions in the same payout for the same order
+    const taxTxns = await prisma.payoutTransaction.findMany({
+      where: {
+        payoutId: txn.payoutId,
+        adjustmentReason: 'Tax Adjustment',
+        ...(txn.shopifyOrderId ? { shopifyOrderId: txn.shopifyOrderId } : {}),
+      },
+      select: { amount: true },
+    })
+
+    if (taxTxns.length === 0) return 0
+
+    // Sum the absolute amounts (tax adjustments are negative debits)
+    const total = taxTxns.reduce((sum, t) => sum + Math.abs(Number(t.amount) || 0), 0)
+    return total
+  } catch (error) {
+    console.error('⚠️ Error looking up tax adjustment:', error)
+    return 0
+  }
+}
+
+/**
  * GET — Check current NS state for an order.
  * ?orderName=#54031
  */
@@ -118,7 +153,10 @@ export async function POST(request: NextRequest) {
         if (!salesOrderId) {
           return NextResponse.json({ error: 'salesOrderId is required' }, { status: 400 })
         }
-        const result = await updateSOForMarketplace(salesOrderId)
+        // Look up tax amount from sibling "Tax Adjustment" payout transactions for same order
+        const taxAmount = await lookupTaxAdjustment(orderName, transactionId)
+        console.log(`🏪 Tax adjustment for ${orderName}: $${taxAmount}`)
+        const result = await updateSOForMarketplace(salesOrderId, taxAmount)
         return NextResponse.json({ success: result.success, result })
       }
 

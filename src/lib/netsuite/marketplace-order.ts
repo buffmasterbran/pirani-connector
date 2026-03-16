@@ -122,7 +122,7 @@ export async function deleteCashSale(cashSaleId: string): Promise<StepResult> {
  * - Add marketplace tax line item (if tax > 0)
  * - Clear paymentoption
  */
-export async function updateSOForMarketplace(soId: string): Promise<StepResult> {
+export async function updateSOForMarketplace(soId: string, taxAmount?: number): Promise<StepResult> {
   // Fetch marketplace settings from MappingDefaults
   const settings = await prisma.mappingDefaults.findMany({
     where: { settingKey: { in: ['marketplace_nontaxable_taxcode', 'marketplace_tax_item'] } },
@@ -139,18 +139,9 @@ export async function updateSOForMarketplace(soId: string): Promise<StepResult> 
     }
   }
 
-  // Read the current SO to get tax amount
-  const soResult = await getRecord('salesOrder', soId, true)
-  if (!soResult.success || !soResult.data) {
-    return {
-      step: 'update-sales-order',
-      success: false,
-      error: `Failed to read Sales Order ${soId}: ${soResult.error}`,
-    }
-  }
-
-  const soData = soResult.data
-  const taxTotal = Number(soData.taxtotal || soData.taxTotal || 0)
+  // Use the provided tax amount (from payout's Tax Adjustment sibling)
+  // The NS SO's taxtotal is unreliable — FarApp may have pushed it as non-taxable (taxtotal=0)
+  const taxTotal = taxAmount ?? 0
 
   // Build PATCH body
   const patchBody: any = {
@@ -160,7 +151,7 @@ export async function updateSOForMarketplace(soId: string): Promise<StepResult> 
 
   // Add marketplace tax line item if there's tax and we have the item configured
   if (taxTotal > 0 && taxItemId) {
-    // We need to append to the existing items. Use replaceAll: false to add.
+    // Append to existing items. replaceAll: false to add without replacing.
     patchBody.item = {
       items: [{
         item: { id: taxItemId },
@@ -188,6 +179,8 @@ export async function updateSOForMarketplace(soId: string): Promise<StepResult> 
     details.push(`Added marketplace tax line: $${taxTotal.toFixed(2)}`)
   } else if (taxTotal > 0 && !taxItemId) {
     details.push(`Warning: Order has $${taxTotal.toFixed(2)} tax but no Marketplace Tax Item configured`)
+  } else if (taxTotal === 0) {
+    details.push('No tax adjustment found')
   }
   details.push('Cleared paymentoption')
 
