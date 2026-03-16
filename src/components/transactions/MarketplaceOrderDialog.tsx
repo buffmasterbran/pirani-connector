@@ -194,7 +194,7 @@ export function MarketplaceOrderDialog({
     }
   }
 
-  const runCreateInvoice = async (state?: OrderState | null) => {
+  const runCreateInvoice = async (state?: OrderState | null): Promise<string | false> => {
     const st = state || orderState
     if (!st?.salesOrder) {
       updateStep('create-invoice', { status: 'error', error: 'No Sales Order found' })
@@ -217,7 +217,7 @@ export function MarketplaceOrderDialog({
         setCreatedRecords(prev => ({ ...prev, [newInvoiceName]: { id: newInvoiceId, tranid: newInvoiceName } }))
       }
       updateStep('create-invoice', { status: 'success', detail: data.result?.detail })
-      return true
+      return newInvoiceId || false
     } else {
       updateStep('create-invoice', { status: 'error', error: data.result?.error || data.error })
       return false
@@ -291,11 +291,9 @@ export function MarketplaceOrderDialog({
         // Full workflow
         if (!(await runDeleteCashSale(state))) { setIsRunningAll(false); return }
         if (!(await runUpdateSO(state))) { setIsRunningAll(false); return }
-        if (!(await runCreateInvoice(state))) { setIsRunningAll(false); return }
-        // invoiceId is set by runCreateInvoice via setInvoiceId
-        // Need to use a slight delay to let state update
-        await new Promise(r => setTimeout(r, 100))
-        await runCreatePayment(state)
+        const newInvoiceId = await runCreateInvoice(state)
+        if (!newInvoiceId) { setIsRunningAll(false); return }
+        await runCreatePayment(state, newInvoiceId)
       }
     } finally {
       setIsRunningAll(false)
