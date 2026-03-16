@@ -99,6 +99,7 @@ export async function fetchNetSuiteTransactions(
   const refunds: NetSuiteRefund[] = []
   const payments: NetSuitePayment[] = []
   const customerRefunds: NetSuiteRefund[] = []
+  const paymentIdsSeen = new Set<number>()
 
   for (const row of allRows) {
     const mapped = {
@@ -122,8 +123,22 @@ export async function fetchNetSuiteTransactions(
         break
       case 'CustPymt':
         payments.push(mapped)
+        paymentIdsSeen.add(mapped.id)
         break
     }
+  }
+
+  // --- Find payments applied to invoices (for payments without otherrefnum) ---
+  // Step 1: Find invoices by otherrefnum
+  // Step 2: Find payments linked to those invoices via NextTransactionLineLink
+  try {
+    const invoicePayments = await fetchPaymentsViaInvoices(uniqueRefs, paymentIdsSeen)
+    if (invoicePayments.length > 0) {
+      console.log(`🔍 Found ${invoicePayments.length} additional payment(s) via invoice links`)
+      payments.push(...invoicePayments)
+    }
+  } catch (error) {
+    console.error('⚠️ Error fetching payments via invoices (non-critical):', error)
   }
 
   return {
@@ -131,6 +146,90 @@ export async function fetchNetSuiteTransactions(
     message: `Found ${cashsales.length} cash sales, ${payments.length} payments, ${refunds.length} cash refunds, and ${customerRefunds.length} customer refunds.`,
     details: { cashsales, refunds, payments, customerRefunds },
   }
+}
+
+/**
+ * Find payments applied to invoices that match the given order refs.
+ * This catches payments that don't have otherrefnum set (e.g., manually created).
+ *
+ * 1. Find invoices by otherrefnum
+ * 2. Use NextTransactionLineLink to find payments applied to those invoices
+ * 3. Return payments not already in paymentIdsSeen
+ */
+async function fetchPaymentsViaInvoices(
+  orderRefs: string[],
+  paymentIdsSeen: Set<number>
+): Promise<NetSuitePayment[]> {
+  if (orderRefs.length === 0) return []
+
+  const results: NetSuitePayment[] = []
+
+  // Chunk the order refs for the invoice query
+  for (let i = 0; i < orderRefs.length; i += IN_CLAUSE_CHUNK_SIZE) {
+    const chunk = orderRefs.slice(i, i + IN_CLAUSE_CHUNK_SIZE)
+    const refList = chunk.map(r => `'${r.replace(/'/g, "''")}'`).join(', ')
+
+    // Step 1: Find invoices
+    const invoiceQuery = `
+      SELECT Transaction.id, Transaction.otherrefnum
+      FROM Transaction
+      WHERE Transaction.otherrefnum IN (${refList})
+        AND Transaction.type = 'CustInvc'
+    `
+    const invoiceData = await executeSuiteQL<{ id: string; otherrefnum: string }>(invoiceQuery)
+    const invoices = invoiceData.items || []
+
+    if (invoices.length === 0) continue
+
+    // Build a map of invoice ID → otherrefnum so we can tag payments with the order ref
+    const invoiceRefMap = new Map<string, string>()
+    for (const inv of invoices) {
+      invoiceRefMap.set(inv.id, inv.otherrefnum)
+    }
+
+    const invoiceIds = invoices.map(inv => inv.id).join(', ')
+
+    // Step 2: Find payments linked to these invoices
+    const paymentQuery = `
+      SELECT
+        t.id,
+        t.tranid,
+        BUILTIN.DF(t.entity) AS entityname,
+        t.foreigntotal,
+        ntll.previousDoc AS invoiceId
+      FROM NextTransactionLineLink ntll
+        JOIN Transaction t ON t.id = ntll.nextDoc
+      WHERE ntll.previousDoc IN (${invoiceIds})
+        AND t.type = 'CustPymt'
+    `
+    const paymentData = await executeSuiteQL<{
+      id: string
+      tranid: string
+      entityname: string
+      foreigntotal: string
+      invoiceid: string
+    }>(paymentQuery)
+
+    for (const row of paymentData.items || []) {
+      const id = Number(row.id)
+      if (paymentIdsSeen.has(id)) continue // Already found via otherrefnum
+      paymentIdsSeen.add(id)
+
+      // Tag with the invoice's otherrefnum so matching works
+      const otherrefnum = invoiceRefMap.get(row.invoiceid) || ''
+
+      results.push({
+        id,
+        tranid: row.tranid,
+        otherrefnum,
+        entity: row.entityname || '',
+        amount: Number(row.foreigntotal),
+        type: 'Customer Payment',
+      })
+    }
+  }
+
+  return results
 }
 
 /**

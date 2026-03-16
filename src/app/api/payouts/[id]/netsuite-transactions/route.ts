@@ -95,6 +95,9 @@ export async function POST(
     }
 
     console.log(`✅ NS results: ${nsResults.cashsales.length} CS, ${nsResults.refunds.length} RF, ${nsResults.payments.length} PM, ${nsResults.customerRefunds.length} CR`)
+    if (nsResults.payments.length > 0) {
+      console.log(`💳 Payments found:`, nsResults.payments.map(p => `${p.tranid} (ref: ${p.otherrefnum}, amt: ${p.amount})`).join(', '))
+    }
 
     // Match NS results against DB transactions
     const transactionMap = new Map<string, Array<typeof payout.transactions[0]>>()
@@ -125,6 +128,7 @@ export async function POST(
     }> = []
     const errors: string[] = []
     const matchedTxnIds = new Set<string>()
+    const matchedNsIds = new Set<number>()
 
     const matchNS = (
       nsItems: Array<{ id: number; tranid: string; otherrefnum: string; amount: number }>,
@@ -132,6 +136,7 @@ export async function POST(
       useAbsAmount: boolean,
     ) => {
       for (const nsItem of nsItems) {
+        if (matchedNsIds.has(nsItem.id)) continue
         const key1 = normalize(nsItem.otherrefnum)
         const txns = transactionMap.get(key1) || transactionMap.get(nsItem.otherrefnum) || []
         const candidates = txns.filter(t => filterFn(t) && !matchedTxnIds.has(t.id))
@@ -145,6 +150,7 @@ export async function POST(
 
         if (matched) {
           matchedTxnIds.add(matched.id)
+          matchedNsIds.add(nsItem.id)
           const shopAmt = useAbsAmount ? Math.abs(matched.amount || matched.net || 0) : (matched.amount || matched.net || 0)
           const nsAmt = useAbsAmount ? Math.abs(nsItem.amount) : nsItem.amount
           const mismatch = Math.abs(shopAmt - nsAmt) > 0.01
@@ -167,7 +173,15 @@ export async function POST(
     matchNS(nsResults.cashsales, t => !isRefundTxn(t) && t.type !== 'customerRefund' && t.type !== 'custrfnd', false)
     matchNS(nsResults.refunds, t => isRefundTxn(t) && t.type !== 'customerRefund' && t.type !== 'custrfnd', true)
     matchNS(nsResults.customerRefunds, t => t.type === 'customerRefund' || t.type === 'custrfnd' || t.type?.toLowerCase() === 'customerrefund', true)
+    // First try matching payments to payment-typed transactions
+    const beforePaymentMatch = updates.length
     matchNS(nsResults.payments, t => t.type === 'payment' || t.type === 'custpymt' || (t.type?.toLowerCase().includes('payment') ?? false), true)
+    console.log(`💳 Payment strict match: ${updates.length - beforePaymentMatch} matched`)
+    // Fallback: match remaining payments to any unmatched transaction with the same order ref
+    // This handles Shop Cash credits (type='credit') that need a NS payment
+    const beforeFallback = updates.length
+    matchNS(nsResults.payments, () => true, true)
+    console.log(`💳 Payment fallback match: ${updates.length - beforeFallback} matched`)
 
     // Bulk update matched transactions in chunks (Postgres max 32767 bind vars, 6 per row)
     const UPDATE_CHUNK_SIZE = 4000

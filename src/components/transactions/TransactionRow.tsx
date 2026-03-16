@@ -243,38 +243,42 @@ export function TransactionRow({
           ) : (
             <div className="flex items-center gap-1">
               <span className="text-muted-foreground">{'\u2014'}</span>
-              {onAddNetSuite && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 w-6 p-0 text-blue-600 hover:text-blue-800 hover:bg-blue-50"
-                  onClick={() => onAddNetSuite(transaction.id)}
-                  title="Add single NetSuite transaction"
-                >
-                  <Plus className="h-3 w-3" />
-                </Button>
-              )}
-              {onSplitTransaction && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 w-6 p-0 text-purple-600 hover:text-purple-800 hover:bg-purple-50"
-                  onClick={() => onSplitTransaction(transaction)}
-                  title="Split into multiple NS transactions"
-                >
-                  <Split className="h-3 w-3" />
-                </Button>
-              )}
-              {isMarketplaceOrder && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 w-6 p-0 text-orange-600 hover:text-orange-800 hover:bg-orange-50"
-                  onClick={() => onProcessMarketplaceOrder!(transaction)}
-                  title="Process marketplace order (delete CS, create invoice + payment)"
-                >
-                  <Store className="h-3 w-3" />
-                </Button>
+              {!transaction.amountDescription && transaction.includeInNetSuite !== false && (
+                <>
+                  {onAddNetSuite && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 w-6 p-0 text-blue-600 hover:text-blue-800 hover:bg-blue-50"
+                      onClick={() => onAddNetSuite(transaction.id)}
+                      title="Add single NetSuite transaction"
+                    >
+                      <Plus className="h-3 w-3" />
+                    </Button>
+                  )}
+                  {onSplitTransaction && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 w-6 p-0 text-purple-600 hover:text-purple-800 hover:bg-purple-50"
+                      onClick={() => onSplitTransaction(transaction)}
+                      title="Split into multiple NS transactions"
+                    >
+                      <Split className="h-3 w-3" />
+                    </Button>
+                  )}
+                  {isMarketplaceOrder && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 w-6 p-0 text-orange-600 hover:text-orange-800 hover:bg-orange-50"
+                      onClick={() => onProcessMarketplaceOrder!(transaction)}
+                      title="Process marketplace order (delete CS, create invoice + payment)"
+                    >
+                      <Store className="h-3 w-3" />
+                    </Button>
+                  )}
+                </>
               )}
             </div>
           )}

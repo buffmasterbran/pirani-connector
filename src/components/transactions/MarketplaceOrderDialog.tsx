@@ -78,7 +78,7 @@ export function MarketplaceOrderDialog({
   const [createdRecords, setCreatedRecords] = useState<Record<string, { id: string; tranid: string }>>({})
 
   const orderName = transaction?.order_name || `#${transaction?.source_order_id || ''}`
-  const paymentAmount = transaction ? Math.abs(transaction.net) : 0
+  const paymentAmount = transaction ? Math.abs(transaction.amount) : 0
   const currency = transaction?.currency || 'USD'
   const tranDate = transaction?.processedAt
     ? transaction.processedAt.split('T')[0]
@@ -250,16 +250,23 @@ export function MarketplaceOrderDialog({
       transactionId: transaction?.id,
     })
 
+    console.log('🏪 create-payment API response:', JSON.stringify(data, null, 2))
+
     if (data.success) {
       const paymentId = data.result?.data?.paymentId
       const paymentName = data.result?.data?.paymentName
+      console.log(`🏪 Payment created: id=${paymentId}, name=${paymentName}, transactionId=${transaction?.id}`)
       if (paymentId && paymentName) {
         setCreatedRecords(prev => ({ ...prev, [paymentName]: { id: paymentId, tranid: paymentName } }))
       }
       updateStep('create-payment', { status: 'success', detail: data.result?.detail })
       setCompleted(true)
+      // Refresh the transactions table immediately so the NS ID shows without a reload
+      console.log('🏪 Calling onComplete to refresh transactions...')
+      onComplete()
       return true
     } else {
+      console.error('🏪 create-payment failed:', data.result?.error || data.error)
       updateStep('create-payment', { status: 'error', error: data.result?.error || data.error })
       return false
     }

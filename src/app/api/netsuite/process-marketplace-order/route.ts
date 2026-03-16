@@ -141,7 +141,8 @@ export async function POST(request: NextRequest) {
 
         // Update PayoutTransaction if payment was created successfully
         if (result.success && result.data?.paymentId && transactionId) {
-          await prisma.payoutTransaction.update({
+          console.log(`🏪 Updating PayoutTransaction ${transactionId} with paymentId=${result.data.paymentId}, paymentName=${result.data.paymentName}`)
+          const updated = await prisma.payoutTransaction.update({
             where: { id: transactionId },
             data: {
               netsuiteTransactionId: result.data.paymentId,
@@ -151,6 +152,9 @@ export async function POST(request: NextRequest) {
               amountMismatch: false,
             },
           })
+          console.log(`🏪 PayoutTransaction updated:`, JSON.stringify({ id: updated.id, netsuiteTransactionId: updated.netsuiteTransactionId, netsuiteTransactionName: updated.netsuiteTransactionName }))
+        } else {
+          console.log(`🏪 Skipping DB update: success=${result.success}, paymentId=${result.data?.paymentId}, transactionId=${transactionId}`)
         }
 
         return NextResponse.json({ success: result.success, result })

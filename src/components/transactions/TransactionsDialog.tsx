@@ -90,9 +90,11 @@ export function TransactionsDialog({
 
   // Helper function to safely refresh transactions, deferring to next frame to prevent hook order issues
   const safeRefreshTransactions = () => {
+    console.log('🏪 safeRefreshTransactions called, mounted:', isMountedRef.current, 'hasCallback:', !!onRefreshTransactions)
     if (!onRefreshTransactions || !isMountedRef.current) return
     requestAnimationFrame(() => {
       setTimeout(() => {
+        console.log('🏪 safeRefreshTransactions executing (after rAF+setTimeout), mounted:', isMountedRef.current)
         if (isMountedRef.current && onRefreshTransactions) {
           onRefreshTransactions()
         }
@@ -789,6 +791,7 @@ export function TransactionsDialog({
           processedAt: selectedMarketplaceTransaction.processedAt,
         } : null}
         onComplete={() => {
+          console.log('🏪 MarketplaceOrderDialog onComplete fired, calling safeRefreshTransactions')
           safeRefreshTransactions()
         }}
       />
