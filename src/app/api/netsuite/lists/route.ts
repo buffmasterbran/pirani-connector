@@ -73,7 +73,7 @@ const FIELD_QUERIES: Record<string, { name: string; query: string }> = {
   },
   nonInventoryItem: {
     name: 'noninventoryitems',
-    query: "SELECT id, itemid AS name, isinactive FROM nonInventoryItem WHERE isinactive = 'F' ORDER BY itemid"
+    query: "SELECT id, itemid AS name, isinactive FROM item WHERE itemtype = 'NonInvtPart' AND isinactive = 'F' ORDER BY itemid"
   },
 }
 
