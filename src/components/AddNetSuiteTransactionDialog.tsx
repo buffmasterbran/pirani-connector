@@ -37,10 +37,12 @@ export function AddNetSuiteTransactionDialog({
   const [transactionType, setTransactionType] = useState<{
     cashSale: boolean
     refund: boolean
+    customerRefund: boolean
     payment: boolean
   }>({
     cashSale: false,
     refund: false,
+    customerRefund: false,
     payment: false,
   })
   const [isSaving, setIsSaving] = useState(false)
@@ -82,7 +84,7 @@ export function AddNetSuiteTransactionDialog({
       setNetsuiteTransactionId("")
       setNetsuiteTransactionName("")
       setNetsuiteAmount("")
-      setTransactionType({ cashSale: false, refund: false, payment: false })
+      setTransactionType({ cashSale: false, refund: false, customerRefund: false, payment: false })
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save transaction")
@@ -96,7 +98,7 @@ export function AddNetSuiteTransactionDialog({
       setNetsuiteTransactionId("")
       setNetsuiteTransactionName("")
       setNetsuiteAmount("")
-      setTransactionType({ cashSale: false, refund: false, payment: false })
+      setTransactionType({ cashSale: false, refund: false, customerRefund: false, payment: false })
       setError(null)
       onClose()
     }
@@ -225,6 +227,22 @@ export function AddNetSuiteTransactionDialog({
                   className="text-sm font-normal cursor-pointer"
                 >
                   Refund
+                </Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="type-customer-refund"
+                  checked={transactionType.customerRefund}
+                  onCheckedChange={(checked) =>
+                    setTransactionType((prev) => ({ ...prev, customerRefund: checked === true }))
+                  }
+                  disabled={isSaving}
+                />
+                <Label
+                  htmlFor="type-customer-refund"
+                  className="text-sm font-normal cursor-pointer"
+                >
+                  Customer Refund
                 </Label>
               </div>
               <div className="flex items-center space-x-2">
