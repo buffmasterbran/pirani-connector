@@ -241,7 +241,6 @@ export async function createPaymentForInvoice(
     customer: { id: customerId },
     payment: amount,
     trandate: tranDate,
-    currency: { refName: currency },
     apply: {
       items: [{
         doc: { id: invoiceId },

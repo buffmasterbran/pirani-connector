@@ -9,8 +9,34 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Loader2, CheckCircle2, XCircle, SkipForward, Play, Zap, Store } from "lucide-react"
+import { Loader2, CheckCircle2, XCircle, SkipForward, Play, Zap, Store, ExternalLink } from "lucide-react"
 import type { Transaction } from "./types"
+
+const NS_BASE = 'https://7913744.app.netsuite.com/app/accounting/transactions'
+
+function nsTransactionUrl(id: string, tranid: string): string {
+  const upper = tranid.toUpperCase()
+  if (upper.startsWith('SO')) return `${NS_BASE}/salesord.nl?id=${id}`
+  if (upper.startsWith('INV')) return `${NS_BASE}/custinvc.nl?id=${id}`
+  if (upper.startsWith('CS')) return `${NS_BASE}/cashsale.nl?id=${id}`
+  if (upper.startsWith('PYMT')) return `${NS_BASE}/custpymt.nl?id=${id}`
+  if (upper.startsWith('RFND')) return `${NS_BASE}/cashrfnd.nl?id=${id}`
+  return `${NS_BASE}/transaction.nl?id=${id}`
+}
+
+function NsLink({ id, tranid }: { id: string; tranid: string }) {
+  return (
+    <a
+      href={nsTransactionUrl(id, tranid)}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center gap-0.5 text-blue-600 hover:text-blue-800 underline underline-offset-2"
+    >
+      {tranid}
+      <ExternalLink className="h-3 w-3" />
+    </a>
+  )
+}
 
 interface MarketplaceOrderDialogProps {
   isOpen: boolean
@@ -48,6 +74,8 @@ export function MarketplaceOrderDialog({
   const [isRunningAll, setIsRunningAll] = useState(false)
   const [invoiceId, setInvoiceId] = useState<string | null>(null)
   const [completed, setCompleted] = useState(false)
+  // Track created record IDs for linking
+  const [createdRecords, setCreatedRecords] = useState<Record<string, { id: string; tranid: string }>>({})
 
   const orderName = transaction?.order_name || `#${transaction?.source_order_id || ''}`
   const paymentAmount = transaction ? Math.abs(transaction.net) : 0
@@ -70,6 +98,7 @@ export function MarketplaceOrderDialog({
       setInvoiceId(null)
       setCompleted(false)
       setIsRunningAll(false)
+      setCreatedRecords({})
 
       // Auto-run check on open
       runCheck()
@@ -107,14 +136,8 @@ export function MarketplaceOrderDialog({
       const state: OrderState = data.state
       setOrderState(state)
 
-      const parts = []
-      if (state.salesOrder) parts.push(`SO: ${state.salesOrder.tranid}`)
-      if (state.cashSale) parts.push(`CS: ${state.cashSale.tranid}`)
-      if (state.invoice) parts.push(`INV: ${state.invoice.tranid}`)
-      if (state.payments?.length) parts.push(`${state.payments.length} payment(s)`)
-      if (!parts.length) parts.push('No records found')
-
-      updateStep('check', { status: 'success', detail: parts.join(', ') })
+      // Detail is rendered via renderCheckDetail using orderState
+      updateStep('check', { status: 'success', detail: '_check_' })
 
       // If invoice already exists, skip steps 2-4
       if (state.invoice) {
@@ -188,7 +211,11 @@ export function MarketplaceOrderDialog({
 
     if (data.success) {
       const newInvoiceId = data.result?.data?.invoiceId
+      const newInvoiceName = data.result?.data?.invoiceName
       setInvoiceId(newInvoiceId)
+      if (newInvoiceId && newInvoiceName) {
+        setCreatedRecords(prev => ({ ...prev, [newInvoiceName]: { id: newInvoiceId, tranid: newInvoiceName } }))
+      }
       updateStep('create-invoice', { status: 'success', detail: data.result?.detail })
       return true
     } else {
@@ -224,6 +251,11 @@ export function MarketplaceOrderDialog({
     })
 
     if (data.success) {
+      const paymentId = data.result?.data?.paymentId
+      const paymentName = data.result?.data?.paymentName
+      if (paymentId && paymentName) {
+        setCreatedRecords(prev => ({ ...prev, [paymentName]: { id: paymentId, tranid: paymentName } }))
+      }
       updateStep('create-payment', { status: 'success', detail: data.result?.detail })
       setCompleted(true)
       return true
@@ -290,6 +322,31 @@ export function MarketplaceOrderDialog({
   const hasRemainingSteps = steps.some(s => s.status === 'pending' || s.status === 'error')
   const anyRunning = steps.some(s => s.status === 'running')
 
+  // Replace known transaction names in detail text with clickable links
+  const renderStepDetail = (detail: string) => {
+    // Build a map of all known tranids → { id, tranid }
+    const known: Record<string, { id: string; tranid: string }> = { ...createdRecords }
+    if (orderState?.salesOrder) known[orderState.salesOrder.tranid] = orderState.salesOrder
+    if (orderState?.cashSale) known[orderState.cashSale.tranid] = orderState.cashSale
+    if (orderState?.invoice) known[orderState.invoice.tranid] = orderState.invoice
+    orderState?.payments?.forEach(p => { known[p.tranid] = p })
+
+    const tranids = Object.keys(known).filter(k => k)
+    if (!tranids.length) return detail
+
+    // Build regex to match any known tranid
+    const escaped = tranids.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    const regex = new RegExp(`(${escaped.join('|')})`, 'g')
+
+    const parts = detail.split(regex)
+    return parts.map((part, i) => {
+      if (known[part]) {
+        return <NsLink key={i} id={known[part].id} tranid={known[part].tranid} />
+      }
+      return part
+    })
+  }
+
   return (
     <Dialog open={isOpen} onOpenChange={() => { if (!anyRunning) { onClose(); if (completed) onComplete() } }}>
       <DialogContent className="max-w-lg">
@@ -323,9 +380,19 @@ export function MarketplaceOrderDialog({
               <div className="mt-0.5">{getStepIcon(step.status)}</div>
               <div className="flex-1 min-w-0">
                 <div className="font-medium text-sm">{step.label}</div>
-                {step.detail && (
-                  <div className="text-xs text-muted-foreground mt-0.5">{step.detail}</div>
-                )}
+                {step.id === 'check' && step.detail === '_check_' && orderState ? (
+                  <div className="text-xs text-muted-foreground mt-0.5 flex flex-wrap gap-x-2">
+                    {orderState.salesOrder && <span>SO: <NsLink id={orderState.salesOrder.id} tranid={orderState.salesOrder.tranid} /></span>}
+                    {orderState.cashSale && <span>CS: <NsLink id={orderState.cashSale.id} tranid={orderState.cashSale.tranid} /></span>}
+                    {orderState.invoice && <span>INV: <NsLink id={orderState.invoice.id} tranid={orderState.invoice.tranid} /></span>}
+                    {orderState.payments?.map(p => (
+                      <span key={p.id}>PYMT: <NsLink id={p.id} tranid={p.tranid} /></span>
+                    ))}
+                    {!orderState.salesOrder && !orderState.cashSale && !orderState.invoice && !orderState.payments?.length && <span>No records found</span>}
+                  </div>
+                ) : step.detail && step.detail !== '_check_' ? (
+                  <div className="text-xs text-muted-foreground mt-0.5">{renderStepDetail(step.detail)}</div>
+                ) : null}
                 {step.error && (
                   <div className="text-xs text-red-600 mt-0.5">{step.error}</div>
                 )}
