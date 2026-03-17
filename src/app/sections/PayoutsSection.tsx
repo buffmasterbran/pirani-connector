@@ -128,6 +128,18 @@ export function PayoutsSection() {
     isLoading: false,
   })
 
+  // Deposit creation progress state
+  const [depositProgress, setDepositProgress] = useState<{
+    active: boolean
+    totalBatches: number
+    completedBatches: number
+    totalItems: number
+    currentBatch: number
+    depositIds: string[]
+    skipped?: any[]
+    error?: string
+  } | null>(null)
+
   // Edit NetSuite ID dialog state
   const [isEditNetSuiteIdDialogOpen, setIsEditNetSuiteIdDialogOpen] = useState(false)
   const [editingNetSuiteId, setEditingNetSuiteId] = useState('')
@@ -504,7 +516,7 @@ export function PayoutsSection() {
       } catch {
         throw new Error(
           res.status === 504 || text.includes('timed out') || text.includes('An error o')
-            ? `Request timed out (${res.status}). The chunk may be too large for the serverless function limit.`
+            ? `Request timed out (${res.status}). The batch may be too large — try again and it will resume from where it left off.`
             : `Server returned non-JSON response (${res.status}): ${text.slice(0, 150)}`
         )
       }
@@ -512,36 +524,83 @@ export function PayoutsSection() {
         const err = new Error(data.error || `HTTP ${res.status}`) as any
         err.debug = data.debug || null
         err.skipped = data.skipped || null
+        err.notFound = data.notFound || null
         throw err
       }
       return data
     }
 
     try {
-      const result = await callApi({ pushedBy: pushedBy.trim() })
-      setNetsuitePreviewDialog({ isOpen: false, payoutId: null, previewData: null, isLoading: false })
+      // Step 1: Plan — get batch info
+      const plan = await callApi({ pushedBy: pushedBy.trim(), action: 'plan' })
 
-      if (result.message === 'Deposit already created') {
-        alert(`Deposit already created: ${result.depositId}`)
-      } else {
-        const count = result.depositCount || 1
-        let msg = count > 1
-          ? `Successfully created ${count} NetSuite deposits!\n\nDeposit IDs: ${result.depositIds?.join(', ') || result.depositId}\nTotal items: ${result.totalItems}`
-          : `Successfully created NetSuite deposit!\n\nDeposit ID: ${result.depositId}\nTotal items: ${result.totalItems}`
-        if (result.skipped?.length) {
-          msg += `\n\n${result.skipped.length} transaction(s) skipped:`
-          result.skipped.forEach((s: any) => { msg += `\n  ${s.tranid || s.id}: ${s.reason}` })
-        }
-        alert(msg)
+      // Already fully created
+      if (plan.depositId && plan.message === 'Deposit already created') {
+        setNetsuitePreviewDialog({ isOpen: false, payoutId: null, previewData: null, isLoading: false })
+        alert(`Deposit already created: ${plan.depositId}`)
+        fetchSavedPayouts()
+        return
       }
+
+      const { totalBatches, totalItems, completedBatches, existingDepositIds, skipped } = plan
+      const startBatch = completedBatches || 0
+      const depositIds = [...(existingDepositIds || [])]
+
+      // Show progress UI
+      setDepositProgress({
+        active: true,
+        totalBatches,
+        completedBatches: startBatch,
+        totalItems,
+        currentBatch: startBatch + 1,
+        depositIds,
+        skipped,
+      })
+
+      // Step 2: Create each batch sequentially
+      for (let i = startBatch; i < totalBatches; i++) {
+        setDepositProgress(prev => prev ? { ...prev, currentBatch: i + 1 } : prev)
+
+        const result = await callApi({
+          pushedBy: pushedBy.trim(),
+          action: 'create',
+          batchIndex: i,
+        })
+
+        depositIds.push(result.depositId)
+        setDepositProgress(prev => prev ? {
+          ...prev,
+          completedBatches: i + 1,
+          depositIds: [...depositIds],
+        } : prev)
+      }
+
+      // Done — show success
+      setNetsuitePreviewDialog({ isOpen: false, payoutId: null, previewData: null, isLoading: false })
+      setDepositProgress(null)
+
+      let msg = totalBatches > 1
+        ? `Successfully created ${totalBatches} NetSuite deposits!\n\nDeposit IDs: ${depositIds.join(', ')}\nTotal items: ${totalItems}`
+        : `Successfully created NetSuite deposit!\n\nDeposit ID: ${depositIds[0]}\nTotal items: ${totalItems}`
+      if (skipped?.length) {
+        msg += `\n\n${skipped.length} transaction(s) skipped:`
+        skipped.forEach((s: any) => { msg += `\n  ${s.tranid || s.id}: ${s.reason}` })
+      }
+      alert(msg)
       fetchSavedPayouts()
     } catch (error: any) {
       console.error('Error creating NetSuite deposit:', error)
       setNetsuitePreviewDialog({ isOpen: false, payoutId: null, previewData: null, isLoading: false })
+      setDepositProgress(prev => prev ? { ...prev, active: false, error: error?.message } : null)
+
       let msg = `Error creating NetSuite deposit:\n\n${error?.message || 'Unknown error'}`
       if (error?.skipped?.length) {
         msg += `\n\n${error.skipped.length} transaction(s) were pre-filtered:`
         error.skipped.forEach((s: any) => { msg += `\n  ${s.tranid || s.id}: ${s.reason}` })
+      }
+      if (error?.notFound?.length) {
+        msg += `\n\nTransactions not found in NetSuite:`
+        error.notFound.forEach((s: any) => { msg += `\n  NS ID ${s.nsId} (${s.tranid})` })
       }
       if (error?.debug) {
         const d = error.debug
@@ -1383,7 +1442,7 @@ export function PayoutsSection() {
           </DialogHeader>
 
           {/* Actions - Moved to top */}
-          {netsuitePreviewDialog.previewData && !netsuitePreviewDialog.isLoading && (
+          {netsuitePreviewDialog.previewData && !netsuitePreviewDialog.isLoading && !depositProgress?.active && (
             <div className="flex justify-end gap-2 pb-4 border-b">
               <Button
                 variant="outline"
@@ -1403,19 +1462,69 @@ export function PayoutsSection() {
                 disabled={netsuitePreviewDialog.isLoading}
                 className="bg-blue-600 hover:bg-blue-700"
               >
-                {netsuitePreviewDialog.isLoading ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    Creating...
-                  </>
-                ) : (
-                  'Create Deposit'
-                )}
+                Create Deposit
               </Button>
             </div>
           )}
 
-          {netsuitePreviewDialog.isLoading ? (
+          {/* Deposit creation progress */}
+          {depositProgress?.active && (
+            <div className="p-4 bg-blue-50 rounded-lg border border-blue-200 space-y-3">
+              <div className="flex items-center gap-2">
+                <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+                <span className="font-semibold text-blue-800">
+                  Creating deposit {depositProgress.currentBatch} of {depositProgress.totalBatches}...
+                </span>
+              </div>
+              {/* Progress bar */}
+              <div className="w-full bg-blue-200 rounded-full h-2.5">
+                <div
+                  className="bg-blue-600 h-2.5 rounded-full transition-all duration-500"
+                  style={{ width: `${(depositProgress.completedBatches / depositProgress.totalBatches) * 100}%` }}
+                />
+              </div>
+              <div className="flex justify-between text-sm text-blue-700">
+                <span>{depositProgress.completedBatches} of {depositProgress.totalBatches} batches complete</span>
+                <span>{depositProgress.totalItems.toLocaleString()} total items</span>
+              </div>
+              {depositProgress.depositIds.length > 0 && (
+                <p className="text-xs text-blue-600">
+                  Deposit IDs created: {depositProgress.depositIds.join(', ')}
+                </p>
+              )}
+              {depositProgress.skipped && depositProgress.skipped.length > 0 && (
+                <p className="text-xs text-amber-600">
+                  {depositProgress.skipped.length} transaction(s) skipped
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground italic">
+                Each batch of 1,500 items typically takes 1-3 minutes depending on server load and time of day. Do not close this window.
+              </p>
+            </div>
+          )}
+
+          {/* Error from a failed batch (progress stopped) */}
+          {depositProgress && !depositProgress.active && depositProgress.error && (
+            <div className="p-4 bg-red-50 rounded-lg border border-red-200 space-y-2">
+              <p className="font-semibold text-red-700">Deposit creation failed on batch {depositProgress.currentBatch} of {depositProgress.totalBatches}</p>
+              <p className="text-sm text-red-600">{depositProgress.error}</p>
+              {depositProgress.depositIds.length > 0 && (
+                <p className="text-sm text-green-700">
+                  {depositProgress.completedBatches} batch(es) were saved successfully: {depositProgress.depositIds.join(', ')}
+                </p>
+              )}
+              <div className="flex gap-2 pt-2">
+                <Button size="sm" variant="outline" onClick={() => setDepositProgress(null)}>
+                  Dismiss
+                </Button>
+                <Button size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={handleCreateNetSuiteDeposit}>
+                  Retry
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {netsuitePreviewDialog.isLoading && !depositProgress?.active ? (
             <div className="flex items-center justify-center py-8">
               <Loader />
             </div>
@@ -1444,6 +1553,20 @@ export function PayoutsSection() {
                     </p>
                   </div>
                 </div>
+                {/* Time estimate for large payouts */}
+                {(() => {
+                  const count = netsuitePreviewDialog.previewData!.stats.depositItemsCount
+                  if (count <= 1500) return null
+                  const batches = Math.ceil(count / 1500)
+                  const minMins = batches * 1
+                  const maxMins = batches * 3
+                  return (
+                    <p className="text-xs text-muted-foreground mt-3 italic">
+                      This payout will be split into {batches} batches of up to 1,500 items each.
+                      Estimated time: {minMins}-{maxMins} minutes depending on server load and time of day.
+                    </p>
+                  )
+                })()}
               </div>
 
               {/* JSON Body */}
