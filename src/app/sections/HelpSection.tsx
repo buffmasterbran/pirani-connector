@@ -107,7 +107,7 @@ export function HelpSection() {
                   <p>Click <strong>&quot;Get Missing NS Transactions&quot;</strong> to auto-match Shopify orders with their NetSuite cash sales, refunds, and payments by order number.</p>
                 </Step>
                 <Step number={4} title="Review Mismatches">
-                  <p>Check <strong>&quot;Orders with Issues&quot;</strong> to filter to transactions that need attention. Red rows indicate problems (missing NS IDs, amount mismatches).</p>
+                  <p>Check <strong>&quot;Orders with Issues&quot;</strong> to filter to transactions that need attention. Red rows indicate problems (missing NS IDs, amount mismatches, sign mismatches). Sign mismatches (e.g., Shopify shows -$44.53 but NS shows +$44.53) are flagged in red &mdash; this usually means a transaction was manually added with the wrong sign.</p>
                 </Step>
                 <Step number={5} title="Handle Special Cases">
                   <p>Address any order editing splits, tax adjustments, or other special transactions using the guides below.</p>
@@ -119,11 +119,14 @@ export function HelpSection() {
                   <p>The three-column summary at the top should show <strong>&quot;Match&quot;</strong> for Charges and Fees. If not, investigate remaining mismatches.</p>
                 </Step>
                 <Step number={8} title="Push to NetSuite">
-                  <p>Once matched, close the transactions dialog and click <strong>&quot;Push to NS&quot;</strong> on the payout row to create the NetSuite deposit.</p>
+                  <p>Once the payout shows a green <strong>&quot;Matched&quot;</strong> badge in the payout list, click <strong>&quot;Push to NS&quot;</strong> to create the NetSuite deposit. The system will preview the deposit JSON, validate all NS IDs, and then create the deposit (or multiple batched deposits for large payouts).</p>
                 </Step>
               </div>
               <Tip variant="info">
                 <p>The deposit includes two sections: <strong>payment items</strong> (cash sales, refunds, payments that have NS IDs) and <strong>other items</strong> (fees and dropdown-assigned transactions mapped to GL accounts).</p>
+              </Tip>
+              <Tip variant="success">
+                <p><strong>Bulk assign:</strong> Select multiple transactions using checkboxes, then use the bulk dropdown that appears above the table to assign them all to the same GL account at once. Useful for assigning many tax adjustments or credits in one go.</p>
               </Tip>
             </FaqItem>
 
@@ -139,7 +142,8 @@ export function HelpSection() {
               <p className="font-medium mt-3 mb-2">Common causes:</p>
               <ul className="list-disc list-inside space-y-2 ml-2">
                 <li><strong>Order Editing:</strong> The order was modified after the original charge, creating split captures. See &quot;Order Editing&quot; section below.</li>
-                <li><strong>Shopify Pay split across payouts:</strong> A single order&apos;s payment was split into multiple payouts by Shopify.</li>
+                <li><strong>Split across payouts:</strong> A single order&apos;s payment was split into multiple payouts (gift cards, Shopify Pay timing, order edits). See &quot;Split Payments Across Payouts&quot; below.</li>
+                <li><strong>Sign mismatch:</strong> The Shopify amount is negative but the NS amount is positive (or vice versa). This usually means a transaction was manually added with the wrong sign. The row will be highlighted in red.</li>
                 <li><strong>Partial refunds or adjustments:</strong> The Shopify amount reflects a partial amount.</li>
               </ul>
 
@@ -217,26 +221,34 @@ export function HelpSection() {
               expandedFaq={expandedFaq}
               setExpandedFaq={setExpandedFaq}
             >
-              <p className="mb-3">When the original charge and additional capture are in <strong>different payouts</strong>, you cannot merge them (deposits would not match). Instead, fix it in NetSuite:</p>
+              <p className="mb-3">When the original charge and additional capture are in <strong>different payouts</strong>, you cannot merge them (deposits would not match). Use the <strong>Process Marketplace Order</strong> flow to convert the cash sale into an invoice with payments:</p>
               <div className="space-y-4">
                 <Step number={1} title="Identify the cross-payout split">
-                  <p>One payout will have a small charge (e.g., $9.46) with an NS cash sale matched, showing a large mismatch. The other payout will have the larger charge (e.g., $81.56) with no NS match.</p>
+                  <p>Search for the order number in the payout search bar. It will show which payouts contain this order and the amounts in each. One payout will have a charge with an NS cash sale matched (showing a mismatch), and the other will have a charge with no NS match.</p>
                 </Step>
-                <Step number={2} title="Delete the Cash Sale in NetSuite">
-                  <p>Go to NetSuite and delete the cash sale that was created for this order.</p>
+                <Step number={2} title="Open the payout with the NS cash sale">
+                  <p>Click &quot;View Transactions&quot; on the payout that has the matched cash sale. Find the transaction and click the <strong>marketplace order icon</strong> to open the Process Marketplace Order dialog.</p>
                 </Step>
-                <Step number={3} title="Invoice the Sales Order">
-                  <p>In NetSuite, convert the sales order to an <strong>invoice</strong> for the full order amount.</p>
+                <Step number={3} title="Run the marketplace order workflow">
+                  <p>Click <strong>&quot;Run All&quot;</strong> or run each step individually:</p>
+                  <ul className="list-disc list-inside ml-2 mt-1 space-y-1">
+                    <li><strong>Delete Cash Sale</strong> &mdash; removes the original cash sale from NetSuite</li>
+                    <li><strong>Edit Sales Order</strong> &mdash; sets non-taxable tax code and adds marketplace tax line item (if applicable). Tax is automatically looked up across all payouts and from the Shopify Order API as a fallback.</li>
+                    <li><strong>Create Invoice</strong> &mdash; transforms the sales order into an invoice for the full order amount</li>
+                    <li><strong>Create Payment</strong> &mdash; creates a payment for this payout&apos;s transaction amount. The payment NS ID is automatically saved to the transaction.</li>
+                  </ul>
                 </Step>
-                <Step number={4} title="Create 2 Payments">
-                  <p>Create <strong>two separate payments</strong> against the invoice, one for each payout amount. Each payment should match the Shopify payout transaction amount.</p>
-                </Step>
-                <Step number={5} title="Update the web app">
-                  <p>In each payout, delete the old NS ID (trash icon) and add the new payment NS ID using the &quot;+&quot; button.</p>
+                <Step number={4} title="Process the second (and third) payout">
+                  <p>Open the other payout(s) containing this order. Click the marketplace order icon on that transaction. Since the invoice already exists, the workflow will skip straight to <strong>Create Payment</strong> for that payout&apos;s amount. The invoice balance decreases with each payment until fully paid.</p>
                 </Step>
               </div>
-              <Tip variant="warning">
-                <p>This is a manual process because each payout becomes its own NetSuite deposit. There is no way to merge transactions across payouts without breaking deposit totals.</p>
+
+              <Tip variant="info">
+                <p>An order can span <strong>2 or even 3 payouts</strong>. For example, a $165.11 order paid with a $15 gift card might appear as: $15 credit in payout A, $150.11 charge in payout B, and $9.36 tax debit in payout C. Each charge/credit payout needs its own payment against the invoice.</p>
+              </Tip>
+
+              <Tip variant="success">
+                <p>The Process Marketplace Order flow handles all the NetSuite work automatically. You no longer need to manually delete cash sales, create invoices, or create payments in NetSuite. The tax line is automatically pulled from payout data across all payouts, with a Shopify API fallback if the payout hasn&apos;t been imported yet.</p>
               </Tip>
             </FaqItem>
           </div>
@@ -687,45 +699,44 @@ export function HelpSection() {
             <FaqItem
               id="split-payments"
               icon={<AlertTriangle className="h-4 w-4 text-red-500" />}
-              title="SOP: Shopify Pay Split Across 2 Payouts"
+              title="SOP: Order Split Across Multiple Payouts (Gift Cards, Shopify Pay, Order Editing)"
               expandedFaq={expandedFaq}
               setExpandedFaq={setExpandedFaq}
             >
-              <p className="mb-2">Sometimes Shopify splits a single order&apos;s payment across two separate payouts. This can happen with:</p>
+              <p className="mb-2">Sometimes Shopify splits a single order across <strong>two or even three</strong> separate payouts. This can happen with:</p>
               <ul className="list-disc list-inside space-y-1 ml-2 mb-3">
-                <li>Order Editing (products added/removed after purchase)</li>
-                <li>Shopify Pay timing differences</li>
-                <li>Payment processing delays</li>
+                <li><strong>Gift card + credit card:</strong> The gift card portion and credit card portion land in different payouts</li>
+                <li><strong>Order Editing:</strong> Products added/removed after purchase create additional captures in later payouts</li>
+                <li><strong>Marketplace tax:</strong> The tax adjustment can land in a completely different payout than the charge</li>
+                <li><strong>Shopify Pay timing differences:</strong> Payment processing delays split the order</li>
               </ul>
 
               <p className="font-medium mb-2">How to identify:</p>
               <ul className="list-disc list-inside space-y-1 ml-2 mb-3">
+                <li>Search for the order number in the payout search bar &mdash; it will show <strong>&quot;Found order in N payouts&quot;</strong> with the amounts in each</li>
                 <li>A charge in one payout has an NS match but a large amount mismatch</li>
                 <li>Another payout has a charge for the same order with no NS match</li>
-                <li>The two amounts add up to the NS cash sale total</li>
               </ul>
 
-              <p className="font-medium mb-2">Required NetSuite workflow:</p>
+              <p className="font-medium mb-2">Workflow using Process Marketplace Order:</p>
               <div className="space-y-4">
-                <Step number={1} title="Delete the Cash Sale in NetSuite">
-                  <p>Find and delete the cash sale that was auto-created.</p>
+                <Step number={1} title="Open the payout with the NS cash sale">
+                  <p>Find the transaction with the matched cash sale. Click the marketplace order icon.</p>
                 </Step>
-                <Step number={2} title="Invoice the Sales Order">
-                  <p>Convert the sales order to an invoice for the full order amount.</p>
+                <Step number={2} title="Run the full workflow">
+                  <p>Click <strong>&quot;Run All&quot;</strong>. This deletes the cash sale, edits the sales order (adding tax if applicable), creates an invoice for the full order amount, and creates a payment for this payout&apos;s amount.</p>
                 </Step>
-                <Step number={3} title="Create Payment 1">
-                  <p>Create a payment for the amount in the first payout. Apply it to the invoice.</p>
-                </Step>
-                <Step number={4} title="Create Payment 2">
-                  <p>Create a payment for the amount in the second payout. Apply it to the same invoice.</p>
-                </Step>
-                <Step number={5} title="Update both payouts in the web app">
-                  <p>In each payout, remove the old NS ID and add the new payment ID using the &quot;+&quot; button.</p>
+                <Step number={3} title="Process remaining payouts">
+                  <p>Open each other payout containing this order. Click the marketplace order icon. Since the invoice already exists, it will skip straight to <strong>Create Payment</strong> for that payout&apos;s amount. The invoice balance decreases with each payment until fully paid.</p>
                 </Step>
               </div>
 
+              <Tip variant="info">
+                <p><strong>Real example:</strong> Order #77655 ($165.11 total) spans 3 payouts: $15.00 credit (gift card) in payout A, $150.11 charge (credit card) in payout B, $9.36 tax debit in payout C. Process the $150.11 payout first (creates invoice), then process the $15.00 payout (creates second payment). The tax adjustment is handled via dropdown assignment to E-Com Tax Offset.</p>
+              </Tip>
+
               <Tip variant="warning">
-                <p>This is unavoidable when Shopify splits payments across payouts. Each payout is its own deposit in NetSuite, so both must have their own payment entry.</p>
+                <p>This is unavoidable when Shopify splits payments. Each payout becomes its own NetSuite deposit, so each must have its own payment entry against the shared invoice. The tax line on the sales order is automatically found across all payouts (or fetched from Shopify if the payout hasn&apos;t been imported yet).</p>
               </Tip>
             </FaqItem>
           </div>
@@ -811,6 +822,19 @@ export function HelpSection() {
                 <li>Each maps to a GL account based on the dropdown selection</li>
                 <li>Standard fees (from transactions with NS IDs) are also included here</li>
               </ul>
+
+              <p className="font-medium mt-3">Match Status Badges:</p>
+              <p className="ml-2">Each payout in the list shows a status badge:</p>
+              <ul className="list-disc list-inside space-y-1 ml-2">
+                <li><strong className="text-green-600">Matched</strong> &mdash; All transactions have NS IDs and amounts match. Ready to push.</li>
+                <li><strong className="text-orange-600">Mismatch (N missing)</strong> &mdash; Some transactions are missing NS IDs or amounts don&apos;t match. Review before pushing.</li>
+              </ul>
+
+              <p className="font-medium mt-3">Large Payout Batching:</p>
+              <p className="ml-2">Payouts with more than 1,500 transactions are automatically split into multiple deposits (batches of 1,500). A progress bar shows &quot;Creating deposit 2 of 5...&quot; with deposit IDs as they are created. Each batch is saved to the database immediately, so if a batch fails you can retry without losing progress. Each batch typically takes 1-3 minutes depending on server load.</p>
+
+              <p className="font-medium mt-3">Pre-Push Validation:</p>
+              <p className="ml-2">Before creating the deposit, the system validates all transaction IDs against NetSuite. If any IDs no longer exist (deleted in NS) or are already deposited, you will be blocked with a detailed error showing which transactions need to be fixed.</p>
 
               <Tip variant="warning">
                 <p>Make sure a transaction does not have <strong>both</strong> a NS ID and an amount dropdown, or it will be double-counted in the deposit (once as a payment item, once as an other item).</p>

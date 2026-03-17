@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { ClipboardList } from "lucide-react"
+import { ClipboardList, HelpCircle } from "lucide-react"
 import { TransactionsTable } from "./TransactionsTable"
 import { AddNetSuiteTransactionDialog } from "@/components/AddNetSuiteTransactionDialog"
 import { SplitTransactionDialog } from "@/components/SplitTransactionDialog"
@@ -88,6 +88,19 @@ export function TransactionsDialog({
   const [selectedTransactionForSplit, setSelectedTransactionForSplit] = useState<TransactionItem | null>(null)
   const [marketplaceDialogOpen, setMarketplaceDialogOpen] = useState(false)
   const [selectedMarketplaceTransaction, setSelectedMarketplaceTransaction] = useState<TransactionItem | null>(null)
+
+  // Helper tips toggle — persisted in localStorage
+  const [showHelpers, setShowHelpers] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return localStorage.getItem('pirani-show-helpers') !== 'false'
+  })
+  const toggleHelpers = () => {
+    setShowHelpers(prev => {
+      const next = !prev
+      localStorage.setItem('pirani-show-helpers', String(next))
+      return next
+    })
+  }
 
   // Helper function to safely refresh transactions, deferring to next frame to prevent hook order issues
   const safeRefreshTransactions = () => {
@@ -619,15 +632,27 @@ export function TransactionsDialog({
           <DialogTitle>
             Transactions for Payout #{payoutId || ''}
           </DialogTitle>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setAuditLogOpen(true)}
-            className="flex items-center gap-1.5"
-          >
-            <ClipboardList className="h-4 w-4" />
-            Activity Log
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant={showHelpers ? "default" : "outline"}
+              size="sm"
+              onClick={toggleHelpers}
+              className={`flex items-center gap-1.5 ${showHelpers ? '' : 'text-muted-foreground'}`}
+              title={showHelpers ? 'Hide helper tips' : 'Show helper tips for each transaction'}
+            >
+              <HelpCircle className="h-4 w-4" />
+              Help
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setAuditLogOpen(true)}
+              className="flex items-center gap-1.5"
+            >
+              <ClipboardList className="h-4 w-4" />
+              Activity Log
+            </Button>
+          </div>
         </DialogHeader>
 
         {/* Summary Totals */}
@@ -725,6 +750,7 @@ export function TransactionsDialog({
               setSelectedMarketplaceTransaction(transaction as any)
               setMarketplaceDialogOpen(true)
             }}
+            showHelpers={showHelpers}
           />
         </div>
       </DialogContent>

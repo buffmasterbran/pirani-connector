@@ -5,11 +5,75 @@ import {
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Plus, Split, ChevronDown, ChevronRight, Store } from "lucide-react"
-import { safeFormatDate } from "@/lib/dateUtils"
 import React from "react"
 import type { Transaction, DisplayTransaction, OrderSourceMapping, FeesDescriptionOption } from "./types"
 import { DroppableRow, DraggableNetSuiteId, getNetSuiteUrl } from "./useDragDropTransactions"
 import { AmountDescriptionSelect } from "./TransactionCellEditors"
+
+interface TransactionHint {
+  message: string
+  icon: string
+  bg: string
+  text: string
+}
+
+function getTransactionHint(
+  t: DisplayTransaction,
+  ctx: {
+    isMarketplaceOrder: boolean
+    isCashSaleRefund: boolean
+    hasAmountDescription: boolean
+    isExcluded: boolean
+    hasNsId: boolean
+    hasMismatch: boolean
+    isGrouped: boolean
+    hasSplits: boolean
+  }
+): TransactionHint | null {
+  // Excluded from deposit
+  if (ctx.isExcluded) {
+    return { message: 'Excluded from NetSuite deposit. Change the dropdown to re-include.', icon: '\u26AA', bg: 'bg-gray-50', text: 'text-gray-500' }
+  }
+
+  // Has a dropdown assigned (mapped to "other" section)
+  if (ctx.hasAmountDescription) {
+    return { message: 'Mapped to a deposit dropdown — will go in the "Other" section of the deposit.', icon: '\u2705', bg: 'bg-green-50/50', text: 'text-green-700' }
+  }
+
+  // Has NS ID with amount mismatch
+  if (ctx.hasNsId && ctx.hasMismatch) {
+    return { message: 'Amount mismatch! NetSuite amount differs from Shopify. Check if the order was edited or split across payouts.', icon: '\u26A0\uFE0F', bg: 'bg-red-50', text: 'text-red-700' }
+  }
+
+  // Has NS ID — good to go
+  if (ctx.hasNsId) return null
+
+  // Split transactions — parent has no NS ID but children might
+  if (ctx.hasSplits) {
+    return { message: 'This transaction is split. Expand to see individual NS IDs. Each split needs its own NS transaction.', icon: '\u2702\uFE0F', bg: 'bg-purple-50', text: 'text-purple-700' }
+  }
+
+  // Missing NS ID — marketplace charge
+  if (ctx.isMarketplaceOrder) {
+    return { message: 'Marketplace order missing NS ID. Click the store icon to run Process Marketplace Order (deletes cash sale, edits SO, creates invoice + payment).', icon: '\uD83C\uDFEA', bg: 'bg-orange-50', text: 'text-orange-700' }
+  }
+
+  // Missing NS ID — adjustment type (tax, etc.)
+  if (t.adjustmentReason) {
+    const reason = t.adjustmentReason.replace(/_/g, ' ')
+    return { message: `This is a "${reason}" adjustment. Use the dropdown to map it to the correct GL account, or click + to manually add a NS transaction.`, icon: '\uD83D\uDCCB', bg: 'bg-amber-50', text: 'text-amber-700' }
+  }
+
+  // Missing NS ID — charge or refund with no NS
+  if (t.type === 'charge' || t.type === 'refund') {
+    return { message: `Missing NetSuite ID. Try "Get Missing NS Transactions" first. If not found, use + to manually add or the store icon for marketplace orders.`, icon: '\u2753', bg: 'bg-blue-50', text: 'text-blue-700' }
+  }
+
+  // Missing NS ID — other types (payout, etc.)
+  if (t.type === 'payout') return null
+
+  return { message: 'No NetSuite ID. Use the dropdown to map to a GL account, or + to add manually.', icon: '\u2753', bg: 'bg-blue-50', text: 'text-blue-700' }
+}
 
 interface TransactionRowProps {
   transaction: DisplayTransaction
@@ -32,6 +96,7 @@ interface TransactionRowProps {
   onToggleInclude?: (transactionId: string, include: boolean) => Promise<void>
   onSplitTransaction?: (transaction: Transaction) => void
   onProcessMarketplaceOrder?: (transaction: Transaction) => void
+  showHelpers?: boolean
 }
 
 export function TransactionRow({
@@ -55,6 +120,7 @@ export function TransactionRow({
   onToggleInclude,
   onSplitTransaction,
   onProcessMarketplaceOrder,
+  showHelpers,
 }: TransactionRowProps) {
   const isFirstInGroup = transaction.isGrouped && transaction.groupIndex === 0
   const showGroupIndicator = transaction.isGrouped && isFirstInGroup
@@ -68,7 +134,8 @@ export function TransactionRow({
   const isCashSaleRefund = isCashSaleOrRefund(transaction)
 
   // Check if this is a marketplace (non-taxable) order that can be processed
-  const isMarketplaceOrder = onProcessMarketplaceOrder && orderSourceMappings.some(m =>
+  // Only show for charge types — credits/refunds don't need the full marketplace workflow
+  const isMarketplaceOrder = onProcessMarketplaceOrder && transaction.type === 'charge' && orderSourceMappings.some(m =>
     m.isActive && m.isTaxable === false && (
       (transaction.app_id && m.appId === transaction.app_id) ||
       (transaction.source_name && m.sourceName === transaction.source_name)
@@ -283,10 +350,30 @@ export function TransactionRow({
             </div>
           )}
         </TableCell>
-        <TableCell className="text-sm text-muted-foreground">
-          {transaction.processedAt ? safeFormatDate(transaction.processedAt, 'MMM dd, yyyy HH:mm') : '\u2014'}
-        </TableCell>
       </DroppableRow>
+      {/* Contextual helper row */}
+      {showHelpers && (() => {
+        const hint = getTransactionHint(transaction, {
+          isMarketplaceOrder: !!isMarketplaceOrder,
+          isCashSaleRefund,
+          hasAmountDescription: !!transaction.amountDescription,
+          isExcluded: transaction.includeInNetSuite === false,
+          hasNsId: !!transaction.netsuiteTransactionId,
+          hasMismatch: !!transaction.amountMismatch,
+          isGrouped: !!transaction.isGrouped,
+          hasSplits: !!(transaction.children && transaction.children.length > 0),
+        })
+        if (!hint) return null
+        return (
+          <TableRow className={`border-0 ${hint.bg}`}>
+            <TableCell colSpan={12} className="py-1 pl-12">
+              <span className={`text-xs ${hint.text}`}>
+                {hint.icon} {hint.message}
+              </span>
+            </TableCell>
+          </TableRow>
+        )
+      })()}
       {/* Expandable child rows for split transactions */}
       {transaction.children && transaction.children.length > 0 && expandedSplits.has(transaction.id) && (
         transaction.children.map((child, childIdx) => (
@@ -321,7 +408,6 @@ export function TransactionRow({
                 </div>
               )}
             </TableCell>
-            <TableCell></TableCell>
           </TableRow>
         ))
       )}

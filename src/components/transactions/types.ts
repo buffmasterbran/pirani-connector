@@ -70,4 +70,5 @@ export interface TransactionsTableProps {
   onMergeTransactions?: (sourceTransactionIds: string[], targetTransactionId: string) => Promise<void>
   onSplitTransaction?: (transaction: Transaction) => void
   onProcessMarketplaceOrder?: (transaction: Transaction) => void
+  showHelpers?: boolean
 }

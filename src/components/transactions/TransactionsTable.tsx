@@ -36,7 +36,8 @@ export function TransactionsTable({
   onToggleInclude,
   onMergeTransactions,
   onSplitTransaction,
-  onProcessMarketplaceOrder
+  onProcessMarketplaceOrder,
+  showHelpers,
 }: TransactionsTableProps) {
 
   // Helper function to get friendly name for order source
@@ -363,7 +364,6 @@ export function TransactionsTable({
             <TableHead>Net</TableHead>
             <TableHead>NetSuite Amount</TableHead>
             <TableHead>NetSuite ID</TableHead>
-            <TableHead>Processed At</TableHead>
           </TableRow>
           {columnTotals && (
             <TableRow className="bg-gray-50 border-b-2">
@@ -378,7 +378,6 @@ export function TransactionsTable({
               <TableHead className="text-xs font-bold text-gray-700">USD {columnTotals.fee.toFixed(2)}</TableHead>
               <TableHead className="text-xs font-bold text-gray-700">USD {columnTotals.net.toFixed(2)}</TableHead>
               <TableHead className="text-xs font-bold text-gray-700">USD {columnTotals.nsAmount.toFixed(2)}</TableHead>
-              <TableHead />
               <TableHead />
             </TableRow>
           )}
@@ -422,6 +421,7 @@ export function TransactionsTable({
               onToggleInclude={onToggleInclude}
               onSplitTransaction={onSplitTransaction}
               onProcessMarketplaceOrder={onProcessMarketplaceOrder}
+              showHelpers={showHelpers}
             />
           ))}
         </TableBody>
