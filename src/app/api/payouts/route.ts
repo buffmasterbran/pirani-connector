@@ -48,8 +48,47 @@ export async function GET() {
       aggMap.set(a.payoutId, { sumAmount: Number(a.sumAmount), sumNet: Number(a.sumNet) })
     }
 
+    // Compute match status for each payout:
+    // - Count transactions missing NS IDs (excluding payout-type and dropdown-assigned)
+    // - Compare Shopify net total vs NetSuite amount total
+    let matchStats: any[] = []
+    try {
+      matchStats = await prisma.$queryRawUnsafe(
+        `SELECT
+           "payoutId",
+           COUNT(*) FILTER (
+             WHERE "includeInNetSuite" = true
+               AND "type" != 'payout'
+               AND "amountDescription" IS NULL
+               AND ("netsuiteTransactionId" IS NULL OR "netsuiteTransactionId" = '')
+               AND "parentTransactionId" IS NULL
+           )::int AS "missingNsCount",
+           COALESCE(SUM("net") FILTER (WHERE "parentTransactionId" IS NULL), 0)::float AS "shopifyNet",
+           COALESCE(SUM(CASE
+             WHEN "netsuiteAmount" IS NOT NULL THEN "netsuiteAmount"
+             ELSE "amount"
+           END) FILTER (WHERE "includeInNetSuite" = true AND "parentTransactionId" IS NULL), 0)::float AS "nsTotal"
+         FROM "PayoutTransaction"
+         WHERE "payoutId" = ANY($1::text[])
+         GROUP BY "payoutId"`,
+        payoutIds,
+      )
+    } catch (err) {
+      console.warn('⚠️ Match status query failed, skipping:', err)
+    }
+
+    const matchMap = new Map<string, { missingNsCount: number; matched: boolean }>()
+    for (const m of matchStats) {
+      const missing = Number(m.missingNsCount) || 0
+      const shopifyNet = Number(m.shopifyNet) || 0
+      const nsTotal = Number(m.nsTotal) || 0
+      const amountsMatch = Math.abs(shopifyNet - nsTotal) < 0.01
+      matchMap.set(m.payoutId, { missingNsCount: missing, matched: missing === 0 && amountsMatch })
+    }
+
     const payload = payouts.map((payout) => {
       const agg = aggMap.get(payout.id) ?? { sumAmount: 0, sumNet: 0 }
+      const match = matchMap.get(payout.id) ?? { missingNsCount: 0, matched: false }
       const expectedDepositAmount = agg.sumAmount
       const actualDepositAmount = agg.sumNet
       const varianceAmount = actualDepositAmount - expectedDepositAmount
@@ -73,6 +112,8 @@ export async function GET() {
         pushedToNsAt: (payout as any).pushedToNsAt ? toISO((payout as any).pushedToNsAt) : null,
         createdAt: toISO(payout.createdAt),
         updatedAt: toISO(payout.updatedAt),
+        matchStatus: match.matched ? 'matched' : 'mismatch',
+        missingNsCount: match.missingNsCount,
         transactions: [],
       }
     })

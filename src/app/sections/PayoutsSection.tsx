@@ -23,6 +23,8 @@ interface Payout {
   netsuiteDepositId?: string | null
   pushedToNsBy?: string | null
   pushedToNsAt?: string | null
+  matchStatus?: 'matched' | 'mismatch'
+  missingNsCount?: number
 }
 
 interface Transaction {
@@ -46,6 +48,8 @@ interface SavedPayout {
   netsuiteDepositId: string | null
   pushedToNsBy?: string | null
   pushedToNsAt?: string | null
+  matchStatus?: 'matched' | 'mismatch'
+  missingNsCount?: number
   transactionCount?: number
   transactions: Array<{
     id: string
@@ -203,6 +207,8 @@ export function PayoutsSection() {
             netsuiteDepositNumber: (savedPayout as any)?.netsuiteDepositNumber || null,
             pushedToNsBy: (savedPayout as any)?.pushedToNsBy || null,
             pushedToNsAt: (savedPayout as any)?.pushedToNsAt || null,
+            matchStatus: (savedPayout as any)?.matchStatus || undefined,
+            missingNsCount: (savedPayout as any)?.missingNsCount || 0,
           }
         })
 
@@ -823,6 +829,8 @@ export function PayoutsSection() {
     netsuiteDepositId: p.netsuiteDepositId,
     pushedToNsBy: p.pushedToNsBy,
     pushedToNsAt: p.pushedToNsAt,
+    matchStatus: (p as any).matchStatus,
+    missingNsCount: (p as any).missingNsCount || 0,
   })), ...payouts.filter(p => !p.inDatabase)]
 
   // Helper function to check if a payout has transactions with issues (missing cash sales, etc.)
@@ -1201,9 +1209,18 @@ export function PayoutsSection() {
                           </span>
                         )}
                         {payout.inDatabase && !payout.netsuiteDepositNumber && (
-                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                            Ready for NS
-                          </span>
+                          payout.matchStatus === 'matched' ? (
+                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                              Matched
+                            </span>
+                          ) : (
+                            <span
+                              className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800"
+                              title={payout.missingNsCount ? `${payout.missingNsCount} transaction(s) missing NetSuite IDs` : 'Amounts do not match'}
+                            >
+                              Mismatch{payout.missingNsCount ? ` (${payout.missingNsCount} missing)` : ''}
+                            </span>
+                          )
                         )}
                       </div>
 

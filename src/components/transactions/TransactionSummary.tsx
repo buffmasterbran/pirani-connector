@@ -109,11 +109,20 @@ export function TransactionSummary({
           <p className="text-2xl font-bold text-slate-700">
             {hideSensitiveData ? (
               <span className="text-gray-500">{'••••••'}</span>
-            ) : Math.abs(totalNetSuiteAmount - totalShopifyAmount) < 0.01 ? (
-              <span className="text-green-600">Matched</span>
-            ) : (
-              <span className="text-orange-600">Mismatch</span>
-            )}
+            ) : (() => {
+              // Count included transactions that should have NS IDs but don't
+              // (exclude payout-type transactions which never get NS IDs)
+              const missingNS = includedTransactionsForNetSuite.filter(
+                t => !t.netsuiteTransactionId && t.type !== 'payout' && !t.amountDescription
+              )
+              const amountsMatch = Math.abs(totalNetSuiteAmount - totalShopifyAmount) < 0.01
+              const allMapped = missingNS.length === 0
+              return amountsMatch && allMapped ? (
+                <span className="text-green-600">Matched</span>
+              ) : (
+                <span className="text-orange-600">Mismatch</span>
+              )
+            })()}
           </p>
         </div>
 
