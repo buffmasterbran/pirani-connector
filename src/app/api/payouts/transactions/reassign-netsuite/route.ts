@@ -61,7 +61,10 @@ export async function POST(request: NextRequest) {
     // Calculate amount mismatch for target transaction
     const shopifyAmount = toTransaction.amount || toTransaction.net || 0
     const netsuiteAmount = fromTransaction.netsuiteAmount || 0
-    const amountMismatch = Math.abs(shopifyAmount - netsuiteAmount) > 0.01 // Allow 1 cent tolerance
+    const amountDiff = Math.abs(Math.abs(shopifyAmount) - Math.abs(netsuiteAmount)) > 0.01
+    const signMismatch = shopifyAmount !== 0 && netsuiteAmount !== 0 &&
+      ((shopifyAmount > 0) !== (netsuiteAmount > 0))
+    const amountMismatch = amountDiff || signMismatch
 
     // Move NetSuite data from source to target
     await prisma.$transaction([

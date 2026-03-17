@@ -73,6 +73,17 @@ export function AddNetSuiteTransactionDialog({
       return
     }
 
+    // Warn on sign mismatch (but still allow)
+    const shopifyAmt = transaction.amount || transaction.net || 0
+    if (shopifyAmt !== 0 && amount !== 0 && ((shopifyAmt > 0) !== (amount > 0))) {
+      if (!window.confirm(
+        `Warning: Sign mismatch — Shopify amount is ${shopifyAmt.toFixed(2)} but you entered ${amount.toFixed(2)}. ` +
+        `The signs don't match. Are you sure you want to continue?`
+      )) {
+        return
+      }
+    }
+
     // Derive type from checkbox selection
     const selectedType = transactionType.customerRefund ? 'customerRefund'
       : transactionType.refund ? 'cashRefund'

@@ -151,9 +151,15 @@ export async function POST(
         if (matched) {
           matchedTxnIds.add(matched.id)
           matchedNsIds.add(nsItem.id)
-          const shopAmt = useAbsAmount ? Math.abs(matched.amount || matched.net || 0) : (matched.amount || matched.net || 0)
-          const nsAmt = useAbsAmount ? Math.abs(nsItem.amount) : nsItem.amount
-          const mismatch = Math.abs(shopAmt - nsAmt) > 0.01
+          const rawShopAmt = matched.amount || matched.net || 0
+          const rawNsAmt = nsItem.amount
+          const shopAmt = useAbsAmount ? Math.abs(rawShopAmt) : rawShopAmt
+          const nsAmt = useAbsAmount ? Math.abs(rawNsAmt) : rawNsAmt
+          const amountDiff = Math.abs(shopAmt - nsAmt) > 0.01
+          // Also flag if signs disagree (e.g., Shopify -44.53 vs NS +44.53)
+          const signMismatch = rawShopAmt !== 0 && rawNsAmt !== 0 &&
+            ((rawShopAmt > 0) !== (rawNsAmt > 0))
+          const mismatch = amountDiff || signMismatch
 
           updates.push({
             id: matched.id,
@@ -164,7 +170,8 @@ export async function POST(
           })
 
           if (mismatch) {
-            errors.push(`${nsItem.otherrefnum}: Mismatch - Shopify: ${shopAmt.toFixed(2)}, NS: ${nsItem.amount.toFixed(2)}`)
+            const reason = signMismatch ? 'Sign mismatch' : 'Amount mismatch'
+            errors.push(`${nsItem.otherrefnum}: ${reason} - Shopify: ${rawShopAmt.toFixed(2)}, NS: ${rawNsAmt.toFixed(2)}`)
           }
         }
       }

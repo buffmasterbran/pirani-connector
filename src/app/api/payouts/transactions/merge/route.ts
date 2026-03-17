@@ -88,7 +88,10 @@ export async function POST(request: NextRequest) {
     // Recalculate amountMismatch after merge
     let amountMismatch = false
     if (netsuiteAmount !== null && netsuiteAmount !== undefined) {
-      amountMismatch = Math.abs(combinedAmount - Math.abs(netsuiteAmount)) > 0.01
+      const amountDiff = Math.abs(Math.abs(combinedAmount) - Math.abs(netsuiteAmount)) > 0.01
+      const signMismatch = combinedAmount !== 0 && netsuiteAmount !== 0 &&
+        ((combinedAmount > 0) !== (netsuiteAmount > 0))
+      amountMismatch = amountDiff || signMismatch
     }
 
     // Combine dropdown descriptions (prefer target's, fallback to source's)

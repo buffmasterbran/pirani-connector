@@ -129,9 +129,11 @@ export function useTransactionData({
         // For payments, compare net amount with NetSuite amount
         const shopifyNet = typeof t.net === 'string' ? parseFloat(t.net) : (t.net || 0)
         const netsuiteAmount = typeof t.netsuiteAmount === 'string' ? parseFloat(t.netsuiteAmount as unknown as string) : t.netsuiteAmount
-        const actualMismatch = Math.abs(Math.abs(shopifyNet) - Math.abs(netsuiteAmount)) > 0.01
-        // If amounts actually match, don't treat as problematic
-        if (!actualMismatch) return false
+        const amountDiff = Math.abs(Math.abs(shopifyNet) - Math.abs(netsuiteAmount)) > 0.01
+        const signMismatch = shopifyNet !== 0 && netsuiteAmount !== 0 &&
+          ((shopifyNet > 0) !== (netsuiteAmount > 0))
+        // If amounts actually match and signs agree, don't treat as problematic
+        if (!amountDiff && !signMismatch) return false
       }
       // For non-payments or actual mismatches, treat as problematic
       return true

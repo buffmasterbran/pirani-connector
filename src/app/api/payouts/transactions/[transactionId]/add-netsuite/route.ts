@@ -39,13 +39,17 @@ export async function POST(
     // Calculate amount mismatch
     // NS payments reflect full invoice amount, so always compare on amount (not net)
     const shopifyAmount = transaction.amount || transaction.net || 0
-    
+
     const netsuiteAmountNum = typeof netsuiteAmount === 'string' ? parseFloat(netsuiteAmount) : netsuiteAmount
-    
-    // Compare absolute values for payments (amounts can be negative)
+
+    // Compare absolute values for amount difference
     const shopifyAmountAbs = Math.abs(shopifyAmount)
     const netsuiteAmountAbs = Math.abs(netsuiteAmountNum)
-    const amountMismatch = Math.abs(shopifyAmountAbs - netsuiteAmountAbs) > 0.01 // Allow 1 cent tolerance
+    const amountDiff = Math.abs(shopifyAmountAbs - netsuiteAmountAbs) > 0.01
+    // Also flag if signs disagree (e.g., Shopify -44.53 vs NS +44.53)
+    const signMismatch = shopifyAmount !== 0 && netsuiteAmountNum !== 0 &&
+      ((shopifyAmount > 0) !== (netsuiteAmountNum > 0))
+    const amountMismatch = amountDiff || signMismatch
 
     // Update the transaction
     await prisma.payoutTransaction.update({
@@ -69,6 +73,9 @@ export async function POST(
     return NextResponse.json({
       success: true,
       message: 'NetSuite transaction added successfully',
+      warning: signMismatch
+        ? `Sign mismatch: Shopify amount is ${shopifyAmount.toFixed(2)} but NS amount is ${netsuiteAmountNum.toFixed(2)}`
+        : undefined,
       data: {
         transactionId,
         netsuiteTransactionId,
