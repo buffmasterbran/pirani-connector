@@ -185,6 +185,8 @@ export async function POST(
     console.log(`   Full payload:`, JSON.stringify(createBody, null, 2))
 
     const authorization = generateOAuthHeader('POST', NETSUITE_API_URL)
+    // Node undici default headersTimeout is 300s — not enough for large deposits (7000+ items)
+    // Use AbortSignal.timeout which overrides undici's internal timeout
     const res = await fetch(NETSUITE_API_URL, {
       method: 'POST',
       headers: {
@@ -193,6 +195,7 @@ export async function POST(
         Accept: 'application/json',
       },
       body: JSON.stringify(createBody),
+      signal: AbortSignal.timeout(10 * 60 * 1000), // 10 minutes
     })
 
     const text = await res.text().catch(() => '')
