@@ -91,13 +91,16 @@ export function TransactionsTable({
   // Column totals for filtered view
   const columnTotals = useMemo(() => {
     if (!hasActiveFilters) return null
-    let amount = 0, fee = 0, net = 0
+    let amount = 0, fee = 0, net = 0, nsAmount = 0
     transactions.forEach(t => {
       amount += typeof t.amount === 'number' ? t.amount : parseFloat(String(t.amount)) || 0
       fee += typeof t.fee === 'number' ? t.fee : parseFloat(String(t.fee)) || 0
       net += typeof t.net === 'number' ? t.net : parseFloat(String(t.net)) || 0
+      if (t.netsuiteAmount != null) {
+        nsAmount += typeof t.netsuiteAmount === 'number' ? t.netsuiteAmount : parseFloat(String(t.netsuiteAmount)) || 0
+      }
     })
-    return { amount, fee, net }
+    return { amount, fee, net, nsAmount }
   }, [transactions, hasActiveFilters])
 
   const [currentPage, setCurrentPage] = useState(1)
@@ -374,7 +377,7 @@ export function TransactionsTable({
               <TableHead className="text-xs font-bold text-gray-700">USD {columnTotals.amount.toFixed(2)}</TableHead>
               <TableHead className="text-xs font-bold text-gray-700">USD {columnTotals.fee.toFixed(2)}</TableHead>
               <TableHead className="text-xs font-bold text-gray-700">USD {columnTotals.net.toFixed(2)}</TableHead>
-              <TableHead />
+              <TableHead className="text-xs font-bold text-gray-700">USD {columnTotals.nsAmount.toFixed(2)}</TableHead>
               <TableHead />
               <TableHead />
             </TableRow>
