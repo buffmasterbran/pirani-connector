@@ -167,86 +167,99 @@ export async function POST(
       }, { status: 400 })
     }
 
-    // Log transaction details for debugging
-    console.log(`💰 Creating deposit for payout ${payoutId}:`)
+    // Split payment items into batches to avoid NS timeout on large payouts
+    const BATCH_SIZE = 2500
+    const batches: DepositItem[][] = []
+    for (let i = 0; i < validDepositItems.length; i += BATCH_SIZE) {
+      batches.push(validDepositItems.slice(i, i + BATCH_SIZE))
+    }
+
+    const dateStr = payoutDate.toISOString().split('T')[0]
+    const depositIds: string[] = []
+    const totalBatches = batches.length
+
+    console.log(`💰 Creating ${totalBatches} deposit(s) for payout ${payoutId}:`)
     console.log(`   ${validDepositItems.length} payment items (${skipped.length} skipped), ${otherItems.length} other items`)
-    console.log(`   Payment item IDs: ${validDepositItems.map(i => i.id).join(', ')}`)
     if (skipped.length > 0) {
       console.log(`   Skipped IDs: ${skipped.map(s => `${s.id} (${s.reason})`).join(', ')}`)
     }
 
-    const createBody = buildDepositPayload(
-      payoutId,
-      payoutDate.toISOString().split('T')[0],
-      validDepositItems,
-      otherItems,
-    )
+    for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
+      const batch = batches[batchIdx]
+      const batchNum = batchIdx + 1
+      const memo = totalBatches === 1
+        ? `Shopify payout ${payoutId.slice(-8)}`
+        : `Shopify payout ${payoutId.slice(-8)} (${batchNum}/${totalBatches})`
 
-    console.log(`   Full payload:`, JSON.stringify(createBody, null, 2))
+      // Only the first batch gets the other items (fees/dropdowns) to avoid double-counting
+      const batchOtherItems = batchIdx === 0 ? otherItems : []
 
-    const authorization = generateOAuthHeader('POST', NETSUITE_API_URL)
-    // Node undici default headersTimeout is 300s — not enough for large deposits (7000+ items)
-    // Use AbortSignal.timeout which overrides undici's internal timeout
-    const res = await fetch(NETSUITE_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: authorization,
-        Accept: 'application/json',
-      },
-      body: JSON.stringify(createBody),
-      signal: AbortSignal.timeout(10 * 60 * 1000), // 10 minutes
-    })
+      const createBody = buildDepositPayload(payoutId, dateStr, batch, batchOtherItems)
+      createBody.memo = memo
 
-    const text = await res.text().catch(() => '')
+      console.log(`   Batch ${batchNum}/${totalBatches}: ${batch.length} payment items, ${batchOtherItems.length} other items`)
 
-    if (!res.ok) {
-      console.error('NetSuite POST error:', { status: res.status, body: text })
-      console.error('NetSuite POST payload was:', JSON.stringify(createBody))
-      return NextResponse.json(
-        {
-          success: false,
-          error: `NetSuite API error ${res.status}: ${text || res.statusText}`,
-          skipped,
-          debug: {
-            depositItemIds: validDepositItems.map(i => i.id),
-            depositItemCount: validDepositItems.length,
-            otherItemCount: otherItems.length,
-            trandate: createBody.trandate,
-            transactions: transactionsWithNS.map((t: any) => ({
-              nsId: t.netsuiteTransactionId,
-              nsName: t.netsuiteTransactionName,
-            })),
-          },
+      const authorization = generateOAuthHeader('POST', NETSUITE_API_URL)
+      const res = await fetch(NETSUITE_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: authorization,
+          Accept: 'application/json',
         },
-        { status: 500 },
-      )
+        body: JSON.stringify(createBody),
+        signal: AbortSignal.timeout(10 * 60 * 1000), // 10 minutes per batch
+      })
+
+      const text = await res.text().catch(() => '')
+
+      if (!res.ok) {
+        console.error(`NetSuite POST error (batch ${batchNum}):`, { status: res.status, body: text })
+        return NextResponse.json(
+          {
+            success: false,
+            error: `NetSuite API error on batch ${batchNum}/${totalBatches} (${res.status}): ${text || res.statusText}`,
+            depositIds: depositIds.length > 0 ? depositIds : undefined,
+            skipped,
+          },
+          { status: 500 },
+        )
+      }
+
+      const depositId = extractDepositId(res, text)
+      if (!depositId) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `NetSuite did not return a deposit ID for batch ${batchNum}/${totalBatches}`,
+            depositIds: depositIds.length > 0 ? depositIds : undefined,
+          },
+          { status: 500 },
+        )
+      }
+
+      depositIds.push(depositId)
+      console.log(`   ✅ Batch ${batchNum}: deposit ${depositId} created with ${batch.length} items`)
     }
 
-    const depositId = extractDepositId(res, text)
-
-    if (!depositId) {
-      return NextResponse.json(
-        { success: false, error: 'NetSuite did not return a deposit ID' },
-        { status: 500 },
-      )
-    }
-
+    const allDepositIds = depositIds.join(',')
     await prisma.payout.update({
       where: { id: payoutId },
       data: {
-        netsuiteDepositId: depositId,
+        netsuiteDepositId: allDepositIds,
         pushedToNsBy: pushedBy,
         pushedToNsAt: new Date(),
       },
     })
 
-    console.log(`✅ Deposit created: ${depositId} with ${validDepositItems.length} items` +
+    console.log(`✅ All ${totalBatches} deposit(s) created: ${allDepositIds}` +
       (skipped.length > 0 ? ` (${skipped.length} skipped)` : ''))
 
     return NextResponse.json({
       success: true,
-      depositId,
+      depositId: allDepositIds,
+      depositIds,
+      depositCount: totalBatches,
       totalItems: validDepositItems.length,
       skipped: skipped.length > 0 ? skipped : undefined,
     })

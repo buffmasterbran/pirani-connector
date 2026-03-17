@@ -524,7 +524,10 @@ export function PayoutsSection() {
       if (result.message === 'Deposit already created') {
         alert(`Deposit already created: ${result.depositId}`)
       } else {
-        let msg = `Successfully created NetSuite deposit!\n\nDeposit ID: ${result.depositId}\nTotal items: ${result.totalItems}`
+        const count = result.depositCount || 1
+        let msg = count > 1
+          ? `Successfully created ${count} NetSuite deposits!\n\nDeposit IDs: ${result.depositIds?.join(', ') || result.depositId}\nTotal items: ${result.totalItems}`
+          : `Successfully created NetSuite deposit!\n\nDeposit ID: ${result.depositId}\nTotal items: ${result.totalItems}`
         if (result.skipped?.length) {
           msg += `\n\n${result.skipped.length} transaction(s) skipped:`
           result.skipped.forEach((s: any) => { msg += `\n  ${s.tranid || s.id}: ${s.reason}` })
@@ -1021,19 +1024,22 @@ export function PayoutsSection() {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                         </svg>
                       </a>
-                      {payout.netsuiteDepositId && (
+                      {payout.netsuiteDepositId && payout.netsuiteDepositId.split(',').map((depId, idx) => (
                         <a
-                          href={`https://7913744.app.netsuite.com/app/accounting/transactions/deposit.nl?id=${payout.netsuiteDepositId}`}
+                          key={depId}
+                          href={`https://7913744.app.netsuite.com/app/accounting/transactions/deposit.nl?id=${depId.trim()}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-green-600 hover:text-green-800 text-xs flex-shrink-0"
-                          title="View in NetSuite"
+                          title={payout.netsuiteDepositId!.includes(',')
+                            ? `Deposit ${idx + 1} of ${payout.netsuiteDepositId!.split(',').length}`
+                            : 'View in NetSuite'}
                         >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                           </svg>
                         </a>
-                      )}
+                      ))}
                     </div>
 
                     {/* Status */}
