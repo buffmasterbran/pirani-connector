@@ -40,7 +40,14 @@ function extractDepositId(response: Response, responseText: string): string | nu
 /**
  * Shared logic to compute batches and other deposit data for a payout.
  */
-async function prepareBatches(payout: any) {
+/**
+ * Shared logic to compute batches and other deposit data for a payout.
+ *
+ * `validate`: when true (plan action), runs SuiteQL to check for stale/deposited IDs.
+ * When false (create action), skips validation — the preview already checked.
+ * This prevents the batch count from shrinking as earlier batches get deposited.
+ */
+async function prepareBatches(payout: any, validate: boolean) {
   const transactionsWithNS = filterValidTransactions(payout.transactions)
   const depositItems = buildDepositItems(transactionsWithNS)
 
@@ -56,49 +63,54 @@ async function prepareBatches(payout: any) {
   const dropdownItems = buildDropdownItems(includedTransactions, payoutMappings)
   const otherItems = buildOtherItems(totalFees, dropdownItems, '989')
 
-  // Pre-validate
-  const allIds = depositItems.map(i => i.id)
-  const { valid: validIds, skipped } = await getUndepositedIds(allIds)
-  const validDepositItems = depositItems.filter(i => validIds.has(i.id))
+  let finalItems = depositItems
+  let skipped: Array<{ id: number; tranid: string; reason: string }> = []
 
-  // Block if any NS IDs don't exist — enrich with our DB info so the user knows what they are
-  const notFound = skipped.filter(s => s.reason === 'Not found in NetSuite')
-  if (notFound.length > 0) {
-    const notFoundDetails = notFound.map(s => {
-      const dbTxn = payout.transactions.find(
-        (t: any) => t.netsuiteTransactionId && parseInt(t.netsuiteTransactionId, 10) === s.id
-      )
+  if (validate) {
+    const allIds = depositItems.map(i => i.id)
+    const { valid: validIds, skipped: skippedIds } = await getUndepositedIds(allIds)
+    skipped = skippedIds
+    finalItems = depositItems.filter(i => validIds.has(i.id))
+
+    // Block if any NS IDs don't exist
+    const notFound = skipped.filter(s => s.reason === 'Not found in NetSuite')
+    if (notFound.length > 0) {
+      const notFoundDetails = notFound.map(s => {
+        const dbTxn = payout.transactions.find(
+          (t: any) => t.netsuiteTransactionId && parseInt(t.netsuiteTransactionId, 10) === s.id
+        )
+        return {
+          nsId: s.id,
+          tranid: s.tranid,
+          nsName: dbTxn?.netsuiteTransactionName || null,
+          nsType: dbTxn?.netsuiteTransactionType || null,
+          shopifyOrderId: dbTxn?.shopifyOrderId || null,
+          shopifyType: dbTxn?.type || null,
+          amount: dbTxn?.amount ?? null,
+        }
+      })
       return {
-        nsId: s.id,
-        tranid: s.tranid,
-        nsName: dbTxn?.netsuiteTransactionName || null,
-        nsType: dbTxn?.netsuiteTransactionType || null,
-        shopifyOrderId: dbTxn?.shopifyOrderId || null,
-        shopifyType: dbTxn?.type || null,
-        amount: dbTxn?.amount ?? null,
+        error: `${notFound.length} transaction(s) reference NetSuite IDs that no longer exist. Fix these before pushing.`,
+        notFound: notFoundDetails,
+        skipped,
       }
-    })
-    return {
-      error: `${notFound.length} transaction(s) reference NetSuite IDs that no longer exist. Fix these before pushing.`,
-      notFound: notFoundDetails,
-      skipped,
     }
-  }
 
-  if (validDepositItems.length === 0) {
-    return {
-      error: `All ${depositItems.length} transactions were skipped — none are available for deposit in NetSuite.`,
-      skipped,
+    if (finalItems.length === 0) {
+      return {
+        error: `All ${depositItems.length} transactions were skipped — none are available for deposit in NetSuite.`,
+        skipped,
+      }
     }
   }
 
   // Split into batches
   const batches: DepositItem[][] = []
-  for (let i = 0; i < validDepositItems.length; i += BATCH_SIZE) {
-    batches.push(validDepositItems.slice(i, i + BATCH_SIZE))
+  for (let i = 0; i < finalItems.length; i += BATCH_SIZE) {
+    batches.push(finalItems.slice(i, i + BATCH_SIZE))
   }
 
-  return { batches, otherItems, skipped, totalItems: validDepositItems.length }
+  return { batches, otherItems, skipped, totalItems: finalItems.length }
 }
 
 export async function POST(
@@ -133,7 +145,7 @@ export async function POST(
     const payoutDate = payout.payoutDate || new Date()
     const dateStr = payoutDate.toISOString().split('T')[0]
 
-    const result = await prepareBatches(payout)
+    const result = await prepareBatches(payout, action === 'plan')
     if ('error' in result) {
       return NextResponse.json({ success: false, ...result }, { status: 400 })
     }

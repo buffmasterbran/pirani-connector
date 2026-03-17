@@ -95,6 +95,27 @@ export async function GET(
       }, { status: 400 })
     }
 
+    // Block if any are already deposited — including them would mess up the deposit totals
+    if (alreadyDeposited.length > 0) {
+      return NextResponse.json({
+        success: false,
+        error: `${alreadyDeposited.length} transaction(s) are already deposited in NetSuite. Remove or reassign these before pushing.`,
+        alreadyDeposited: alreadyDeposited.map(s => {
+          const dbTxn = payout.transactions.find(
+            (t: any) => t.netsuiteTransactionId && parseInt(t.netsuiteTransactionId, 10) === s.id
+          )
+          return {
+            nsId: s.id,
+            tranid: s.tranid,
+            nsName: dbTxn?.netsuiteTransactionName || null,
+            nsType: dbTxn?.netsuiteTransactionType || null,
+            reason: s.reason,
+          }
+        }),
+        skipped,
+      }, { status: 400 })
+    }
+
     const validDepositItems = depositItems.filter(i => validIds.has(i.id))
 
     // Calculate total fees from included transactions
@@ -136,7 +157,6 @@ export async function GET(
         totalChecked: depositItems.length,
         valid: validDepositItems.length,
         skippedCount: skipped.length,
-        alreadyDeposited: alreadyDeposited.length > 0 ? alreadyDeposited : undefined,
       },
     })
   } catch (error) {

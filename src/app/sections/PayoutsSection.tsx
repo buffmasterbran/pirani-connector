@@ -123,7 +123,6 @@ export function PayoutsSection() {
         totalChecked: number
         valid: number
         skippedCount: number
-        alreadyDeposited?: Array<{ id: number; tranid: string; reason: string }>
       }
     } | null
     isLoading: boolean
@@ -487,6 +486,16 @@ export function PayoutsSection() {
             if (s.shopifyOrderId) parts.push(`Shopify Order: ${s.shopifyOrderId}`)
             if (s.shopifyType) parts.push(`Shopify Type: ${s.shopifyType}`)
             if (s.amount != null) parts.push(`Amount: ${s.amount}`)
+            msg += `\n  ${parts.join(' | ')}`
+          })
+        }
+        if (previewData.alreadyDeposited?.length) {
+          msg += '\n\nAlready deposited in NetSuite:'
+          previewData.alreadyDeposited.forEach((s: any) => {
+            const parts = [`NS ID ${s.nsId}`, `${s.tranid}`]
+            if (s.nsName) parts.push(`Name: ${s.nsName}`)
+            if (s.nsType) parts.push(`Type: ${s.nsType}`)
+            if (s.reason) parts.push(s.reason)
             msg += `\n  ${parts.join(' | ')}`
           })
         }
@@ -1603,21 +1612,6 @@ export function PayoutsSection() {
                   )
                 })()}
               </div>
-
-              {/* Validation warnings */}
-              {netsuitePreviewDialog.previewData!.validation?.alreadyDeposited &&
-                netsuitePreviewDialog.previewData!.validation.alreadyDeposited.length > 0 && (
-                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                  <p className="text-sm font-semibold text-amber-700 mb-1">
-                    {netsuitePreviewDialog.previewData!.validation.alreadyDeposited.length} transaction(s) already deposited — will be excluded:
-                  </p>
-                  <ul className="text-xs text-amber-600 space-y-0.5">
-                    {netsuitePreviewDialog.previewData!.validation.alreadyDeposited.map((s, i) => (
-                      <li key={i}>{s.tranid} (NS ID {s.id}): {s.reason}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
 
               {/* JSON Body */}
               <div>
