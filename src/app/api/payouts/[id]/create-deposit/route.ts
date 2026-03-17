@@ -28,53 +28,59 @@ async function getUndepositedIds(ids: number[]): Promise<{
 
   if (ids.length === 0) return { valid, skipped }
 
-  const idList = ids.join(',')
-  const query = `SELECT Transaction.id, Transaction.tranid, Transaction.type, BUILTIN.DF(Transaction.status) AS statusname FROM Transaction WHERE Transaction.id IN (${idList})`
+  // SuiteQL has a limit on IN clause size — chunk into batches of 1000
+  const CHUNK_SIZE = 1000
+  const found = new Map<number, TxnStatus>()
 
-  const authorization = generateOAuthHeader('POST', SUITEQL_URL)
-  try {
-    const res = await fetch(SUITEQL_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Prefer: 'transient',
-        Authorization: authorization,
-        Accept: 'application/json',
-      },
-      body: JSON.stringify({ q: query }),
-    })
+  for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
+    const chunk = ids.slice(i, i + CHUNK_SIZE)
+    const idList = chunk.join(',')
+    const query = `SELECT Transaction.id, Transaction.tranid, Transaction.type, BUILTIN.DF(Transaction.status) AS statusname FROM Transaction WHERE Transaction.id IN (${idList})`
 
-    if (!res.ok) {
-      // If SuiteQL fails, fall through and try the deposit anyway
-      const errText = await res.text().catch(() => '')
-      console.warn(`⚠️ SuiteQL validation failed (${res.status}), skipping pre-check: ${errText.slice(0, 200)}`)
+    const authorization = generateOAuthHeader('POST', SUITEQL_URL)
+    try {
+      const res = await fetch(SUITEQL_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Prefer: 'transient',
+          Authorization: authorization,
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({ q: query }),
+      })
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '')
+        console.warn(`⚠️ SuiteQL validation failed for chunk (${res.status}), skipping pre-check: ${errText.slice(0, 200)}`)
+        // If any chunk fails, skip validation entirely — add all IDs as valid
+        ids.forEach(id => valid.add(id))
+        return { valid, skipped: [] }
+      }
+
+      const data = await res.json() as { items?: TxnStatus[] }
+      for (const item of data.items || []) {
+        found.set(Number(item.id), item)
+      }
+    } catch (err) {
+      console.warn('⚠️ SuiteQL validation error, skipping pre-check:', err)
       ids.forEach(id => valid.add(id))
-      return { valid, skipped }
+      return { valid, skipped: [] }
     }
+  }
 
-    const data = await res.json() as { items?: TxnStatus[] }
-    const found = new Map<number, TxnStatus>()
-    for (const item of data.items || []) {
-      found.set(Number(item.id), item)
-    }
-
-    for (const id of ids) {
-      const txn = found.get(id)
-      if (!txn) {
-        skipped.push({ id, tranid: '?', reason: 'Not found in NetSuite' })
+  for (const id of ids) {
+    const txn = found.get(id)
+    if (!txn) {
+      skipped.push({ id, tranid: '?', reason: 'Not found in NetSuite' })
+    } else {
+      const status = (txn.statusname || '').toLowerCase()
+      if (status.includes('deposited') && !status.includes('not deposited')) {
+        skipped.push({ id, tranid: txn.tranid, reason: `Already deposited (${txn.statusname})` })
       } else {
-        const status = (txn.statusname || '').toLowerCase()
-        if (status.includes('deposited') && !status.includes('not deposited')) {
-          skipped.push({ id, tranid: txn.tranid, reason: `Already deposited (${txn.statusname})` })
-        } else {
-          valid.add(id)
-        }
+        valid.add(id)
       }
     }
-  } catch (err) {
-    // Network error — fall through and try the deposit anyway
-    console.warn('⚠️ SuiteQL validation error, skipping pre-check:', err)
-    ids.forEach(id => valid.add(id))
   }
 
   return { valid, skipped }
@@ -168,7 +174,7 @@ export async function POST(
     }
 
     // Split payment items into batches to avoid NS timeout on large payouts
-    const BATCH_SIZE = 2500
+    const BATCH_SIZE = 1000
     const batches: DepositItem[][] = []
     for (let i = 0; i < validDepositItems.length; i += BATCH_SIZE) {
       batches.push(validDepositItems.slice(i, i + BATCH_SIZE))
@@ -188,8 +194,8 @@ export async function POST(
       const batch = batches[batchIdx]
       const batchNum = batchIdx + 1
       const memo = totalBatches === 1
-        ? `Shopify payout ${payoutId.slice(-8)}`
-        : `Shopify payout ${payoutId.slice(-8)} (${batchNum}/${totalBatches})`
+        ? `Shopify payout ${payoutId}`
+        : `Shopify payout ${payoutId} (${batchNum}/${totalBatches})`
 
       // Only the first batch gets the other items (fees/dropdowns) to avoid double-counting
       const batchOtherItems = batchIdx === 0 ? otherItems : []
@@ -208,7 +214,6 @@ export async function POST(
           Accept: 'application/json',
         },
         body: JSON.stringify(createBody),
-        signal: AbortSignal.timeout(10 * 60 * 1000), // 10 minutes per batch
       })
 
       const text = await res.text().catch(() => '')

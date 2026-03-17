@@ -224,7 +224,7 @@ export function buildDepositPayload(
   const body: Record<string, any> = {
     account: { id: '217' },
     trandate: payoutDate,
-    memo: `Shopify payout ${payoutId.slice(-8)}`,
+    memo: `Shopify payout ${payoutId}`,
     payment: { items: depositItems },
   }
   if (otherItems.length > 0) {
