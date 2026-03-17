@@ -53,9 +53,12 @@ function getTransactionHint(
     return { message: 'This transaction is split. Expand to see individual NS IDs. Each split needs its own NS transaction.', icon: '\u2702\uFE0F', bg: 'bg-purple-50', text: 'text-purple-700' }
   }
 
-  // Missing NS ID — marketplace charge
+  // Missing NS ID — marketplace order (charge or credit)
   if (ctx.isMarketplaceOrder) {
-    return { message: 'Marketplace order missing NS ID. Click the store icon to run Process Marketplace Order (deletes cash sale, edits SO, creates invoice + payment).', icon: '\uD83C\uDFEA', bg: 'bg-orange-50', text: 'text-orange-700' }
+    const tip = t.type === 'credit'
+      ? 'Marketplace credit missing NS ID. Click the store icon to process — if the invoice exists, it will create a payment for this amount.'
+      : 'Marketplace order missing NS ID. Click the store icon to run Process Marketplace Order (deletes cash sale, edits SO, creates invoice + payment).'
+    return { message: tip, icon: '\uD83C\uDFEA', bg: 'bg-orange-50', text: 'text-orange-700' }
   }
 
   // Missing NS ID — adjustment type (tax, etc.)
@@ -134,13 +137,15 @@ export function TransactionRow({
   const isCashSaleRefund = isCashSaleOrRefund(transaction)
 
   // Check if this is a marketplace (non-taxable) order that can be processed
-  // Only show for charge types — credits/refunds don't need the full marketplace workflow
-  const isMarketplaceOrder = onProcessMarketplaceOrder && transaction.type === 'charge' && orderSourceMappings.some(m =>
-    m.isActive && m.isTaxable === false && (
-      (transaction.app_id && m.appId === transaction.app_id) ||
-      (transaction.source_name && m.sourceName === transaction.source_name)
+  // Show for charge and credit types (credits may also need invoice+payment flow)
+  const isMarketplaceOrder = onProcessMarketplaceOrder &&
+    (transaction.type === 'charge' || transaction.type === 'credit') &&
+    orderSourceMappings.some(m =>
+      m.isActive && m.isTaxable === false && (
+        (transaction.app_id && m.appId === transaction.app_id) ||
+        (transaction.source_name && m.sourceName === transaction.source_name)
+      )
     )
-  )
 
   return (
     <React.Fragment>
