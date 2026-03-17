@@ -1,18 +1,98 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Settings, Eye, EyeOff, Database } from 'lucide-react'
+import { Settings, Eye, EyeOff, Database, HelpCircle, Save, ToggleLeft, ToggleRight } from 'lucide-react'
 
 interface SettingsSectionProps {
   hideSensitiveData: boolean
   onToggleSensitiveData: () => void
 }
 
+interface TransactionHint {
+  id: number
+  code: string
+  label: string
+  message: string
+  icon: string
+  bgColor: string
+  textColor: string
+  sortOrder: number
+  isActive: boolean
+}
+
 export function SettingsSection({ hideSensitiveData, onToggleSensitiveData }: SettingsSectionProps) {
   const [activeSettingsTab, setActiveSettingsTab] = useState('General')
+
+  // Helper Tips state
+  const [hints, setHints] = useState<TransactionHint[]>([])
+  const [hintsLoading, setHintsLoading] = useState(false)
+  const [editingHint, setEditingHint] = useState<number | null>(null)
+  const [editValues, setEditValues] = useState<Partial<TransactionHint>>({})
+  const [savingHint, setSavingHint] = useState<number | null>(null)
+
+  const fetchHints = useCallback(async () => {
+    setHintsLoading(true)
+    try {
+      const res = await fetch('/api/transaction-hints')
+      const data = await res.json()
+      if (data.success) setHints(data.data)
+    } catch (error) {
+      console.error('Error fetching hints:', error)
+    } finally {
+      setHintsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (activeSettingsTab === 'Helper Tips') {
+      fetchHints()
+    }
+  }, [activeSettingsTab, fetchHints])
+
+  const handleSaveHint = async (hint: TransactionHint) => {
+    setSavingHint(hint.id)
+    try {
+      const res = await fetch('/api/transaction-hints', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: hint.id, ...editValues }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setHints(prev => prev.map(h => h.id === hint.id ? data.data : h))
+        setEditingHint(null)
+        setEditValues({})
+      } else {
+        alert(`Error: ${data.error}`)
+      }
+    } catch (error) {
+      alert(`Error saving hint: ${error instanceof Error ? error.message : 'Unknown'}`)
+    } finally {
+      setSavingHint(null)
+    }
+  }
+
+  const handleToggleHint = async (hint: TransactionHint) => {
+    setSavingHint(hint.id)
+    try {
+      const res = await fetch('/api/transaction-hints', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: hint.id, isActive: !hint.isActive }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setHints(prev => prev.map(h => h.id === hint.id ? data.data : h))
+      }
+    } catch (error) {
+      console.error('Error toggling hint:', error)
+    } finally {
+      setSavingHint(null)
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -23,7 +103,7 @@ export function SettingsSection({ hideSensitiveData, onToggleSensitiveData }: Se
 
       {/* Settings Navigation Tabs */}
       <div className="flex space-x-1 border-b">
-        {['General', 'Field Discovery'].map((tab) => (
+        {['General', 'Helper Tips', 'Field Discovery'].map((tab) => (
           <Button
             key={tab}
             variant="ghost"
@@ -90,6 +170,143 @@ export function SettingsSection({ hideSensitiveData, onToggleSensitiveData }: Se
           </div>
         </CardContent>
       </Card>
+      )}
+
+      {/* Helper Tips Tab */}
+      {activeSettingsTab === 'Helper Tips' && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <HelpCircle className="h-5 w-5" />
+              Transaction Helper Tips
+            </CardTitle>
+            <p className="text-sm text-slate-600">
+              Configure the contextual help messages shown under each transaction when the Help toggle is enabled.
+              Use <code className="bg-slate-100 px-1 rounded">{'{reason}'}</code> in the Adjustment hint to include the adjustment reason dynamically.
+            </p>
+          </CardHeader>
+          <CardContent>
+            {hintsLoading ? (
+              <div className="space-y-3">
+                {[...Array(5)].map((_, i) => (
+                  <div key={i} className="h-16 bg-gray-100 rounded animate-pulse" />
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {hints.map((hint) => {
+                  const isEditing = editingHint === hint.id
+                  return (
+                    <div
+                      key={hint.id}
+                      className={`border rounded-lg p-4 ${hint.isActive ? 'border-slate-200' : 'border-slate-100 opacity-60'}`}
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <code className="text-xs bg-slate-100 px-1.5 py-0.5 rounded font-mono text-slate-600">{hint.code}</code>
+                            <span className="text-sm font-medium text-slate-800">{hint.label}</span>
+                          </div>
+
+                          {/* Preview */}
+                          <div className={`${hint.bgColor} rounded px-3 py-1.5 mb-2`}>
+                            <span className={`text-xs ${hint.textColor}`}>
+                              {isEditing ? (editValues.icon ?? hint.icon) : hint.icon}{' '}
+                              {isEditing ? (editValues.message ?? hint.message) : hint.message}
+                            </span>
+                          </div>
+
+                          {/* Edit form */}
+                          {isEditing && (
+                            <div className="space-y-2 mt-3">
+                              <div>
+                                <label className="text-xs font-medium text-slate-600">Message</label>
+                                <textarea
+                                  className="w-full mt-1 p-2 border rounded text-sm resize-none"
+                                  rows={2}
+                                  value={editValues.message ?? hint.message}
+                                  onChange={(e) => setEditValues(prev => ({ ...prev, message: e.target.value }))}
+                                />
+                              </div>
+                              <div className="grid grid-cols-3 gap-2">
+                                <div>
+                                  <label className="text-xs font-medium text-slate-600">Icon</label>
+                                  <Input
+                                    className="mt-1 text-sm"
+                                    value={editValues.icon ?? hint.icon}
+                                    onChange={(e) => setEditValues(prev => ({ ...prev, icon: e.target.value }))}
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-xs font-medium text-slate-600">Background</label>
+                                  <Input
+                                    className="mt-1 text-sm font-mono"
+                                    value={editValues.bgColor ?? hint.bgColor}
+                                    onChange={(e) => setEditValues(prev => ({ ...prev, bgColor: e.target.value }))}
+                                    placeholder="bg-blue-50"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-xs font-medium text-slate-600">Text Color</label>
+                                  <Input
+                                    className="mt-1 text-sm font-mono"
+                                    value={editValues.textColor ?? hint.textColor}
+                                    onChange={(e) => setEditValues(prev => ({ ...prev, textColor: e.target.value }))}
+                                    placeholder="text-blue-700"
+                                  />
+                                </div>
+                              </div>
+                              <div className="flex gap-2 pt-1">
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleSaveHint(hint)}
+                                  disabled={savingHint === hint.id}
+                                >
+                                  <Save className="h-3 w-3 mr-1" />
+                                  {savingHint === hint.id ? 'Saving...' : 'Save'}
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => { setEditingHint(null); setEditValues({}) }}
+                                >
+                                  Cancel
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex items-center gap-1 shrink-0">
+                          {!isEditing && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => { setEditingHint(hint.id); setEditValues({}) }}
+                            >
+                              Edit
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleToggleHint(hint)}
+                            disabled={savingHint === hint.id}
+                            title={hint.isActive ? 'Disable this hint' : 'Enable this hint'}
+                            className={hint.isActive ? 'text-green-600' : 'text-slate-400'}
+                          >
+                            {hint.isActive ? <ToggleRight className="h-5 w-5" /> : <ToggleLeft className="h-5 w-5" />}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       {/* Field Discovery Tab */}

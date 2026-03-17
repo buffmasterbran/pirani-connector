@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect, useCallback } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { ClipboardList, HelpCircle } from "lucide-react"
@@ -8,6 +8,7 @@ import { TransactionsTable } from "./TransactionsTable"
 import { AddNetSuiteTransactionDialog } from "@/components/AddNetSuiteTransactionDialog"
 import { SplitTransactionDialog } from "@/components/SplitTransactionDialog"
 import { useTransactionData, type TransactionItem } from "./useTransactionData"
+import type { TransactionHintConfig } from "./types"
 import { TransactionFilters } from "./TransactionFilters"
 import { TransactionSummary } from "./TransactionSummary"
 import { AuditLogDialog } from "./AuditLogDialog"
@@ -101,6 +102,29 @@ export function TransactionsDialog({
       return next
     })
   }
+
+  // Load hint configs from DB
+  const [hintConfigs, setHintConfigs] = useState<Map<string, TransactionHintConfig>>(new Map())
+  const fetchHintConfigs = useCallback(async () => {
+    try {
+      const res = await fetch('/api/transaction-hints')
+      const data = await res.json()
+      if (data.success) {
+        const map = new Map<string, TransactionHintConfig>()
+        for (const h of data.data) {
+          map.set(h.code, { code: h.code, message: h.message, icon: h.icon, bgColor: h.bgColor, textColor: h.textColor, isActive: h.isActive })
+        }
+        setHintConfigs(map)
+      }
+    } catch (e) {
+      console.error('Error loading hint configs:', e)
+    }
+  }, [])
+  useEffect(() => {
+    if (isOpen && showHelpers && hintConfigs.size === 0) {
+      fetchHintConfigs()
+    }
+  }, [isOpen, showHelpers, hintConfigs.size, fetchHintConfigs])
 
   // Helper function to safely refresh transactions, deferring to next frame to prevent hook order issues
   const safeRefreshTransactions = () => {
@@ -751,6 +775,7 @@ export function TransactionsDialog({
               setMarketplaceDialogOpen(true)
             }}
             showHelpers={showHelpers}
+            hintConfigs={hintConfigs}
           />
         </div>
       </DialogContent>

@@ -17,7 +17,7 @@ import {
   DragOverlay,
   pointerWithin,
 } from "@dnd-kit/core"
-import type { Transaction, DisplayTransaction, TransactionsTableProps, FeesDescriptionOption } from "./types"
+import type { Transaction, DisplayTransaction, TransactionsTableProps, FeesDescriptionOption, TransactionHintConfig } from "./types"
 import { useDragDropTransactions } from "./useDragDropTransactions"
 import { TransactionRow } from "./TransactionRow"
 
@@ -38,6 +38,7 @@ export function TransactionsTable({
   onSplitTransaction,
   onProcessMarketplaceOrder,
   showHelpers,
+  hintConfigs,
 }: TransactionsTableProps) {
 
   // Helper function to get friendly name for order source
@@ -422,6 +423,7 @@ export function TransactionsTable({
               onSplitTransaction={onSplitTransaction}
               onProcessMarketplaceOrder={onProcessMarketplaceOrder}
               showHelpers={showHelpers}
+              hintConfigs={hintConfigs}
             />
           ))}
         </TableBody>

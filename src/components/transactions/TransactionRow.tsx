@@ -6,17 +6,21 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Plus, Split, ChevronDown, ChevronRight, Store } from "lucide-react"
 import React from "react"
-import type { Transaction, DisplayTransaction, OrderSourceMapping, FeesDescriptionOption } from "./types"
+import type { Transaction, DisplayTransaction, OrderSourceMapping, FeesDescriptionOption, TransactionHintConfig } from "./types"
 import { DroppableRow, DraggableNetSuiteId, getNetSuiteUrl } from "./useDragDropTransactions"
 import { AmountDescriptionSelect } from "./TransactionCellEditors"
 
-interface TransactionHint {
+interface ResolvedHint {
   message: string
   icon: string
   bg: string
   text: string
 }
 
+/**
+ * Determine which hint code applies to this transaction, then look it up from DB configs.
+ * Returns null if no hint applies or the matching hint is disabled.
+ */
 function getTransactionHint(
   t: DisplayTransaction,
   ctx: {
@@ -28,64 +32,58 @@ function getTransactionHint(
     hasMismatch: boolean
     isGrouped: boolean
     hasSplits: boolean
-  }
-): TransactionHint | null {
-  // Excluded from deposit
+  },
+  configs: Map<string, TransactionHintConfig>
+): ResolvedHint | null {
+  // Determine the hint code based on transaction state (priority order)
+  let code: string | null = null
+
   if (ctx.isExcluded) {
-    return { message: 'Excluded from NetSuite deposit. Change the dropdown to re-include.', icon: '\u26AA', bg: 'bg-gray-50', text: 'text-gray-500' }
+    code = 'excluded'
+  } else if (ctx.hasAmountDescription) {
+    code = 'dropdown_assigned'
+  } else if ((t as any).order_edited && ctx.hasNsId && ctx.hasMismatch) {
+    code = 'edited_mismatch'
+  } else if (ctx.hasNsId && ctx.hasMismatch) {
+    code = 'mismatch'
+  } else if (ctx.hasNsId) {
+    return null // No hint needed
+  } else if (ctx.hasSplits) {
+    code = 'has_splits'
+  } else if ((t as any).order_edited) {
+    code = 'edited_missing'
+  } else if (ctx.isMarketplaceOrder && t.type === 'credit') {
+    code = 'marketplace_credit'
+  } else if (ctx.isMarketplaceOrder) {
+    code = 'marketplace_charge'
+  } else if (t.adjustmentReason) {
+    code = 'adjustment'
+  } else if (t.type === 'charge' || t.type === 'refund') {
+    code = 'charge_refund_missing'
+  } else if (t.type === 'payout') {
+    return null
+  } else {
+    code = 'other_missing'
   }
 
-  // Has a dropdown assigned (mapped to "other" section)
-  if (ctx.hasAmountDescription) {
-    return { message: 'Mapped to a deposit dropdown — will go in the "Other" section of the deposit.', icon: '\u2705', bg: 'bg-green-50/50', text: 'text-green-700' }
-  }
+  if (!code) return null
 
-  // Edited order with amount mismatch — specific guidance
-  if ((t as any).order_edited && ctx.hasNsId && ctx.hasMismatch) {
-    return { message: 'Edited order with amount mismatch. Try merging with the other charge for this order. If it spans multiple payouts, you may need to delete the cash sale and invoice in NS, then re-process using Process Marketplace Order.', icon: '\u270F\uFE0F', bg: 'bg-red-50', text: 'text-red-700' }
-  }
+  const config = configs.get(code)
+  if (!config || !config.isActive) return null
 
-  // Has NS ID with amount mismatch (non-edited)
-  if (ctx.hasNsId && ctx.hasMismatch) {
-    return { message: 'Amount mismatch! NetSuite amount differs from Shopify. Check if the order was edited or split across payouts.', icon: '\u26A0\uFE0F', bg: 'bg-red-50', text: 'text-red-700' }
-  }
-
-  // Has NS ID — good to go
-  if (ctx.hasNsId) return null
-
-  // Split transactions — parent has no NS ID but children might
-  if (ctx.hasSplits) {
-    return { message: 'This transaction is split. Expand to see individual NS IDs. Each split needs its own NS transaction.', icon: '\u2702\uFE0F', bg: 'bg-purple-50', text: 'text-purple-700' }
-  }
-
-  // Edited order missing NS ID — specific guidance
-  if ((t as any).order_edited && !ctx.hasNsId) {
-    return { message: 'Edited order — customer changed their order after purchase, creating extra charges. Try merging with the other line for this order. If it spans multiple payouts, you may need to delete the cash sale/invoice in NS and re-process.', icon: '\u270F\uFE0F', bg: 'bg-amber-50', text: 'text-amber-800' }
-  }
-
-  // Missing NS ID — marketplace order (charge or credit)
-  if (ctx.isMarketplaceOrder) {
-    const tip = t.type === 'credit'
-      ? 'Marketplace credit missing NS ID. Click the store icon to process — if the invoice exists, it will create a payment for this amount.'
-      : 'Marketplace order missing NS ID. Click the store icon to run Process Marketplace Order (deletes cash sale, edits SO, creates invoice + payment).'
-    return { message: tip, icon: '\uD83C\uDFEA', bg: 'bg-orange-50', text: 'text-orange-700' }
-  }
-
-  // Missing NS ID — adjustment type (tax, etc.)
-  if (t.adjustmentReason) {
+  // Replace {reason} placeholder for adjustment hints
+  let message = config.message
+  if (code === 'adjustment' && t.adjustmentReason) {
     const reason = t.adjustmentReason.replace(/_/g, ' ')
-    return { message: `This is a "${reason}" adjustment. Use the dropdown to map it to the correct GL account, or click + to manually add a NS transaction.`, icon: '\uD83D\uDCCB', bg: 'bg-amber-50', text: 'text-amber-700' }
+    message = message.replace('{reason}', reason)
   }
 
-  // Missing NS ID — charge or refund with no NS
-  if (t.type === 'charge' || t.type === 'refund') {
-    return { message: `Missing NetSuite ID. Try "Get Missing NS Transactions" first. If not found, use + to manually add or the store icon for marketplace orders.`, icon: '\u2753', bg: 'bg-blue-50', text: 'text-blue-700' }
+  return {
+    message,
+    icon: config.icon,
+    bg: config.bgColor,
+    text: config.textColor,
   }
-
-  // Missing NS ID — other types (payout, etc.)
-  if (t.type === 'payout') return null
-
-  return { message: 'No NetSuite ID. Use the dropdown to map to a GL account, or + to add manually.', icon: '\u2753', bg: 'bg-blue-50', text: 'text-blue-700' }
 }
 
 interface TransactionRowProps {
@@ -110,6 +108,7 @@ interface TransactionRowProps {
   onSplitTransaction?: (transaction: Transaction) => void
   onProcessMarketplaceOrder?: (transaction: Transaction) => void
   showHelpers?: boolean
+  hintConfigs?: Map<string, TransactionHintConfig>
 }
 
 export function TransactionRow({
@@ -134,6 +133,7 @@ export function TransactionRow({
   onSplitTransaction,
   onProcessMarketplaceOrder,
   showHelpers,
+  hintConfigs,
 }: TransactionRowProps) {
   const isFirstInGroup = transaction.isGrouped && transaction.groupIndex === 0
   const showGroupIndicator = transaction.isGrouped && isFirstInGroup
@@ -367,7 +367,7 @@ export function TransactionRow({
         </TableCell>
       </DroppableRow>
       {/* Contextual helper row */}
-      {showHelpers && (() => {
+      {showHelpers && hintConfigs && hintConfigs.size > 0 && (() => {
         const hint = getTransactionHint(transaction, {
           isMarketplaceOrder: !!isMarketplaceOrder,
           isCashSaleRefund,
@@ -377,7 +377,7 @@ export function TransactionRow({
           hasMismatch: !!transaction.amountMismatch,
           isGrouped: !!transaction.isGrouped,
           hasSplits: !!(transaction.children && transaction.children.length > 0),
-        })
+        }, hintConfigs)
         if (!hint) return null
         return (
           <TableRow className={`border-0 ${hint.bg}`}>

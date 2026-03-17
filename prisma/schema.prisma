@@ -581,6 +581,23 @@ model TransactionAuditLog {
   @@index([createdAt(sort: Desc)])
 }
 
+model TransactionHint {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique // Machine key: "excluded", "mismatch", "marketplace_charge", etc.
+  label     String   // Human-readable label shown in Settings UI
+  message   String   // Hint text shown to users (supports {reason} placeholder for adjustments)
+  icon      String   @default("?") // Emoji icon prefix
+  bgColor   String   @default("bg-blue-50") // Tailwind bg class for the hint row
+  textColor String   @default("text-blue-700") // Tailwind text class
+  sortOrder Int      @default(0) // Display order in Settings (lower = higher)
+  isActive  Boolean  @default(true) // Toggle hint on/off without deleting
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([code])
+}
+
 model CustomerAddress {
   id                Int      @id @default(autoincrement())
   customerId        Int

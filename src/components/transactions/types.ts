@@ -71,4 +71,14 @@ export interface TransactionsTableProps {
   onSplitTransaction?: (transaction: Transaction) => void
   onProcessMarketplaceOrder?: (transaction: Transaction) => void
   showHelpers?: boolean
+  hintConfigs?: Map<string, TransactionHintConfig>
+}
+
+export interface TransactionHintConfig {
+  code: string
+  message: string
+  icon: string
+  bgColor: string
+  textColor: string
+  isActive: boolean
 }
