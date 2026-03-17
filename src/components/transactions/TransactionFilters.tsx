@@ -16,6 +16,9 @@ interface TransactionFiltersProps {
   adjustmentReasonFilter: string
   setAdjustmentReasonFilter: (value: string) => void
   adjustmentReasonOptions: string[]
+  typeFilter: string
+  setTypeFilter: (value: string) => void
+  typeOptions: string[]
   searchTerm: string
   setSearchTerm: (value: string) => void
 
@@ -42,6 +45,9 @@ export function TransactionFilters({
   adjustmentReasonFilter,
   setAdjustmentReasonFilter,
   adjustmentReasonOptions,
+  typeFilter,
+  setTypeFilter,
+  typeOptions,
   searchTerm,
   setSearchTerm,
   calculateFilterCounts,
@@ -246,6 +252,26 @@ export function TransactionFilters({
                 </option>
               </select>
             </div>
+            {typeOptions.length > 1 && (
+              <div className="flex items-center gap-2">
+                <label htmlFor="type-filter" className="text-sm font-medium">
+                  Type:
+                </label>
+                <select
+                  id="type-filter"
+                  value={typeFilter}
+                  onChange={(e) => setTypeFilter(e.target.value)}
+                  className="px-2 py-1 text-sm border rounded-md"
+                >
+                  <option value="all">All Types</option>
+                  {typeOptions.map(type => (
+                    <option key={type} value={type}>
+                      {type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             {adjustmentReasonOptions.length > 0 && (
               <div className="flex items-center gap-2">
                 <label htmlFor="adjustment-reason-filter" className="text-sm font-medium">
@@ -269,7 +295,11 @@ export function TransactionFilters({
           </div>
           {missingNSTransactionsCount > 0 && (
             <Button
-              onClick={onFetchMissingNSTransactions}
+              onClick={() => {
+                if (window.confirm(`Sync ${missingNSTransactionsCount} missing NetSuite transactions? This may take a moment.`)) {
+                  onFetchMissingNSTransactions?.()
+                }
+              }}
               disabled={isFetchingNS}
               size="sm"
               variant="outline"

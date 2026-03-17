@@ -57,6 +57,7 @@ export interface FeesDescriptionOption {
 export interface TransactionsTableProps {
   transactions: Transaction[]
   isLoading?: boolean
+  hasActiveFilters?: boolean
   hideSensitiveData?: boolean
   orderSourceMappings?: OrderSourceMapping[]
   onDeleteNetSuiteId?: (transactionId: string) => void

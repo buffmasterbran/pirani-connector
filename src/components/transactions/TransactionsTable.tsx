@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Users, GitMerge } from "lucide-react"
 import { Checkbox } from "@/components/ui/checkbox"
-import React, { useState, useEffect } from "react"
+import React, { useState, useEffect, useMemo } from "react"
 import { MergeTransactionsDialog } from "@/components/MergeTransactionsDialog"
 import {
   DndContext,
@@ -24,6 +24,7 @@ import { TransactionRow } from "./TransactionRow"
 export function TransactionsTable({
   transactions,
   isLoading,
+  hasActiveFilters = false,
   hideSensitiveData = false,
   orderSourceMappings = [],
   onDeleteNetSuiteId,
@@ -86,6 +87,19 @@ export function TransactionsTable({
   const [showMergeDialog, setShowMergeDialog] = useState(false)
   const [bulkAssignValue, setBulkAssignValue] = useState<string>('__none__')
   const [bulkAssigning, setBulkAssigning] = useState(false)
+
+  // Column totals for filtered view
+  const columnTotals = useMemo(() => {
+    if (!hasActiveFilters) return null
+    let amount = 0, fee = 0, net = 0
+    transactions.forEach(t => {
+      amount += typeof t.amount === 'number' ? t.amount : parseFloat(String(t.amount)) || 0
+      fee += typeof t.fee === 'number' ? t.fee : parseFloat(String(t.fee)) || 0
+      net += typeof t.net === 'number' ? t.net : parseFloat(String(t.net)) || 0
+    })
+    return { amount, fee, net }
+  }, [transactions, hasActiveFilters])
+
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(50)
   const [expandedSplits, setExpandedSplits] = useState<Set<string>>(new Set())
@@ -348,6 +362,23 @@ export function TransactionsTable({
             <TableHead>NetSuite ID</TableHead>
             <TableHead>Processed At</TableHead>
           </TableRow>
+          {columnTotals && (
+            <TableRow className="bg-gray-50 border-b-2">
+              <TableHead />
+              <TableHead />
+              <TableHead />
+              <TableHead />
+              <TableHead />
+              <TableHead />
+              <TableHead className="text-xs font-bold text-gray-700">Totals ({transactions.length})</TableHead>
+              <TableHead className="text-xs font-bold text-gray-700">USD {columnTotals.amount.toFixed(2)}</TableHead>
+              <TableHead className="text-xs font-bold text-gray-700">USD {columnTotals.fee.toFixed(2)}</TableHead>
+              <TableHead className="text-xs font-bold text-gray-700">USD {columnTotals.net.toFixed(2)}</TableHead>
+              <TableHead />
+              <TableHead />
+              <TableHead />
+            </TableRow>
+          )}
         </TableHeader>
         <TableBody>
           {paginatedTransactions.map((transaction, idx) => (

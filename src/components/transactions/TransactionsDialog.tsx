@@ -72,6 +72,7 @@ export function TransactionsDialog({
   const [filterMissingCashSale, setFilterMissingCashSale] = useState(false)
   const [webOrderFilter, setWebOrderFilter] = useState<'all' | 'web' | 'non-web'>('all')
   const [adjustmentReasonFilter, setAdjustmentReasonFilter] = useState<string>('all')
+  const [typeFilter, setTypeFilter] = useState<string>('all')
   const [searchTerm, setSearchTerm] = useState('')
 
   // Import/fetch state
@@ -509,6 +510,15 @@ export function TransactionsDialog({
     return [...reasons].sort()
   }, [localTransactions])
 
+  // Compute unique type values for filter dropdown
+  const typeOptions = useMemo(() => {
+    const types = new Set<string>()
+    localTransactions.forEach(t => {
+      if (t.type) types.add(t.type)
+    })
+    return [...types].sort()
+  }, [localTransactions])
+
   // --- Filtered transactions for the table ---
 
   const getFilteredTransactions = () => {
@@ -565,6 +575,11 @@ export function TransactionsDialog({
     // Apply adjustment reason filter
     if (adjustmentReasonFilter !== 'all') {
       filtered = filtered.filter(t => t.adjustmentReason === adjustmentReasonFilter)
+    }
+
+    // Apply type filter
+    if (typeFilter !== 'all') {
+      filtered = filtered.filter(t => t.type === typeFilter)
     }
 
     // When filterMissingCashSale is checked, show all transactions for Order IDs
@@ -670,6 +685,9 @@ export function TransactionsDialog({
           adjustmentReasonFilter={adjustmentReasonFilter}
           setAdjustmentReasonFilter={setAdjustmentReasonFilter}
           adjustmentReasonOptions={adjustmentReasonOptions}
+          typeFilter={typeFilter}
+          setTypeFilter={setTypeFilter}
+          typeOptions={typeOptions}
           searchTerm={searchTerm}
           setSearchTerm={setSearchTerm}
           calculateFilterCounts={calculateFilterCounts}
@@ -689,6 +707,7 @@ export function TransactionsDialog({
             orderSourceMappings={orderSourceMappings}
             transactions={getFilteredTransactions() as any}
             isLoading={isLoading}
+            hasActiveFilters={webOrderFilter !== 'all' || adjustmentReasonFilter !== 'all' || typeFilter !== 'all' || filterMissingCashSale || searchTerm.trim().length > 0}
             hideSensitiveData={hideSensitiveData}
             onDeleteNetSuiteId={handleDeleteNetSuiteId}
             onToggleInclude={handleToggleInclude}
