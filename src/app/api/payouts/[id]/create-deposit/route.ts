@@ -128,12 +128,26 @@ async function prepareBatches(payout: any) {
   const { valid: validIds, skipped } = await getUndepositedIds(allIds)
   const validDepositItems = depositItems.filter(i => validIds.has(i.id))
 
-  // Block if any NS IDs don't exist
+  // Block if any NS IDs don't exist — enrich with our DB info so the user knows what they are
   const notFound = skipped.filter(s => s.reason === 'Not found in NetSuite')
   if (notFound.length > 0) {
+    const notFoundDetails = notFound.map(s => {
+      const dbTxn = payout.transactions.find(
+        (t: any) => t.netsuiteTransactionId && parseInt(t.netsuiteTransactionId, 10) === s.id
+      )
+      return {
+        nsId: s.id,
+        tranid: s.tranid,
+        nsName: dbTxn?.netsuiteTransactionName || null,
+        nsType: dbTxn?.netsuiteTransactionType || null,
+        orderName: dbTxn?.order_name || null,
+        shopifyType: dbTxn?.type || null,
+        amount: dbTxn?.amount ?? null,
+      }
+    })
     return {
       error: `${notFound.length} transaction(s) reference NetSuite IDs that no longer exist. Fix these before pushing.`,
-      notFound: notFound.map(s => ({ nsId: s.id, tranid: s.tranid })),
+      notFound: notFoundDetails,
       skipped,
     }
   }

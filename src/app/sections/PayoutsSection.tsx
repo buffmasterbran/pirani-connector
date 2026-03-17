@@ -140,6 +140,14 @@ export function PayoutsSection() {
     error?: string
   } | null>(null)
 
+  // Deposit result dialog (replaces alert() for copyable text)
+  const [depositResultDialog, setDepositResultDialog] = useState<{
+    isOpen: boolean
+    title: string
+    message: string
+    isError: boolean
+  }>({ isOpen: false, title: '', message: '', isError: false })
+
   // Edit NetSuite ID dialog state
   const [isEditNetSuiteIdDialogOpen, setIsEditNetSuiteIdDialogOpen] = useState(false)
   const [editingNetSuiteId, setEditingNetSuiteId] = useState('')
@@ -537,7 +545,7 @@ export function PayoutsSection() {
       // Already fully created
       if (plan.depositId && plan.message === 'Deposit already created') {
         setNetsuitePreviewDialog({ isOpen: false, payoutId: null, previewData: null, isLoading: false })
-        alert(`Deposit already created: ${plan.depositId}`)
+        setDepositResultDialog({ isOpen: true, title: 'Deposit Already Created', message: `Deposit ID: ${plan.depositId}`, isError: false })
         fetchSavedPayouts()
         return
       }
@@ -586,7 +594,7 @@ export function PayoutsSection() {
         msg += `\n\n${skipped.length} transaction(s) skipped:`
         skipped.forEach((s: any) => { msg += `\n  ${s.tranid || s.id}: ${s.reason}` })
       }
-      alert(msg)
+      setDepositResultDialog({ isOpen: true, title: 'Deposit Created', message: msg, isError: false })
       fetchSavedPayouts()
     } catch (error: any) {
       console.error('Error creating NetSuite deposit:', error)
@@ -600,7 +608,15 @@ export function PayoutsSection() {
       }
       if (error?.notFound?.length) {
         msg += `\n\nTransactions not found in NetSuite:`
-        error.notFound.forEach((s: any) => { msg += `\n  NS ID ${s.nsId} (${s.tranid})` })
+        error.notFound.forEach((s: any) => {
+          const parts = [`NS ID ${s.nsId}`]
+          if (s.nsName) parts.push(`Name: ${s.nsName}`)
+          if (s.nsType) parts.push(`Type: ${s.nsType}`)
+          if (s.orderName) parts.push(`Order: ${s.orderName}`)
+          if (s.shopifyType) parts.push(`Shopify Type: ${s.shopifyType}`)
+          if (s.amount != null) parts.push(`Amount: ${s.amount}`)
+          msg += `\n  ${parts.join(' | ')}`
+        })
       }
       if (error?.debug) {
         const d = error.debug
@@ -609,7 +625,7 @@ export function PayoutsSection() {
         msg += `\nDeposit items (${d.depositItemCount}): ${(d.depositItemIds || []).join(', ')}`
         msg += `\nOther items: ${d.otherItemCount}`
       }
-      alert(msg)
+      setDepositResultDialog({ isOpen: true, title: 'Deposit Error', message: msg, isError: true })
     }
   }
 
@@ -1591,6 +1607,42 @@ export function PayoutsSection() {
               </div>
             </div>
           ) : null}
+        </DialogContent>
+      </Dialog>
+
+      {/* Deposit Result Dialog (copyable text) */}
+      <Dialog
+        open={depositResultDialog.isOpen}
+        onOpenChange={(open) => {
+          if (!open) setDepositResultDialog(prev => ({ ...prev, isOpen: false }))
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className={depositResultDialog.isError ? 'text-red-600' : 'text-green-600'}>
+              {depositResultDialog.title}
+            </DialogTitle>
+          </DialogHeader>
+          <pre className="whitespace-pre-wrap text-sm bg-gray-50 border rounded-md p-4 max-h-[60vh] overflow-y-auto select-all cursor-text">
+            {depositResultDialog.message}
+          </pre>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                navigator.clipboard.writeText(depositResultDialog.message)
+              }}
+            >
+              Copy to Clipboard
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => setDepositResultDialog(prev => ({ ...prev, isOpen: false }))}
+            >
+              OK
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 
