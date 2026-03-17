@@ -84,6 +84,8 @@ export function TransactionsTable({
   const [loadingFeesOptions, setLoadingFeesOptions] = useState(false)
   const [selectedTransactionIds, setSelectedTransactionIds] = useState<Set<string>>(new Set())
   const [showMergeDialog, setShowMergeDialog] = useState(false)
+  const [bulkAssignValue, setBulkAssignValue] = useState<string>('__none__')
+  const [bulkAssigning, setBulkAssigning] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(50)
   const [expandedSplits, setExpandedSplits] = useState<Set<string>>(new Set())
@@ -127,6 +129,39 @@ export function TransactionsTable({
     }
     fetchFeesOptions()
   }, [])
+
+  // Bulk assign dropdown to all selected transactions
+  const handleBulkAssign = async () => {
+    if (selectedTransactionIds.size === 0 || bulkAssignValue === '__none__') return
+    setBulkAssigning(true)
+    try {
+      const ids = Array.from(selectedTransactionIds)
+      if (bulkAssignValue === '__ignore__') {
+        for (const id of ids) {
+          if (onToggleInclude) await onToggleInclude(id, false)
+          if (onUpdateAmountDescription) await onUpdateAmountDescription(id, null)
+        }
+      } else {
+        // Resolve the actual description to store
+        const option = feesDescriptionOptions.find(opt => {
+          if (opt.netsuiteId?.trim()) return opt.netsuiteId === bulkAssignValue
+          return `opt_${opt.id}_${opt.description}` === bulkAssignValue
+        })
+        const desc = option
+          ? (option.netsuiteId?.trim() ? option.netsuiteId : option.description)
+          : bulkAssignValue
+        for (const id of ids) {
+          // Re-include if previously ignored
+          if (onToggleInclude) await onToggleInclude(id, true)
+          if (onUpdateAmountDescription) await onUpdateAmountDescription(id, desc)
+        }
+      }
+      setBulkAssignValue('__none__')
+      setSelectedTransactionIds(new Set())
+    } finally {
+      setBulkAssigning(false)
+    }
+  }
 
   // Helper function to check if transaction is cash sale or cash refund
   const isCashSaleOrRefund = (transaction: Transaction): boolean => {
@@ -221,7 +256,7 @@ export function TransactionsTable({
       onDragCancel={handleDragCancel}
     >
       <div className="rounded-md border">
-        {selectedTransactionIds.size >= 2 && (
+        {selectedTransactionIds.size >= 1 && (
           <div className="p-3 bg-blue-50 border-b border-blue-200">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm text-blue-800">
@@ -230,14 +265,46 @@ export function TransactionsTable({
                   {selectedTransactionIds.size} transaction{selectedTransactionIds.size !== 1 ? 's' : ''} selected
                 </span>
               </div>
-              <Button
-                onClick={() => setShowMergeDialog(true)}
-                size="sm"
-                className="flex items-center gap-2"
-              >
-                <GitMerge className="h-4 w-4" />
-                Merge Selected
-              </Button>
+              <div className="flex items-center gap-2">
+                <Select value={bulkAssignValue} onValueChange={setBulkAssignValue}>
+                  <SelectTrigger className="w-[200px] h-8 text-sm bg-white">
+                    <SelectValue placeholder="Assign dropdown..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Select option...</SelectItem>
+                    <SelectItem value="__ignore__">Ignore</SelectItem>
+                    {feesDescriptionOptions.map((option) => {
+                      const val = option.netsuiteId?.trim()
+                        ? option.netsuiteId
+                        : `opt_${option.id}_${option.description}`
+                      return (
+                        <SelectItem key={option.id} value={val}>
+                          {option.description || option.netsuiteId}
+                        </SelectItem>
+                      )
+                    })}
+                  </SelectContent>
+                </Select>
+                <Button
+                  onClick={handleBulkAssign}
+                  size="sm"
+                  variant="outline"
+                  disabled={bulkAssignValue === '__none__' || bulkAssigning}
+                  className="text-sm"
+                >
+                  {bulkAssigning ? 'Applying...' : 'Apply'}
+                </Button>
+                {selectedTransactionIds.size >= 2 && (
+                  <Button
+                    onClick={() => setShowMergeDialog(true)}
+                    size="sm"
+                    className="flex items-center gap-2"
+                  >
+                    <GitMerge className="h-4 w-4" />
+                    Merge Selected
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
         )}
