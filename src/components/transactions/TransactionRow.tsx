@@ -40,7 +40,12 @@ function getTransactionHint(
     return { message: 'Mapped to a deposit dropdown — will go in the "Other" section of the deposit.', icon: '\u2705', bg: 'bg-green-50/50', text: 'text-green-700' }
   }
 
-  // Has NS ID with amount mismatch
+  // Edited order with amount mismatch — specific guidance
+  if ((t as any).order_edited && ctx.hasNsId && ctx.hasMismatch) {
+    return { message: 'Edited order with amount mismatch. Try merging with the other charge for this order. If it spans multiple payouts, you may need to delete the cash sale and invoice in NS, then re-process using Process Marketplace Order.', icon: '\u270F\uFE0F', bg: 'bg-red-50', text: 'text-red-700' }
+  }
+
+  // Has NS ID with amount mismatch (non-edited)
   if (ctx.hasNsId && ctx.hasMismatch) {
     return { message: 'Amount mismatch! NetSuite amount differs from Shopify. Check if the order was edited or split across payouts.', icon: '\u26A0\uFE0F', bg: 'bg-red-50', text: 'text-red-700' }
   }
@@ -51,6 +56,11 @@ function getTransactionHint(
   // Split transactions — parent has no NS ID but children might
   if (ctx.hasSplits) {
     return { message: 'This transaction is split. Expand to see individual NS IDs. Each split needs its own NS transaction.', icon: '\u2702\uFE0F', bg: 'bg-purple-50', text: 'text-purple-700' }
+  }
+
+  // Edited order missing NS ID — specific guidance
+  if ((t as any).order_edited && !ctx.hasNsId) {
+    return { message: 'Edited order — customer changed their order after purchase, creating extra charges. Try merging with the other line for this order. If it spans multiple payouts, you may need to delete the cash sale/invoice in NS and re-process.', icon: '\u270F\uFE0F', bg: 'bg-amber-50', text: 'text-amber-800' }
   }
 
   // Missing NS ID — marketplace order (charge or credit)
