@@ -269,7 +269,8 @@ export async function processMarketplaceOrder(
   orderName: string,
   paymentAmount: number,
   currency: string,
-  tranDate: string
+  tranDate: string,
+  taxAmount?: number
 ): Promise<{ results: StepResult[]; finalState: MarketplaceOrderState }> {
   const results: StepResult[] = []
 
@@ -311,8 +312,8 @@ export async function processMarketplaceOrder(
       results.push({ step: 'delete-cash-sale', success: true, detail: 'Skipped — no Cash Sale found' })
     }
 
-    // Step 3: Update Sales Order
-    const updateResult = await updateSOForMarketplace(state.salesOrder.id)
+    // Step 3: Update Sales Order (pass tax amount if provided)
+    const updateResult = await updateSOForMarketplace(state.salesOrder.id, taxAmount)
     results.push(updateResult)
     if (!updateResult.success) return { results, finalState: state }
 
