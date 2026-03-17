@@ -1,3 +1,5 @@
+import { generateOAuthHeader, buildSuiteQLUrl } from '@/lib/netsuite'
+
 /**
  * Shared helper functions for deposit creation and preview routes.
  *
@@ -231,4 +233,76 @@ export function buildDepositPayload(
     body.other = { items: otherItems }
   }
   return body
+}
+
+// ---------------------------------------------------------------------------
+// SuiteQL validation — check which NS IDs exist and their deposit status
+// ---------------------------------------------------------------------------
+
+interface TxnStatus { id: string; tranid: string; type: string; statusname: string }
+
+export async function getUndepositedIds(ids: number[]): Promise<{
+  valid: Set<number>
+  skipped: Array<{ id: number; tranid: string; reason: string }>
+}> {
+  const SUITEQL_URL = buildSuiteQLUrl()
+  const valid = new Set<number>()
+  const skipped: Array<{ id: number; tranid: string; reason: string }> = []
+
+  if (ids.length === 0) return { valid, skipped }
+
+  const CHUNK_SIZE = 1000
+  const found = new Map<number, TxnStatus>()
+
+  for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
+    const chunk = ids.slice(i, i + CHUNK_SIZE)
+    const idList = chunk.join(',')
+    const query = `SELECT Transaction.id, Transaction.tranid, Transaction.type, BUILTIN.DF(Transaction.status) AS statusname FROM Transaction WHERE Transaction.id IN (${idList})`
+
+    const authorization = generateOAuthHeader('POST', SUITEQL_URL)
+    try {
+      const res = await fetch(SUITEQL_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Prefer: 'transient',
+          Authorization: authorization,
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({ q: query }),
+      })
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '')
+        console.warn(`⚠️ SuiteQL validation failed for chunk (${res.status}), skipping pre-check: ${errText.slice(0, 200)}`)
+        ids.forEach(id => valid.add(id))
+        return { valid, skipped: [] }
+      }
+
+      const data = await res.json() as { items?: TxnStatus[] }
+      for (const item of data.items || []) {
+        found.set(Number(item.id), item)
+      }
+    } catch (err) {
+      console.warn('⚠️ SuiteQL validation error, skipping pre-check:', err)
+      ids.forEach(id => valid.add(id))
+      return { valid, skipped: [] }
+    }
+  }
+
+  for (const id of ids) {
+    const txn = found.get(id)
+    if (!txn) {
+      skipped.push({ id, tranid: '?', reason: 'Not found in NetSuite' })
+    } else {
+      const status = (txn.statusname || '').toLowerCase()
+      if (status.includes('deposited') && !status.includes('not deposited')) {
+        skipped.push({ id, tranid: txn.tranid, reason: `Already deposited (${txn.statusname})` })
+      } else {
+        valid.add(id)
+      }
+    }
+  }
+
+  return { valid, skipped }
 }

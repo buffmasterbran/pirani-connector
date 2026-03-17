@@ -6,6 +6,7 @@ import {
   buildDropdownItems,
   buildOtherItems,
   buildDepositPayload,
+  getUndepositedIds,
 } from '@/lib/deposit-helpers'
 
 export async function GET(
@@ -61,6 +62,41 @@ export async function GET(
       )
     }
 
+    // Validate deposit items against NetSuite (check for stale/already-deposited IDs)
+    const allIds = depositItems.map(i => i.id)
+    const { valid: validIds, skipped } = await getUndepositedIds(allIds)
+
+    const notFound = skipped.filter(s => s.reason === 'Not found in NetSuite')
+    const alreadyDeposited = skipped.filter(s => s.reason !== 'Not found in NetSuite')
+
+    // Enrich not-found with DB info
+    const notFoundDetails = notFound.map(s => {
+      const dbTxn = payout.transactions.find(
+        (t: any) => t.netsuiteTransactionId && parseInt(t.netsuiteTransactionId, 10) === s.id
+      )
+      return {
+        nsId: s.id,
+        tranid: s.tranid,
+        nsName: dbTxn?.netsuiteTransactionName || null,
+        nsType: dbTxn?.netsuiteTransactionType || null,
+        shopifyOrderId: dbTxn?.shopifyOrderId || null,
+        shopifyType: dbTxn?.type || null,
+        amount: dbTxn?.amount ?? null,
+      }
+    })
+
+    // Block if any NS IDs don't exist
+    if (notFound.length > 0) {
+      return NextResponse.json({
+        success: false,
+        error: `${notFound.length} transaction(s) reference NetSuite IDs that no longer exist. Fix these before pushing.`,
+        notFound: notFoundDetails,
+        skipped,
+      }, { status: 400 })
+    }
+
+    const validDepositItems = depositItems.filter(i => validIds.has(i.id))
+
     // Calculate total fees from included transactions
     const totalFees = payout.transactions
       .filter((txn) => txn.includeInNetSuite !== false)
@@ -83,7 +119,7 @@ export async function GET(
     const depositRequest = buildDepositPayload(
       payoutId,
       payoutDate.toISOString(),
-      depositItems,
+      validDepositItems,
       otherItems,
     )
 
@@ -94,7 +130,13 @@ export async function GET(
         totalTransactions: payout.transactions.length,
         transactionsWithNS: transactionsWithNS.length,
         totalFees,
-        depositItemsCount: depositItems.length,
+        depositItemsCount: validDepositItems.length,
+      },
+      validation: {
+        totalChecked: depositItems.length,
+        valid: validDepositItems.length,
+        skippedCount: skipped.length,
+        alreadyDeposited: alreadyDeposited.length > 0 ? alreadyDeposited : undefined,
       },
     })
   } catch (error) {

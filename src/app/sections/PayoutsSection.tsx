@@ -119,6 +119,12 @@ export function PayoutsSection() {
         depositItemsCount: number
         totalFees: number
       }
+      validation?: {
+        totalChecked: number
+        valid: number
+        skippedCount: number
+        alreadyDeposited?: Array<{ id: number; tranid: string; reason: string }>
+      }
     } | null
     isLoading: boolean
   }>({
@@ -471,7 +477,20 @@ export function PayoutsSection() {
           previewData: null,
           isLoading: false,
         })
-        alert(`Cannot preview deposit:\n\n${JSON.stringify(previewData, null, 2)}`)
+        let msg = previewData.error || 'Unknown error'
+        if (previewData.notFound?.length) {
+          msg += '\n\nTransactions not found in NetSuite:'
+          previewData.notFound.forEach((s: any) => {
+            const parts = [`NS ID ${s.nsId}`]
+            if (s.nsName) parts.push(`Name: ${s.nsName}`)
+            if (s.nsType) parts.push(`Type: ${s.nsType}`)
+            if (s.shopifyOrderId) parts.push(`Shopify Order: ${s.shopifyOrderId}`)
+            if (s.shopifyType) parts.push(`Shopify Type: ${s.shopifyType}`)
+            if (s.amount != null) parts.push(`Amount: ${s.amount}`)
+            msg += `\n  ${parts.join(' | ')}`
+          })
+        }
+        setDepositResultDialog({ isOpen: true, title: 'Cannot Create Deposit', message: msg, isError: true })
         return
       }
 
@@ -612,7 +631,7 @@ export function PayoutsSection() {
           const parts = [`NS ID ${s.nsId}`]
           if (s.nsName) parts.push(`Name: ${s.nsName}`)
           if (s.nsType) parts.push(`Type: ${s.nsType}`)
-          if (s.orderName) parts.push(`Order: ${s.orderName}`)
+          if (s.shopifyOrderId) parts.push(`Shopify Order: ${s.shopifyOrderId}`)
           if (s.shopifyType) parts.push(`Shopify Type: ${s.shopifyType}`)
           if (s.amount != null) parts.push(`Amount: ${s.amount}`)
           msg += `\n  ${parts.join(' | ')}`
@@ -1584,6 +1603,21 @@ export function PayoutsSection() {
                   )
                 })()}
               </div>
+
+              {/* Validation warnings */}
+              {netsuitePreviewDialog.previewData!.validation?.alreadyDeposited &&
+                netsuitePreviewDialog.previewData!.validation.alreadyDeposited.length > 0 && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                  <p className="text-sm font-semibold text-amber-700 mb-1">
+                    {netsuitePreviewDialog.previewData!.validation.alreadyDeposited.length} transaction(s) already deposited — will be excluded:
+                  </p>
+                  <ul className="text-xs text-amber-600 space-y-0.5">
+                    {netsuitePreviewDialog.previewData!.validation.alreadyDeposited.map((s, i) => (
+                      <li key={i}>{s.tranid} (NS ID {s.id}): {s.reason}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               {/* JSON Body */}
               <div>
