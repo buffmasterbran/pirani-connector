@@ -177,9 +177,10 @@ export async function POST(
 
     const batch = batches[batchIndex]
     const batchNum = batchIndex + 1
+    const payoutTotal = payout.totalAmount != null ? ` | $${Math.abs(payout.totalAmount).toFixed(2)}` : ''
     const memo = totalBatches === 1
-      ? `Shopify payout ${payoutId}`
-      : `Shopify payout ${payoutId} (${batchNum}/${totalBatches})`
+      ? `Shopify payout ${payoutId}${payoutTotal}`
+      : `Shopify payout ${payoutId} (${batchNum}/${totalBatches})${payoutTotal}`
 
     // Only the first batch gets the other items (fees/dropdowns)
     const batchOtherItems = batchIndex === 0 ? otherItems : []

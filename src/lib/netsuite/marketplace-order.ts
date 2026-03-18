@@ -193,6 +193,114 @@ export async function updateSOForMarketplace(soId: string, taxAmount?: number): 
 }
 
 /**
+ * Update a Sales Order for edited-order processing:
+ * - Clear paymentoption (so it can be invoiced)
+ * Tax is collected normally for these orders, so no tax code or tax line changes.
+ */
+export async function updateSOForEditedOrder(soId: string): Promise<StepResult> {
+  const patchBody: any = {
+    paymentoption: null,
+  }
+
+  const result = await patchRecord('salesOrder', soId, patchBody)
+
+  if (!result.success) {
+    return {
+      step: 'update-sales-order',
+      success: false,
+      error: result.error,
+    }
+  }
+
+  return {
+    step: 'update-sales-order',
+    success: true,
+    detail: 'Cleared paymentoption (tax unchanged — collected normally)',
+  }
+}
+
+/**
+ * Run the full edited-order processing workflow.
+ * Same as marketplace but only clears payment option (no tax changes).
+ */
+export async function processEditedOrder(
+  orderName: string,
+  paymentAmount: number,
+  currency: string,
+  tranDate: string,
+): Promise<{ results: StepResult[]; finalState: MarketplaceOrderState }> {
+  const results: StepResult[] = []
+
+  // Step 1: Check current state
+  const state = await checkOrderState(orderName)
+  results.push({
+    step: 'check',
+    success: true,
+    detail: [
+      state.salesOrder ? `SO: ${state.salesOrder.tranid}` : 'No SO',
+      state.cashSale ? `CS: ${state.cashSale.tranid}` : 'No CS',
+      state.invoice ? `INV: ${state.invoice.tranid}` : 'No Invoice',
+      `${state.payments.length} payment(s)`,
+    ].join(', '),
+    data: state,
+  })
+
+  let invoiceId = state.invoice?.id
+  let customerId = state.customerId
+
+  // If invoice already exists, skip to payment
+  if (invoiceId) {
+    results.push({ step: 'delete-cash-sale', success: true, detail: 'Skipped — invoice already exists' })
+    results.push({ step: 'update-sales-order', success: true, detail: 'Skipped — invoice already exists' })
+    results.push({ step: 'create-invoice', success: true, detail: 'Skipped — invoice already exists' })
+  } else {
+    if (!state.salesOrder) {
+      results.push({ step: 'delete-cash-sale', success: false, error: 'No Sales Order found — cannot proceed' })
+      return { results, finalState: state }
+    }
+
+    // Step 2: Delete Cash Sale (if exists)
+    if (state.cashSale) {
+      const deleteResult = await deleteCashSale(state.cashSale.id)
+      results.push(deleteResult)
+      if (!deleteResult.success) return { results, finalState: state }
+    } else {
+      results.push({ step: 'delete-cash-sale', success: true, detail: 'Skipped — no Cash Sale found' })
+    }
+
+    // Step 3: Update Sales Order (only clear payment option — no tax changes)
+    const updateResult = await updateSOForEditedOrder(state.salesOrder.id)
+    results.push(updateResult)
+    if (!updateResult.success) return { results, finalState: state }
+
+    // Step 4: Create Invoice from SO
+    const invoiceResult = await createInvoiceFromSO(state.salesOrder.id, tranDate)
+    results.push(invoiceResult)
+    if (!invoiceResult.success) return { results, finalState: state }
+
+    invoiceId = invoiceResult.data?.invoiceId
+    if (!customerId) customerId = state.salesOrder.entityId || null
+  }
+
+  // Step 5: Create Payment
+  if (!invoiceId) {
+    results.push({ step: 'create-payment', success: false, error: 'No invoice ID available' })
+    return { results, finalState: state }
+  }
+
+  if (!customerId) {
+    results.push({ step: 'create-payment', success: false, error: 'No customer ID found on any transaction' })
+    return { results, finalState: state }
+  }
+
+  const paymentResult = await createPaymentForInvoice(invoiceId, customerId, paymentAmount, currency, tranDate)
+  results.push(paymentResult)
+
+  const finalState = await checkOrderState(orderName)
+  return { results, finalState }
+}
+
+/**
  * Transform a Sales Order into an Invoice.
  */
 export async function createInvoiceFromSO(

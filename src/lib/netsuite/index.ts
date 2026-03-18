@@ -45,9 +45,11 @@ export {
   checkOrderState,
   deleteCashSale,
   updateSOForMarketplace,
+  updateSOForEditedOrder,
   createInvoiceFromSO,
   createPaymentForInvoice,
   processMarketplaceOrder,
+  processEditedOrder,
 } from './marketplace-order'
 export type { MarketplaceOrderState, OrderStateRecord, StepResult } from './marketplace-order'
 

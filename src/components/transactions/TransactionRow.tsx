@@ -4,7 +4,7 @@ import {
 } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Plus, Split, ChevronDown, ChevronRight, Store } from "lucide-react"
+import { Plus, Split, ChevronDown, ChevronRight, Store, Pencil } from "lucide-react"
 import React from "react"
 import type { Transaction, DisplayTransaction, OrderSourceMapping, FeesDescriptionOption, TransactionHintConfig } from "./types"
 import { DroppableRow, DraggableNetSuiteId, getNetSuiteUrl } from "./useDragDropTransactions"
@@ -107,6 +107,7 @@ interface TransactionRowProps {
   onToggleInclude?: (transactionId: string, include: boolean) => Promise<void>
   onSplitTransaction?: (transaction: Transaction) => void
   onProcessMarketplaceOrder?: (transaction: Transaction) => void
+  onProcessEditedOrder?: (transaction: Transaction) => void
   showHelpers?: boolean
   hintConfigs?: Map<string, TransactionHintConfig>
 }
@@ -132,6 +133,7 @@ export function TransactionRow({
   onToggleInclude,
   onSplitTransaction,
   onProcessMarketplaceOrder,
+  onProcessEditedOrder,
   showHelpers,
   hintConfigs,
 }: TransactionRowProps) {
@@ -156,6 +158,12 @@ export function TransactionRow({
         (transaction.source_name && m.sourceName === transaction.source_name)
       )
     )
+
+  // Check if this is an edited order (non-marketplace) that can be processed
+  const isEditedOrder = onProcessEditedOrder &&
+    !isMarketplaceOrder &&
+    (transaction as any).order_edited &&
+    (transaction.type === 'charge' || transaction.type === 'credit')
 
   return (
     <React.Fragment>
@@ -358,6 +366,17 @@ export function TransactionRow({
                       title="Process marketplace order (delete CS, create invoice + payment)"
                     >
                       <Store className="h-3 w-3" />
+                    </Button>
+                  )}
+                  {isEditedOrder && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 w-6 p-0 text-amber-600 hover:text-amber-800 hover:bg-amber-50"
+                      onClick={() => onProcessEditedOrder!(transaction)}
+                      title="Process edited order (delete CS, clear payment option, create invoice + payment)"
+                    >
+                      <Pencil className="h-3 w-3" />
                     </Button>
                   )}
                 </>

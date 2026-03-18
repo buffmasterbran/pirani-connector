@@ -13,6 +13,7 @@ import { TransactionFilters } from "./TransactionFilters"
 import { TransactionSummary } from "./TransactionSummary"
 import { AuditLogDialog } from "./AuditLogDialog"
 import { MarketplaceOrderDialog } from "./MarketplaceOrderDialog"
+import { EditedOrderDialog } from "./EditedOrderDialog"
 
 interface TransactionsDialogProps {
   isOpen: boolean
@@ -89,6 +90,8 @@ export function TransactionsDialog({
   const [selectedTransactionForSplit, setSelectedTransactionForSplit] = useState<TransactionItem | null>(null)
   const [marketplaceDialogOpen, setMarketplaceDialogOpen] = useState(false)
   const [selectedMarketplaceTransaction, setSelectedMarketplaceTransaction] = useState<TransactionItem | null>(null)
+  const [editedOrderDialogOpen, setEditedOrderDialogOpen] = useState(false)
+  const [selectedEditedOrderTransaction, setSelectedEditedOrderTransaction] = useState<TransactionItem | null>(null)
 
   // Helper tips toggle — persisted in localStorage
   const [showHelpers, setShowHelpers] = useState(() => {
@@ -774,6 +777,10 @@ export function TransactionsDialog({
               setSelectedMarketplaceTransaction(transaction as any)
               setMarketplaceDialogOpen(true)
             }}
+            onProcessEditedOrder={(transaction) => {
+              setSelectedEditedOrderTransaction(transaction as any)
+              setEditedOrderDialogOpen(true)
+            }}
             showHelpers={showHelpers}
             hintConfigs={hintConfigs}
           />
@@ -862,6 +869,35 @@ export function TransactionsDialog({
         } : null}
         onComplete={() => {
           console.log('🏪 MarketplaceOrderDialog onComplete fired, calling safeRefreshTransactions')
+          safeRefreshTransactions()
+        }}
+      />
+
+      <EditedOrderDialog
+        isOpen={editedOrderDialogOpen}
+        onClose={() => {
+          setEditedOrderDialogOpen(false)
+          setSelectedEditedOrderTransaction(null)
+        }}
+        transaction={selectedEditedOrderTransaction ? {
+          id: selectedEditedOrderTransaction.id,
+          source_order_id: selectedEditedOrderTransaction.source_order_id,
+          order_name: selectedEditedOrderTransaction.order_name || null,
+          amount: typeof selectedEditedOrderTransaction.amount === 'string'
+            ? parseFloat(selectedEditedOrderTransaction.amount)
+            : selectedEditedOrderTransaction.amount || 0,
+          fee: typeof selectedEditedOrderTransaction.fee === 'string'
+            ? parseFloat(selectedEditedOrderTransaction.fee)
+            : selectedEditedOrderTransaction.fee || 0,
+          net: typeof selectedEditedOrderTransaction.net === 'string'
+            ? parseFloat(selectedEditedOrderTransaction.net)
+            : selectedEditedOrderTransaction.net || 0,
+          type: selectedEditedOrderTransaction.type,
+          currency: selectedEditedOrderTransaction.currency || 'USD',
+          processedAt: selectedEditedOrderTransaction.processedAt,
+        } : null}
+        onComplete={() => {
+          console.log('✏️ EditedOrderDialog onComplete fired, calling safeRefreshTransactions')
           safeRefreshTransactions()
         }}
       />

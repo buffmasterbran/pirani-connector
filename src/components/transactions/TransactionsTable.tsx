@@ -17,7 +17,7 @@ import {
   DragOverlay,
   pointerWithin,
 } from "@dnd-kit/core"
-import type { Transaction, DisplayTransaction, TransactionsTableProps, FeesDescriptionOption, TransactionHintConfig } from "./types"
+import type { Transaction, DisplayTransaction, TransactionsTableProps, FeesDescriptionOption } from "./types"
 import { useDragDropTransactions } from "./useDragDropTransactions"
 import { TransactionRow } from "./TransactionRow"
 
@@ -37,6 +37,7 @@ export function TransactionsTable({
   onMergeTransactions,
   onSplitTransaction,
   onProcessMarketplaceOrder,
+  onProcessEditedOrder,
   showHelpers,
   hintConfigs,
 }: TransactionsTableProps) {
@@ -422,6 +423,7 @@ export function TransactionsTable({
               onToggleInclude={onToggleInclude}
               onSplitTransaction={onSplitTransaction}
               onProcessMarketplaceOrder={onProcessMarketplaceOrder}
+              onProcessEditedOrder={onProcessEditedOrder}
               showHelpers={showHelpers}
               hintConfigs={hintConfigs}
             />
