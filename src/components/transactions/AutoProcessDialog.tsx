@@ -23,7 +23,38 @@ import {
 } from "lucide-react"
 import type { AutoProcessOrder } from "./useAutoProcessData"
 
+const NS_BASE = 'https://7913744.app.netsuite.com/app/accounting/transactions'
+
+function nsTransactionUrl(id: string, tranid: string): string {
+  const upper = tranid.toUpperCase()
+  if (upper.startsWith('SO')) return `${NS_BASE}/salesord.nl?id=${id}`
+  if (upper.startsWith('INV')) return `${NS_BASE}/custinvc.nl?id=${id}`
+  if (upper.startsWith('CS')) return `${NS_BASE}/cashsale.nl?id=${id}`
+  if (upper.startsWith('PYMT')) return `${NS_BASE}/custpymt.nl?id=${id}`
+  if (upper.startsWith('RFND')) return `${NS_BASE}/cashrfnd.nl?id=${id}`
+  return `${NS_BASE}/transaction.nl?id=${id}`
+}
+
+function NsLink({ id, tranid }: { id: string; tranid: string }) {
+  return (
+    <a
+      href={nsTransactionUrl(id, tranid)}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center gap-0.5 text-blue-600 hover:text-blue-800 underline underline-offset-2"
+    >
+      {tranid}
+      <ExternalLink className="h-3 w-3" />
+    </a>
+  )
+}
+
 type OrderStatus = 'pending' | 'running' | 'success' | 'error' | 'skipped'
+
+interface NsLinkInfo {
+  id: string
+  tranid: string
+}
 
 interface OrderProgress {
   orderName: string
@@ -32,6 +63,10 @@ interface OrderProgress {
   currentStep?: string
   results: TransactionResult[]
   error?: string
+  nsLinks?: {
+    invoice?: NsLinkInfo
+    payments: NsLinkInfo[]
+  }
 }
 
 interface TransactionResult {
@@ -41,6 +76,7 @@ interface TransactionResult {
   status: 'pending' | 'running' | 'success' | 'error' | 'skipped'
   detail?: string
   error?: string
+  paymentLink?: NsLinkInfo
 }
 
 interface AutoProcessDialogProps {
@@ -155,8 +191,37 @@ export function AutoProcessDialog({
 
         if (data.success) {
           const paymentStep = data.results?.find((r: any) => r.step === 'create-payment' && r.success)
+          const invoiceStep = data.results?.find((r: any) => r.step === 'create-invoice' && r.success)
           const detail = paymentStep?.detail || 'Completed'
-          updateTransaction(orderIdx, txnIdx, { status: 'success', detail })
+
+          // Extract NS link info
+          const paymentLink = paymentStep?.data?.paymentId && paymentStep?.data?.paymentName
+            ? { id: String(paymentStep.data.paymentId), tranid: paymentStep.data.paymentName }
+            : undefined
+
+          // Extract invoice link (from create-invoice step or from check step's state)
+          const checkStep = data.results?.find((r: any) => r.step === 'check' && r.success)
+          const invoiceLink = invoiceStep?.data?.invoiceId && invoiceStep?.data?.invoiceName
+            ? { id: String(invoiceStep.data.invoiceId), tranid: invoiceStep.data.invoiceName }
+            : checkStep?.data?.invoice
+              ? { id: String(checkStep.data.invoice.id), tranid: checkStep.data.invoice.tranid }
+              : undefined
+
+          updateTransaction(orderIdx, txnIdx, { status: 'success', detail, paymentLink })
+
+          // Update order-level NS links
+          setOrderProgress(prev => prev.map((o, i) => {
+            if (i !== orderIdx) return o
+            const existing = o.nsLinks || { payments: [] }
+            return {
+              ...o,
+              nsLinks: {
+                invoice: invoiceLink || existing.invoice,
+                payments: paymentLink ? [...existing.payments, paymentLink] : existing.payments,
+              },
+            }
+          }))
+
           setProcessedCount(prev => prev + 1)
         } else {
           const failedStep = data.results?.find((r: any) => !r.success && r.error)
@@ -476,7 +541,10 @@ export function AutoProcessDialog({
                       ${txnResult.amount.toFixed(2)}
                     </span>
 
-                    {txnResult.detail && (
+                    {txnResult.paymentLink && (
+                      <NsLink id={txnResult.paymentLink.id} tranid={txnResult.paymentLink.tranid} />
+                    )}
+                    {txnResult.detail && !txnResult.paymentLink && (
                       <span className="text-green-600 truncate">{txnResult.detail}</span>
                     )}
                     {txnResult.error && (
@@ -484,6 +552,13 @@ export function AutoProcessDialog({
                     )}
                   </div>
                 ))}
+
+                {/* Order-level NS links (invoice) */}
+                {order.nsLinks?.invoice && order.status === 'success' && (
+                  <div className="ml-6 mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                    INV: <NsLink id={order.nsLinks.invoice.id} tranid={order.nsLinks.invoice.tranid} />
+                  </div>
+                )}
 
                 {/* Order-level error */}
                 {order.error && (

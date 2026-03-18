@@ -922,7 +922,12 @@ export function TransactionsDialog({
           queue={autoProcessMode === 'edited' ? editedQueue : marketplaceQueue}
           isOpen={true}
           onClose={() => setAutoProcessMode(null)}
-          onComplete={() => safeRefreshTransactions()}
+          onComplete={() => {
+            // Direct call — no rAF/setTimeout delay so table updates immediately
+            if (onRefreshTransactions && isMountedRef.current) {
+              onRefreshTransactions()
+            }
+          }}
         />
       )}
     </Dialog>

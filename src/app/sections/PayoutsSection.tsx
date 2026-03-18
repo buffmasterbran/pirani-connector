@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { TransactionsDialog } from '@/components/transactions'
 import { Loader, LoaderWithText } from '@/components/Loader'
-import { Download, Filter, X, Loader2, Search } from 'lucide-react'
+import { Download, Filter, X, Loader2, Search, ExternalLink } from 'lucide-react'
 import JsonView from '@uiw/react-json-view'
 import { safeToLocaleDateString } from '@/lib/dateUtils'
 
@@ -155,6 +155,7 @@ export function PayoutsSection() {
     title: string
     message: string
     isError: boolean
+    depositIds?: string[]
   }>({ isOpen: false, title: '', message: '', isError: false })
 
   // Edit NetSuite ID dialog state
@@ -579,7 +580,7 @@ export function PayoutsSection() {
       // Already fully created
       if (plan.depositId && plan.message === 'Deposit already created') {
         setNetsuitePreviewDialog({ isOpen: false, payoutId: null, previewData: null, isLoading: false })
-        setDepositResultDialog({ isOpen: true, title: 'Deposit Already Created', message: `Deposit ID: ${plan.depositId}`, isError: false })
+        setDepositResultDialog({ isOpen: true, title: 'Deposit Already Created', message: `Deposit ID: ${plan.depositId}`, isError: false, depositIds: [String(plan.depositId)] })
         fetchSavedPayouts()
         return
       }
@@ -628,7 +629,7 @@ export function PayoutsSection() {
         msg += `\n\n${skipped.length} transaction(s) skipped:`
         skipped.forEach((s: any) => { msg += `\n  ${s.tranid || s.id}: ${s.reason}` })
       }
-      setDepositResultDialog({ isOpen: true, title: 'Deposit Created', message: msg, isError: false })
+      setDepositResultDialog({ isOpen: true, title: 'Deposit Created', message: msg, isError: false, depositIds })
       fetchSavedPayouts()
     } catch (error: any) {
       console.error('Error creating NetSuite deposit:', error)
@@ -1671,6 +1672,22 @@ export function PayoutsSection() {
           <pre className="whitespace-pre-wrap text-sm bg-gray-50 border rounded-md p-4 max-h-[60vh] overflow-y-auto select-all cursor-text">
             {depositResultDialog.message}
           </pre>
+          {depositResultDialog.depositIds && depositResultDialog.depositIds.length > 0 && (
+            <div className="flex flex-wrap gap-2 pt-1">
+              {depositResultDialog.depositIds.map((id, i) => (
+                <a
+                  key={id}
+                  href={`https://7913744.app.netsuite.com/app/accounting/transactions/deposit.nl?id=${id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-md text-sm font-medium transition-colors"
+                >
+                  {(depositResultDialog.depositIds?.length ?? 0) > 1 ? `Deposit ${i + 1}` : 'View Deposit'} (#{id})
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              ))}
+            </div>
+          )}
           <div className="flex justify-end gap-2 pt-2">
             <Button
               variant="outline"
