@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Download, Loader2, Database, Search } from "lucide-react"
+import { Download, Loader2, Database, Search, Pencil, Store } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import type { FilterCounts } from "./useTransactionData"
 
@@ -32,6 +32,13 @@ interface TransactionFiltersProps {
   isFetchingNS: boolean
   importProgress: { imported: number; total: number } | null
 
+  // Auto-process
+  editedOrderCount: number
+  marketplaceOrderCount: number
+  isAutoProcessing: boolean
+  onAutoProcessEdited: () => void
+  onAutoProcessMarketplace: () => void
+
   // Handlers
   onImportMissingOrders: () => void
   onFetchMissingNSTransactions: () => void
@@ -53,6 +60,11 @@ export function TransactionFilters({
   calculateFilterCounts,
   missingOrderIdsCount,
   missingNSTransactionsCount,
+  editedOrderCount,
+  marketplaceOrderCount,
+  isAutoProcessing,
+  onAutoProcessEdited,
+  onAutoProcessMarketplace,
   isImporting,
   isFetchingNS,
   importProgress,
@@ -293,31 +305,57 @@ export function TransactionFilters({
               </div>
             )}
           </div>
-          {missingNSTransactionsCount > 0 && (
-            <Button
-              onClick={() => {
-                if (window.confirm(`Sync ${missingNSTransactionsCount} missing NetSuite transactions? This may take a moment.`)) {
-                  onFetchMissingNSTransactions?.()
-                }
-              }}
-              disabled={isFetchingNS}
-              size="sm"
-              variant="outline"
-              className="flex items-center gap-2"
-            >
-              {isFetchingNS ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Fetching...
-                </>
-              ) : (
-                <>
-                  <Database className="h-4 w-4" />
-                  Get Missing NS Transactions
-                </>
-              )}
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            {missingNSTransactionsCount > 0 && (
+              <Button
+                onClick={() => {
+                  if (window.confirm(`Sync ${missingNSTransactionsCount} missing NetSuite transactions? This may take a moment.`)) {
+                    onFetchMissingNSTransactions?.()
+                  }
+                }}
+                disabled={isFetchingNS}
+                size="sm"
+                variant="outline"
+                className="flex items-center gap-2"
+              >
+                {isFetchingNS ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Fetching...
+                  </>
+                ) : (
+                  <>
+                    <Database className="h-4 w-4" />
+                    Get Missing NS Transactions
+                  </>
+                )}
+              </Button>
+            )}
+            {editedOrderCount > 0 && (
+              <Button
+                onClick={onAutoProcessEdited}
+                disabled={isAutoProcessing}
+                size="sm"
+                variant="outline"
+                className="flex items-center gap-2 border-amber-300 text-amber-700 hover:bg-amber-50"
+              >
+                <Pencil className="h-4 w-4" />
+                Process Edited Orders ({editedOrderCount})
+              </Button>
+            )}
+            {marketplaceOrderCount > 0 && (
+              <Button
+                onClick={onAutoProcessMarketplace}
+                disabled={isAutoProcessing}
+                size="sm"
+                variant="outline"
+                className="flex items-center gap-2 border-purple-300 text-purple-700 hover:bg-purple-50"
+              >
+                <Store className="h-4 w-4" />
+                Process Shop Cash ({marketplaceOrderCount})
+              </Button>
+            )}
+          </div>
         </div>
       </div>
       <div className="mt-4 space-y-4">

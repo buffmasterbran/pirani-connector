@@ -14,6 +14,8 @@ import { TransactionSummary } from "./TransactionSummary"
 import { AuditLogDialog } from "./AuditLogDialog"
 import { MarketplaceOrderDialog } from "./MarketplaceOrderDialog"
 import { EditedOrderDialog } from "./EditedOrderDialog"
+import { AutoProcessDialog } from "./AutoProcessDialog"
+import { useAutoProcessData } from "./useAutoProcessData"
 
 interface TransactionsDialogProps {
   isOpen: boolean
@@ -92,6 +94,13 @@ export function TransactionsDialog({
   const [selectedMarketplaceTransaction, setSelectedMarketplaceTransaction] = useState<TransactionItem | null>(null)
   const [editedOrderDialogOpen, setEditedOrderDialogOpen] = useState(false)
   const [selectedEditedOrderTransaction, setSelectedEditedOrderTransaction] = useState<TransactionItem | null>(null)
+  const [autoProcessMode, setAutoProcessMode] = useState<'edited' | 'marketplace' | null>(null)
+
+  // Auto-process queues
+  const { editedQueue, marketplaceQueue, editedCount, marketplaceCount } = useAutoProcessData(
+    localTransactions as any,
+    orderSourceMappings
+  )
 
   // Helper tips toggle — persisted in localStorage
   const [showHelpers, setShowHelpers] = useState(() => {
@@ -745,6 +754,11 @@ export function TransactionsDialog({
           calculateFilterCounts={calculateFilterCounts}
           missingOrderIdsCount={missingOrderIds.length}
           missingNSTransactionsCount={missingNSTransactions.length}
+          editedOrderCount={editedCount}
+          marketplaceOrderCount={marketplaceCount}
+          isAutoProcessing={autoProcessMode !== null}
+          onAutoProcessEdited={() => setAutoProcessMode('edited')}
+          onAutoProcessMarketplace={() => setAutoProcessMode('marketplace')}
           isImporting={isImporting}
           isFetchingNS={isFetchingNS}
           importProgress={importProgress}
@@ -901,6 +915,16 @@ export function TransactionsDialog({
           safeRefreshTransactions()
         }}
       />
+
+      {autoProcessMode && (
+        <AutoProcessDialog
+          mode={autoProcessMode}
+          queue={autoProcessMode === 'edited' ? editedQueue : marketplaceQueue}
+          isOpen={true}
+          onClose={() => setAutoProcessMode(null)}
+          onComplete={() => safeRefreshTransactions()}
+        />
+      )}
     </Dialog>
   )
 }
