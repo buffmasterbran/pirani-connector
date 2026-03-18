@@ -21,9 +21,18 @@ export async function GET(request: NextRequest) {
     // Fetch all payouts from Shopify (paginated)
     const { payouts } = await fetchAllShopifyPayouts()
 
+    // Deduplicate (since_id pagination can return overlapping results)
+    const seen = new Set<string>()
+    const uniquePayouts = payouts.filter(p => {
+      const id = String(p.id)
+      if (seen.has(id)) return false
+      seen.add(id)
+      return true
+    })
+
     // Filter by amount (exact match on cents to avoid floating point issues)
     const targetCents = Math.round(targetAmount * 100)
-    const matches = payouts.filter(p => {
+    const matches = uniquePayouts.filter(p => {
       const payoutCents = Math.round(parseFloat(p.amount) * 100)
       return payoutCents === targetCents
     })
@@ -55,7 +64,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       amount: targetAmount,
-      totalPayoutsFetched: payouts.length,
+      totalPayoutsFetched: uniquePayouts.length,
       matchCount: results.length,
       results,
     })
