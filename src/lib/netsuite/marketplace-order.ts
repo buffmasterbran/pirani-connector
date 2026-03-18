@@ -143,14 +143,29 @@ export async function updateSOForMarketplace(soId: string, taxAmount?: number): 
   // The NS SO's taxtotal is unreliable — FarApp may have pushed it as non-taxable (taxtotal=0)
   const taxTotal = taxAmount ?? 0
 
+  // Check if the SO already has marketplace tax lines (idempotency guard)
+  let alreadyHasTaxLines = false
+  if (taxTotal > 0 && taxItemId) {
+    const soData = await getRecord('salesOrder', soId, true)
+    if (soData.success && soData.data?.item?.items) {
+      alreadyHasTaxLines = soData.data.item.items.some(
+        (item: any) => String(item.item?.id) === String(taxItemId) ||
+          item.description?.includes('Marketplace Tax')
+      )
+      if (alreadyHasTaxLines) {
+        console.log(`⚠️ SO ${soId} already has marketplace tax lines — skipping item add`)
+      }
+    }
+  }
+
   // Build PATCH body
   const patchBody: any = {
     taxItem: { id: taxCodeId },
     paymentoption: null,
   }
 
-  // Add marketplace tax line item if there's tax and we have the item configured
-  if (taxTotal > 0 && taxItemId) {
+  // Add marketplace tax line item if there's tax, we have the item configured, and it's not already there
+  if (taxTotal > 0 && taxItemId && !alreadyHasTaxLines) {
     // Append to existing items. replaceAll: false to add without replacing.
     patchBody.item = {
       items: [{
@@ -175,8 +190,10 @@ export async function updateSOForMarketplace(soId: string, taxAmount?: number): 
   }
 
   const details = [`Set non-taxable tax code (${taxCodeId})`]
-  if (taxTotal > 0 && taxItemId) {
+  if (taxTotal > 0 && taxItemId && !alreadyHasTaxLines) {
     details.push(`Added marketplace tax line: $${taxTotal.toFixed(2)}`)
+  } else if (taxTotal > 0 && taxItemId && alreadyHasTaxLines) {
+    details.push(`Tax line already exists — skipped adding duplicate`)
   } else if (taxTotal > 0 && !taxItemId) {
     details.push(`Warning: Order has $${taxTotal.toFixed(2)} tax but no Marketplace Tax Item configured`)
   } else if (taxTotal === 0) {

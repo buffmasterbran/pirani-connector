@@ -96,7 +96,9 @@ export async function POST(request: NextRequest) {
         })
       }
 
-      return NextResponse.json({ success: true, results, finalState })
+      // Check if the workflow actually completed (no failed steps)
+      const hasFailure = results.some(r => !r.success)
+      return NextResponse.json({ success: !hasFailure, results, finalState })
     }
 
     // --- Individual steps ---

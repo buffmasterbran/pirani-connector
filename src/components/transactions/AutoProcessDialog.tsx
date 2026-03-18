@@ -194,15 +194,15 @@ export function AutoProcessDialog({
           const invoiceStep = data.results?.find((r: any) => r.step === 'create-invoice' && r.success)
           const detail = paymentStep?.detail || 'Completed'
 
-          // Extract NS link info
-          const paymentLink = paymentStep?.data?.paymentId && paymentStep?.data?.paymentName
-            ? { id: String(paymentStep.data.paymentId), tranid: paymentStep.data.paymentName }
+          // Extract NS link info (fall back to ID if tranid lookup failed)
+          const paymentLink = paymentStep?.data?.paymentId
+            ? { id: String(paymentStep.data.paymentId), tranid: paymentStep.data.paymentName || `PYMT${paymentStep.data.paymentId}` }
             : undefined
 
           // Extract invoice link (from create-invoice step or from check step's state)
           const checkStep = data.results?.find((r: any) => r.step === 'check' && r.success)
-          const invoiceLink = invoiceStep?.data?.invoiceId && invoiceStep?.data?.invoiceName
-            ? { id: String(invoiceStep.data.invoiceId), tranid: invoiceStep.data.invoiceName }
+          const invoiceLink = invoiceStep?.data?.invoiceId
+            ? { id: String(invoiceStep.data.invoiceId), tranid: invoiceStep.data.invoiceName || `INV${invoiceStep.data.invoiceId}` }
             : checkStep?.data?.invoice
               ? { id: String(checkStep.data.invoice.id), tranid: checkStep.data.invoice.tranid }
               : undefined
