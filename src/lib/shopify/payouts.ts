@@ -8,6 +8,40 @@ export async function fetchShopifyPayouts(limit = 50) {
   return { payouts: data.payouts ?? [] }
 }
 
+/**
+ * Fetch ALL payouts from Shopify with pagination (for searching by amount, etc.)
+ * Uses since_id pagination to walk through all payouts.
+ */
+export async function fetchAllShopifyPayouts(dateMin?: string): Promise<{ payouts: any[] }> {
+  const creds = await getShopifyCredentials()
+  if (!creds) return { payouts: [] }
+
+  const allPayouts: any[] = []
+  let sinceId: string | null = null
+  const maxPages = 20 // 20 * 250 = 5000 payouts max
+  let page = 0
+
+  while (page < maxPages) {
+    page++
+    const params = new URLSearchParams({ limit: '250' })
+    if (sinceId) params.set('since_id', sinceId)
+    if (dateMin) params.set('date_min', dateMin)
+
+    const data = await shopifyFetch<{ payouts: any[] }>(
+      `/shopify_payments/payouts.json?${params.toString()}`
+    )
+    const payouts = data.payouts ?? []
+    if (payouts.length === 0) break
+
+    allPayouts.push(...payouts)
+    sinceId = String(payouts[payouts.length - 1].id)
+
+    if (payouts.length < 250) break
+  }
+
+  return { payouts: allPayouts }
+}
+
 export async function fetchShopifyPayoutTransactions(payoutId: string) {
   const creds = await getShopifyCredentials()
   if (!creds) return { transactions: [] }

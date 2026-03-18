@@ -94,6 +94,9 @@ export function PayoutsSection() {
   const [isSearchingTransactions, setIsSearchingTransactions] = useState(false)
   const [transactionSearchResults, setTransactionSearchResults] = useState<Map<string, { payoutId: string; matches: any[] }> | null>(null)
   const [isPayoutFiltersOpen, setIsPayoutFiltersOpen] = useState(false)
+  const [shopifyAmountResults, setShopifyAmountResults] = useState<any[] | null>(null)
+  const [isSearchingShopifyAmount, setIsSearchingShopifyAmount] = useState(false)
+  const [importingShopifyPayoutId, setImportingShopifyPayoutId] = useState<string | null>(null)
   const [filters, setFilters] = useState({
     netsuiteStatus: {
       all: true,
@@ -809,6 +812,52 @@ export function PayoutsSection() {
     }
   }
 
+  // Search Shopify for payouts by dollar amount
+  const searchShopifyByAmount = async (amountStr: string) => {
+    const cleaned = amountStr.replace(/[$,\s]/g, '')
+    if (!cleaned || isNaN(parseFloat(cleaned))) return
+
+    setIsSearchingShopifyAmount(true)
+    setShopifyAmountResults(null)
+    try {
+      const res = await fetch(`/api/shopify/payouts/find-by-amount?amount=${encodeURIComponent(cleaned)}`)
+      const data = await res.json()
+      if (res.ok && data.results) {
+        setShopifyAmountResults(data.results)
+      } else {
+        alert(data.error || 'Search failed')
+      }
+    } catch (e) {
+      console.error('Shopify amount search failed:', e)
+      alert('Failed to search Shopify: ' + (e instanceof Error ? e.message : 'Unknown error'))
+    } finally {
+      setIsSearchingShopifyAmount(false)
+    }
+  }
+
+  // Import a specific payout from Shopify by ID (used by amount search results)
+  const importShopifyPayout = async (payoutId: string) => {
+    setImportingShopifyPayoutId(payoutId)
+    try {
+      const res = await fetch(`/api/shopify/payouts?payoutId=${encodeURIComponent(payoutId)}`)
+      const data = await res.json()
+      if (!res.ok || !data.payouts?.length) {
+        alert(`Could not fetch payout ${payoutId} from Shopify`)
+        return
+      }
+      // Save it using the existing flow
+      await saveNewPayoutsOnly(data.payouts)
+      // Update the search result to show it's now imported
+      setShopifyAmountResults(prev =>
+        prev?.map(r => r.id === payoutId ? { ...r, inDatabase: true } : r) ?? null
+      )
+    } catch (e) {
+      alert('Import failed: ' + (e instanceof Error ? e.message : 'Unknown error'))
+    } finally {
+      setImportingShopifyPayoutId(null)
+    }
+  }
+
   // --- Effects ---
 
   useEffect(() => {
@@ -957,6 +1006,10 @@ export function PayoutsSection() {
                           if (transactionSearchResults !== null) {
                             setTransactionSearchResults(null)
                           }
+                          // Clear Shopify amount results when search term changes
+                          if (shopifyAmountResults !== null) {
+                            setShopifyAmountResults(null)
+                          }
                         }}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
@@ -1096,8 +1149,111 @@ export function PayoutsSection() {
               No payouts found. Click &quot;Import All Payouts&quot; or &quot;Import by ID&quot; to get started.
             </div>
           ) : sortedPayouts.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              No payouts match the current filters. Try adjusting your filter criteria.
+            <div className="py-8 space-y-4">
+              <div className="text-center text-muted-foreground">
+                No payouts match the current filters.
+              </div>
+
+              {/* Offer to search Shopify if the search term looks like a dollar amount */}
+              {payoutSearchTerm.trim() && /^\$?[\d,]+\.\d{1,2}$/.test(payoutSearchTerm.trim()) && (
+                <div className="max-w-lg mx-auto">
+                  {shopifyAmountResults === null && !isSearchingShopifyAmount ? (
+                    <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg text-center">
+                      <p className="text-sm text-blue-800 mb-3">
+                        Search Shopify for payouts with amount <span className="font-semibold">${parseFloat(payoutSearchTerm.replace(/[$,\s]/g, '')).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>?
+                      </p>
+                      <Button
+                        size="sm"
+                        onClick={() => searchShopifyByAmount(payoutSearchTerm)}
+                        className="flex items-center gap-2"
+                      >
+                        <Search className="h-4 w-4" />
+                        Search Shopify
+                      </Button>
+                    </div>
+                  ) : isSearchingShopifyAmount ? (
+                    <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg text-center">
+                      <div className="flex items-center justify-center gap-2 text-sm text-blue-700">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Searching all Shopify payouts...
+                      </div>
+                    </div>
+                  ) : shopifyAmountResults && shopifyAmountResults.length === 0 ? (
+                    <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg text-center">
+                      <p className="text-sm text-muted-foreground">No payouts found in Shopify for that amount.</p>
+                    </div>
+                  ) : shopifyAmountResults && (
+                    <div className="space-y-2">
+                      <p className="text-sm text-muted-foreground text-center">
+                        Found {shopifyAmountResults.length} matching payout{shopifyAmountResults.length !== 1 ? 's' : ''} in Shopify:
+                      </p>
+                      {shopifyAmountResults.map((payout: any) => (
+                        <div
+                          key={payout.id}
+                          className={`p-3 rounded-lg border flex items-center justify-between ${
+                            payout.inDatabase ? 'bg-green-50 border-green-200' : 'bg-white border-gray-200'
+                          }`}
+                        >
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <a
+                                href={`https://admin.shopify.com/store/pirani-life/settings/payments/shopify-payments/payouts/${payout.id}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-sm font-medium text-blue-600 hover:underline flex items-center gap-0.5"
+                              >
+                                #{payout.id}
+                                <ExternalLink className="h-3 w-3" />
+                              </a>
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                                payout.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                              }`}>
+                                {payout.status}
+                              </span>
+                              {payout.inDatabase && (
+                                <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-semibold">In DB</span>
+                              )}
+                              {payout.netsuiteDepositId && (
+                                <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded text-[10px] font-semibold">
+                                  NS: {payout.netsuiteDepositId}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              {new Date(payout.date + 'T00:00:00').toLocaleDateString()} &middot; {payout.currency} {payout.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {payout.inDatabase ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => fetchTransactions(payout.id)}
+                              >
+                                View
+                              </Button>
+                            ) : (
+                              <Button
+                                size="sm"
+                                onClick={() => importShopifyPayout(payout.id)}
+                                disabled={importingShopifyPayoutId !== null}
+                                className="flex items-center gap-1"
+                              >
+                                {importingShopifyPayoutId === payout.id ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Download className="h-3 w-3" />
+                                )}
+                                Import
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ) : (
             <div className="space-y-3">
