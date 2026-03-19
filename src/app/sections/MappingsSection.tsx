@@ -274,6 +274,11 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
       isActive: boolean
     } | null
   }>({ isOpen: false, rule: null })
+  const [conditionOptions, setConditionOptions] = useState<{
+    types: string[]
+    adjustmentReasons: string[]
+    sourceNames: string[]
+  }>({ types: [], adjustmentReasons: [], sourceNames: [] })
 
   // Local delete confirm dialog
   const [deleteConfirmDialog, setDeleteConfirmDialog] = useState<{isOpen: boolean, itemType: string, itemName: string, itemId: string}>({
@@ -746,6 +751,9 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
       const result = await response.json()
       if (result.success && result.data) {
         setAutoAssignRules(result.data)
+        if (result.conditionOptions) {
+          setConditionOptions(result.conditionOptions)
+        }
       }
     } catch (error) {
       console.error('Error fetching auto-assign rules:', error)
@@ -3580,34 +3588,51 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="__any__">Any</SelectItem>
-                        <SelectItem value="charge">charge</SelectItem>
-                        <SelectItem value="credit">credit</SelectItem>
-                        <SelectItem value="debit">debit</SelectItem>
-                        <SelectItem value="refund">refund</SelectItem>
+                        {conditionOptions.types.map(t => (
+                          <SelectItem key={t} value={t}>
+                            {t.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
                   <div>
                     <label className="text-sm font-medium text-slate-700">Adjustment Reason</label>
-                    <Input
-                      value={autoAssignEditDialog.rule.conditionAdjustmentReason}
-                      onChange={(e) => setAutoAssignEditDialog(prev => ({
+                    <Select
+                      value={autoAssignEditDialog.rule.conditionAdjustmentReason || '__any__'}
+                      onValueChange={(val) => setAutoAssignEditDialog(prev => ({
                         ...prev,
-                        rule: prev.rule ? { ...prev.rule, conditionAdjustmentReason: e.target.value } : null
+                        rule: prev.rule ? { ...prev.rule, conditionAdjustmentReason: val === '__any__' ? '' : val } : null
                       }))}
-                      placeholder="e.g. tax_adjustment"
-                    />
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__any__">Any</SelectItem>
+                        {conditionOptions.adjustmentReasons.map(r => (
+                          <SelectItem key={r} value={r}>
+                            {r.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div>
                     <label className="text-sm font-medium text-slate-700">Source Name</label>
-                    <Input
-                      value={autoAssignEditDialog.rule.conditionSourceName}
-                      onChange={(e) => setAutoAssignEditDialog(prev => ({
+                    <Select
+                      value={autoAssignEditDialog.rule.conditionSourceName || '__any__'}
+                      onValueChange={(val) => setAutoAssignEditDialog(prev => ({
                         ...prev,
-                        rule: prev.rule ? { ...prev.rule, conditionSourceName: e.target.value } : null
+                        rule: prev.rule ? { ...prev.rule, conditionSourceName: val === '__any__' ? '' : val } : null
                       }))}
-                      placeholder="e.g. Shop App"
-                    />
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__any__">Any</SelectItem>
+                        {conditionOptions.sourceNames.map(s => (
+                          <SelectItem key={s} value={s}>{s}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">

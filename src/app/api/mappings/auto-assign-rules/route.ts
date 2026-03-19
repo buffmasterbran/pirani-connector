@@ -11,6 +11,28 @@ export async function GET() {
       include: { targetMapping: true },
     })
 
+    // Fetch distinct values for condition dropdowns
+    const [distinctTypes, distinctReasons, distinctSources] = await Promise.all([
+      prisma.payoutTransaction.findMany({
+        where: { type: { not: null } },
+        select: { type: true },
+        distinct: ['type'],
+        orderBy: { type: 'asc' },
+      }),
+      prisma.payoutTransaction.findMany({
+        where: { adjustmentReason: { not: null } },
+        select: { adjustmentReason: true },
+        distinct: ['adjustmentReason'],
+        orderBy: { adjustmentReason: 'asc' },
+      }),
+      prisma.orderLine.findMany({
+        where: { sourceName: { not: null } },
+        select: { sourceName: true },
+        distinct: ['sourceName'],
+        orderBy: { sourceName: 'asc' },
+      }),
+    ])
+
     return NextResponse.json({
       success: true,
       data: rules.map(r => ({
@@ -25,6 +47,11 @@ export async function GET() {
         priority: r.priority,
         isActive: r.isActive,
       })),
+      conditionOptions: {
+        types: distinctTypes.map(t => t.type!),
+        adjustmentReasons: distinctReasons.map(r => r.adjustmentReason!),
+        sourceNames: distinctSources.map(s => s.sourceName!),
+      },
     })
   } catch (error) {
     return handleApiError(error, 'GET autoAssignRules')
