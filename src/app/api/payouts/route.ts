@@ -63,7 +63,7 @@ export async function GET() {
                AND ("netsuiteTransactionId" IS NULL OR "netsuiteTransactionId" = '')
                AND "parentTransactionId" IS NULL
            )::int AS "missingNsCount",
-           COALESCE(SUM("net") FILTER (WHERE "parentTransactionId" IS NULL), 0)::float AS "shopifyNet",
+           COALESCE(SUM("net") FILTER (WHERE "includeInNetSuite" = true AND "parentTransactionId" IS NULL), 0)::float AS "shopifyNet",
            COALESCE(SUM(CASE
              WHEN "netsuiteAmount" IS NOT NULL THEN "netsuiteAmount"
              ELSE "amount"
