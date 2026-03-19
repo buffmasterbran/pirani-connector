@@ -144,15 +144,17 @@ export function AmountDescriptionSelect({
   onUpdateAmountDescription,
   onToggleInclude,
 }: AmountDescriptionSelectProps) {
+  // Show value from whichever description field is populated (auto-assign may set any of them)
+  const activeDescription = transaction.amountDescription || transaction.otherFeesDescription || transaction.feeDescription
   const value = resolveSelectValue(
-    transaction.amountDescription,
+    activeDescription,
     transaction.includeInNetSuite,
     feesDescriptionOptions
   )
 
   return (
     <DescriptionSelectDropdown
-      selectKey={`amount-desc-${transaction.id}-${transaction.amountDescription || 'none'}`}
+      selectKey={`amount-desc-${transaction.id}-${activeDescription || 'none'}`}
       value={value}
       onValueChange={async (val) => {
         await handleDescriptionChange(
