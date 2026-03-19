@@ -15,6 +15,11 @@ export async function runAutoAssignRules(payoutId: string): Promise<AutoAssignRe
 
   if (rules.length === 0) return { applied: 0, skipped: 0, details: [] }
 
+  // Load order source mappings to resolve friendly names to appId/sourceName
+  const orderSourceMappings = await prisma.orderSourceMapping.findMany({
+    where: { isActive: true },
+  })
+
   const transactions = await prisma.payoutTransaction.findMany({
     where: { payoutId },
     include: { orderLine: { select: { sourceName: true, appId: true } } },
@@ -37,7 +42,7 @@ export async function runAutoAssignRules(payoutId: string): Promise<AutoAssignRe
     }
 
     // Find first matching rule (priority order)
-    const matchedRule = rules.find(rule => matchesRule(rule, txn))
+    const matchedRule = rules.find(rule => matchesRule(rule, txn, orderSourceMappings))
 
     if (matchedRule) {
       // Store the same value format as manual dropdown selection:
@@ -75,13 +80,21 @@ export async function runAutoAssignRules(payoutId: string): Promise<AutoAssignRe
 
 function matchesRule(
   rule: { conditionType: string | null; conditionAdjustmentReason: string | null; conditionSourceName: string | null },
-  txn: { type: string | null; adjustmentReason: string | null; orderLine?: { sourceName: string | null; appId: number | null } | null }
+  txn: { type: string | null; adjustmentReason: string | null; orderLine?: { sourceName: string | null; appId: number | null } | null },
+  orderSourceMappings: Array<{ appId: number | null; sourceName: string | null; friendlyName: string }>
 ): boolean {
   if (rule.conditionType && txn.type !== rule.conditionType) return false
   if (rule.conditionAdjustmentReason && txn.adjustmentReason !== rule.conditionAdjustmentReason) return false
   if (rule.conditionSourceName) {
-    const sourceName = txn.orderLine?.sourceName
-    if (sourceName !== rule.conditionSourceName) return false
+    // conditionSourceName stores the friendlyName — resolve via order source mappings
+    const matching = orderSourceMappings.filter(m => m.friendlyName === rule.conditionSourceName)
+    const txnAppId = txn.orderLine?.appId
+    const txnSourceName = txn.orderLine?.sourceName
+    const sourceMatches = matching.some(m =>
+      (m.appId && txnAppId && m.appId === txnAppId) ||
+      (m.sourceName && txnSourceName && m.sourceName === txnSourceName)
+    )
+    if (!sourceMatches) return false
   }
   return true
 }

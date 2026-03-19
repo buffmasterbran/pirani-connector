@@ -3617,7 +3617,7 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
                     </Select>
                   </div>
                   <div>
-                    <label className="text-sm font-medium text-slate-700">Source Name</label>
+                    <label className="text-sm font-medium text-slate-700">Order Source</label>
                     <Select
                       value={autoAssignEditDialog.rule.conditionSourceName || '__any__'}
                       onValueChange={(val) => setAutoAssignEditDialog(prev => ({
@@ -3628,8 +3628,8 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="__any__">Any</SelectItem>
-                        {conditionOptions.sourceNames.map(s => (
-                          <SelectItem key={s} value={s}>{s}</SelectItem>
+                        {orderSourceMappings.filter(m => m.isActive).map(m => (
+                          <SelectItem key={m.id} value={m.friendlyName}>{m.friendlyName}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
