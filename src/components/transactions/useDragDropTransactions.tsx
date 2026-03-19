@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button"
 import { TableRow } from "@/components/ui/table"
 import { Trash2, GripVertical } from "lucide-react"
 import React from "react"
-import type { Transaction } from "./types"
+import { type Transaction, hasDropdownAssignment } from "./types"
 
 // Helper function to get NetSuite URL based on transaction type
 export function getNetSuiteUrl(transactionId: string, transactionType: string | undefined, netsuiteTransactionName?: string | null, netsuiteTransactionType?: string | null): string {
@@ -218,8 +218,7 @@ export function DroppableRow({
                               transaction.netsuiteTransactionName === null ||
                               transaction.netsuiteTransactionName === ''
 
-  const hasDropdownSelection = !!(transaction.amountDescription ||
-                                  transaction.otherFeesDescription)
+  const hasDropdownSelection = hasDropdownAssignment(transaction)
 
   const isIgnored = transaction.includeInNetSuite === false
 

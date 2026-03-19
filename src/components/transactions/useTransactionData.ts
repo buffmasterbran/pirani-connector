@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react"
+import { hasDropdownAssignment } from "./types"
 
 export interface TransactionItem {
   id: string
@@ -111,7 +112,7 @@ export function useTransactionData({
   const isProblematicTransaction = (t: TransactionItem): boolean => {
     // If transaction is resolved (ignored or has dropdown selection), it's not problematic
     const isResolved = t.includeInNetSuite === false ||
-                      !!(t.amountDescription || t.feeDescription || t.otherFeesDescription)
+                      hasDropdownAssignment(t)
     if (isResolved) return false
 
     // Missing NetSuite ID
@@ -272,8 +273,7 @@ export function useTransactionData({
   // or are excluded/ignored
   const missingNSTransactions = localTransactions.filter(
     t => t.order_name && t.order_name !== '—' && !t.netsuiteTransactionId
-      && !(t.amountDescription || t.feeDescription || t.otherFeesDescription)
-      && t.includeInNetSuite !== false
+      && !hasDropdownAssignment(t) && t.includeInNetSuite !== false
   )
 
   // Separate top-level (Shopify-visible) from child (split) transactions

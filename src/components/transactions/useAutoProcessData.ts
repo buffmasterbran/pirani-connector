@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import type { OrderSourceMapping } from './types'
+import { type OrderSourceMapping, hasDropdownAssignment } from './types'
 
 interface TransactionLike {
   id: string
@@ -12,6 +12,8 @@ interface TransactionLike {
   netsuiteTransactionId?: string | null
   includeInNetSuite?: boolean
   amountDescription?: string | null
+  feeDescription?: string | null
+  otherFeesDescription?: string | null
   parentTransactionId?: string | null
   adjustmentReason?: string | null
   order_edited?: boolean
@@ -121,7 +123,7 @@ export function useAutoProcessData(
     const eligible = transactions.filter(t =>
       !t.netsuiteTransactionId &&
       t.includeInNetSuite !== false &&
-      !t.amountDescription &&
+      !hasDropdownAssignment(t) &&
       !t.parentTransactionId &&
       (t.type === 'charge' || t.type === 'credit')
     )

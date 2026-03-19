@@ -33,6 +33,11 @@ export interface Transaction {
   }>
 }
 
+/** Returns true if the transaction has any dropdown mapping assigned */
+export function hasDropdownAssignment(t: Pick<Transaction, 'amountDescription' | 'feeDescription' | 'otherFeesDescription'>): boolean {
+  return !!(t.amountDescription || t.feeDescription || t.otherFeesDescription)
+}
+
 export interface OrderSourceMapping {
   id: number
   appId: number | null

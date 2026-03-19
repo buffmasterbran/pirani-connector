@@ -2,6 +2,7 @@
 
 import { Check, X } from "lucide-react"
 import type { GroupedFeeItem, TransactionItem } from "./useTransactionData"
+import { hasDropdownAssignment } from "./types"
 
 interface TransactionSummaryProps {
   totalCharges: number
@@ -110,7 +111,7 @@ export function TransactionSummary({
               // Count included transactions that should have NS IDs but don't
               // (exclude payout-type transactions which never get NS IDs)
               const missingNS = includedTransactionsForNetSuite.filter(
-                t => !t.netsuiteTransactionId && t.type !== 'payout' && !t.amountDescription
+                t => !t.netsuiteTransactionId && t.type !== 'payout' && !hasDropdownAssignment(t)
               )
               const amountsMatch = Math.abs(totalNetSuiteAmount - totalShopifyAmount) < 0.01
               const allMapped = missingNS.length === 0
