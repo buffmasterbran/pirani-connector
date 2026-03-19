@@ -272,7 +272,8 @@ export function useTransactionData({
   // or are excluded/ignored
   const missingNSTransactions = localTransactions.filter(
     t => t.order_name && t.order_name !== '—' && !t.netsuiteTransactionId
-      && !t.dropdownSelection && t.includeInNetSuite !== false
+      && !(t.amountDescription || t.feeDescription || t.otherFeesDescription)
+      && t.includeInNetSuite !== false
   )
 
   // Separate top-level (Shopify-visible) from child (split) transactions
