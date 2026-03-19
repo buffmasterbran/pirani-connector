@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Download, Loader2, Database, Search, Pencil, Store } from "lucide-react"
+import { Download, Loader2, Database, Search, Pencil, Store, Wand2 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import type { FilterCounts } from "./useTransactionData"
 
@@ -39,6 +39,10 @@ interface TransactionFiltersProps {
   onAutoProcessEdited: () => void
   onAutoProcessMarketplace: () => void
 
+  // Auto-assign
+  isAutoAssigning: boolean
+  onAutoAssign: () => void
+
   // Handlers
   onImportMissingOrders: () => void
   onFetchMissingNSTransactions: () => void
@@ -65,6 +69,8 @@ export function TransactionFilters({
   isAutoProcessing,
   onAutoProcessEdited,
   onAutoProcessMarketplace,
+  isAutoAssigning,
+  onAutoAssign,
   isImporting,
   isFetchingNS,
   importProgress,
@@ -331,6 +337,25 @@ export function TransactionFilters({
                 )}
               </Button>
             )}
+            <Button
+              onClick={onAutoAssign}
+              disabled={isAutoAssigning}
+              size="sm"
+              variant="outline"
+              className="flex items-center gap-2"
+            >
+              {isAutoAssigning ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Assigning...
+                </>
+              ) : (
+                <>
+                  <Wand2 className="h-4 w-4" />
+                  Auto-Assign
+                </>
+              )}
+            </Button>
             {editedOrderCount > 0 && (
               <Button
                 onClick={onAutoProcessEdited}

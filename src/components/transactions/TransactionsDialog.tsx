@@ -95,6 +95,7 @@ export function TransactionsDialog({
   const [editedOrderDialogOpen, setEditedOrderDialogOpen] = useState(false)
   const [selectedEditedOrderTransaction, setSelectedEditedOrderTransaction] = useState<TransactionItem | null>(null)
   const [autoProcessMode, setAutoProcessMode] = useState<'edited' | 'marketplace' | null>(null)
+  const [isAutoAssigning, setIsAutoAssigning] = useState(false)
 
   // Auto-process queues
   const { editedQueue, marketplaceQueue, editedCount, marketplaceCount } = useAutoProcessData(
@@ -150,6 +151,35 @@ export function TransactionsDialog({
         }
       }, 0)
     })
+  }
+
+  // --- Auto-assign handler ---
+  const handleAutoAssign = async () => {
+    if (!payoutId) return
+    setIsAutoAssigning(true)
+    try {
+      const res = await fetch('/api/payouts/auto-assign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payoutId }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        const msg = data.applied > 0
+          ? `Auto-assigned ${data.applied} transaction${data.applied !== 1 ? 's' : ''} (${data.skipped} skipped)`
+          : `No transactions to auto-assign (${data.skipped} already assigned)`
+        alert(msg)
+        if (data.applied > 0) {
+          safeRefreshTransactions()
+        }
+      } else {
+        alert(`Auto-assign failed: ${data.error || 'Unknown error'}`)
+      }
+    } catch (err) {
+      alert(`Auto-assign error: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    } finally {
+      setIsAutoAssigning(false)
+    }
   }
 
   // --- Import / Fetch handlers (passed to TransactionFilters) ---
@@ -759,6 +789,8 @@ export function TransactionsDialog({
           isAutoProcessing={autoProcessMode !== null}
           onAutoProcessEdited={() => setAutoProcessMode('edited')}
           onAutoProcessMarketplace={() => setAutoProcessMode('marketplace')}
+          isAutoAssigning={isAutoAssigning}
+          onAutoAssign={handleAutoAssign}
           isImporting={isImporting}
           isFetchingNS={isFetchingNS}
           importProgress={importProgress}

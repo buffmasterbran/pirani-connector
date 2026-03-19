@@ -247,6 +247,34 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
     mapping: null
   })
 
+  // Auto-assign rules state
+  const [autoAssignRules, setAutoAssignRules] = useState<Array<{
+    id: number
+    name: string
+    conditionType: string | null
+    conditionAdjustmentReason: string | null
+    conditionSourceName: string | null
+    targetField: string
+    targetMappingId: number
+    targetMappingDescription: string
+    priority: number
+    isActive: boolean
+  }>>([])
+  const [autoAssignEditDialog, setAutoAssignEditDialog] = useState<{
+    isOpen: boolean
+    rule: {
+      id?: number
+      name: string
+      conditionType: string
+      conditionAdjustmentReason: string
+      conditionSourceName: string
+      targetField: string
+      targetMappingId: string
+      priority: number
+      isActive: boolean
+    } | null
+  }>({ isOpen: false, rule: null })
+
   // Local delete confirm dialog
   const [deleteConfirmDialog, setDeleteConfirmDialog] = useState<{isOpen: boolean, itemType: string, itemName: string, itemId: string}>({
     isOpen: false,
@@ -709,6 +737,18 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
       }
     } catch (error) {
       console.error('Error fetching payout mappings:', error)
+    }
+  }
+
+  const fetchAutoAssignRules = async () => {
+    try {
+      const response = await fetch('/api/mappings/auto-assign-rules')
+      const result = await response.json()
+      if (result.success && result.data) {
+        setAutoAssignRules(result.data)
+      }
+    } catch (error) {
+      console.error('Error fetching auto-assign rules:', error)
     }
   }
 
@@ -1486,6 +1526,7 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
     fetchOrderItemMappings()
     fetchCustomerMappings()
     fetchPayoutMappings()
+    fetchAutoAssignRules()
     fetchOrderSourceMappings()
   }, [])
 
@@ -3417,6 +3458,252 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
                   >
                     {payoutMappingEditDialog.mapping!.id === 0 ? 'Create' : 'Save'}
                   </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Auto-Assign Rules Card */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>Auto-Assign Rules</CardTitle>
+            <Button onClick={() => setAutoAssignEditDialog({
+              isOpen: true,
+              rule: { name: '', conditionType: '', conditionAdjustmentReason: '', conditionSourceName: '', targetField: 'otherFeesDescription', targetMappingId: '', priority: 0, isActive: true }
+            })}>
+              + Add Rule
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-slate-500 mb-4">
+              Rules auto-assign dropdown mappings to transactions when a payout is imported. First matching rule wins (by priority).
+            </p>
+            {autoAssignRules.length === 0 ? (
+              <p className="text-center text-slate-400 py-4">No auto-assign rules configured yet.</p>
+            ) : (
+              <div className="border rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-medium text-slate-600">Priority</th>
+                      <th className="px-3 py-2 text-left font-medium text-slate-600">Name</th>
+                      <th className="px-3 py-2 text-left font-medium text-slate-600">Conditions</th>
+                      <th className="px-3 py-2 text-left font-medium text-slate-600">Target</th>
+                      <th className="px-3 py-2 text-left font-medium text-slate-600">Active</th>
+                      <th className="px-3 py-2 text-right font-medium text-slate-600">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {autoAssignRules.map(rule => (
+                      <tr key={rule.id} className={rule.isActive ? '' : 'opacity-50'}>
+                        <td className="px-3 py-2">{rule.priority}</td>
+                        <td className="px-3 py-2 font-medium">{rule.name}</td>
+                        <td className="px-3 py-2 text-slate-600">
+                          {[
+                            rule.conditionType && `type=${rule.conditionType}`,
+                            rule.conditionAdjustmentReason && `reason=${rule.conditionAdjustmentReason}`,
+                            rule.conditionSourceName && `source=${rule.conditionSourceName}`,
+                          ].filter(Boolean).join(', ') || 'Any'}
+                        </td>
+                        <td className="px-3 py-2">
+                          <span className="text-xs bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded">
+                            {rule.targetField === 'amountDescription' ? 'Amount' : rule.targetField === 'feeDescription' ? 'Fee' : 'Other Fees'}
+                          </span>
+                          {' → '}
+                          {rule.targetMappingDescription}
+                        </td>
+                        <td className="px-3 py-2">{rule.isActive ? '✓' : '—'}</td>
+                        <td className="px-3 py-2 text-right">
+                          <Button variant="ghost" size="sm" onClick={() => setAutoAssignEditDialog({
+                            isOpen: true,
+                            rule: {
+                              id: rule.id,
+                              name: rule.name,
+                              conditionType: rule.conditionType || '',
+                              conditionAdjustmentReason: rule.conditionAdjustmentReason || '',
+                              conditionSourceName: rule.conditionSourceName || '',
+                              targetField: rule.targetField,
+                              targetMappingId: String(rule.targetMappingId),
+                              priority: rule.priority,
+                              isActive: rule.isActive,
+                            }
+                          })}>Edit</Button>
+                          <Button variant="ghost" size="sm" className="text-red-600" onClick={async () => {
+                            if (!confirm('Delete this rule?')) return
+                            await fetch(`/api/mappings/auto-assign-rules/${rule.id}`, { method: 'DELETE' })
+                            fetchAutoAssignRules()
+                          }}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Auto-Assign Rule Edit Dialog */}
+        <Dialog open={autoAssignEditDialog.isOpen} onOpenChange={(open) => {
+          if (!open) setAutoAssignEditDialog({ isOpen: false, rule: null })
+        }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{autoAssignEditDialog.rule?.id ? 'Edit' : 'Add'} Auto-Assign Rule</DialogTitle>
+            </DialogHeader>
+            {autoAssignEditDialog.rule && (
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-slate-700">Name</label>
+                  <Input
+                    value={autoAssignEditDialog.rule.name}
+                    onChange={(e) => setAutoAssignEditDialog(prev => ({
+                      ...prev,
+                      rule: prev.rule ? { ...prev.rule, name: e.target.value } : null
+                    }))}
+                    placeholder="e.g. Tax Adjustments → E-Com Tax Offset"
+                  />
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-sm font-medium text-slate-700">Type</label>
+                    <Select
+                      value={autoAssignEditDialog.rule.conditionType || '__any__'}
+                      onValueChange={(val) => setAutoAssignEditDialog(prev => ({
+                        ...prev,
+                        rule: prev.rule ? { ...prev.rule, conditionType: val === '__any__' ? '' : val } : null
+                      }))}
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__any__">Any</SelectItem>
+                        <SelectItem value="charge">charge</SelectItem>
+                        <SelectItem value="credit">credit</SelectItem>
+                        <SelectItem value="debit">debit</SelectItem>
+                        <SelectItem value="refund">refund</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-slate-700">Adjustment Reason</label>
+                    <Input
+                      value={autoAssignEditDialog.rule.conditionAdjustmentReason}
+                      onChange={(e) => setAutoAssignEditDialog(prev => ({
+                        ...prev,
+                        rule: prev.rule ? { ...prev.rule, conditionAdjustmentReason: e.target.value } : null
+                      }))}
+                      placeholder="e.g. tax_adjustment"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-slate-700">Source Name</label>
+                    <Input
+                      value={autoAssignEditDialog.rule.conditionSourceName}
+                      onChange={(e) => setAutoAssignEditDialog(prev => ({
+                        ...prev,
+                        rule: prev.rule ? { ...prev.rule, conditionSourceName: e.target.value } : null
+                      }))}
+                      placeholder="e.g. Shop App"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-sm font-medium text-slate-700">Target Field</label>
+                    <Select
+                      value={autoAssignEditDialog.rule.targetField}
+                      onValueChange={(val) => setAutoAssignEditDialog(prev => ({
+                        ...prev,
+                        rule: prev.rule ? { ...prev.rule, targetField: val } : null
+                      }))}
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="amountDescription">Amount Description</SelectItem>
+                        <SelectItem value="feeDescription">Fee Description</SelectItem>
+                        <SelectItem value="otherFeesDescription">Other Fees Description</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-slate-700">Target Mapping</label>
+                    <Select
+                      value={autoAssignEditDialog.rule.targetMappingId}
+                      onValueChange={(val) => setAutoAssignEditDialog(prev => ({
+                        ...prev,
+                        rule: prev.rule ? { ...prev.rule, targetMappingId: val } : null
+                      }))}
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {payoutMappings
+                          .filter(m => m.mappingType === 'fees_description' && m.isActive)
+                          .map(m => (
+                            <SelectItem key={m.id} value={String(m.id)}>
+                              {m.description || m.netsuiteId}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-sm font-medium text-slate-700">Priority (lower = first)</label>
+                    <Input
+                      type="number"
+                      value={autoAssignEditDialog.rule.priority}
+                      onChange={(e) => setAutoAssignEditDialog(prev => ({
+                        ...prev,
+                        rule: prev.rule ? { ...prev.rule, priority: parseInt(e.target.value) || 0 } : null
+                      }))}
+                    />
+                  </div>
+                  <div className="flex items-end gap-2 pb-1">
+                    <Checkbox
+                      checked={autoAssignEditDialog.rule.isActive}
+                      onCheckedChange={(checked) => setAutoAssignEditDialog(prev => ({
+                        ...prev,
+                        rule: prev.rule ? { ...prev.rule, isActive: !!checked } : null
+                      }))}
+                    />
+                    <label className="text-sm font-medium text-slate-700">Active</label>
+                  </div>
+                </div>
+                <div className="flex justify-end space-x-2 pt-4">
+                  <Button variant="outline" onClick={() => setAutoAssignEditDialog({ isOpen: false, rule: null })}>Cancel</Button>
+                  <Button onClick={async () => {
+                    const rule = autoAssignEditDialog.rule
+                    if (!rule || !rule.name || !rule.targetMappingId) return
+                    const body = {
+                      name: rule.name,
+                      conditionType: rule.conditionType || null,
+                      conditionAdjustmentReason: rule.conditionAdjustmentReason || null,
+                      conditionSourceName: rule.conditionSourceName || null,
+                      targetField: rule.targetField,
+                      targetMappingId: rule.targetMappingId,
+                      priority: rule.priority,
+                      isActive: rule.isActive,
+                    }
+                    if (rule.id) {
+                      await fetch(`/api/mappings/auto-assign-rules/${rule.id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body),
+                      })
+                    } else {
+                      await fetch('/api/mappings/auto-assign-rules', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body),
+                      })
+                    }
+                    setAutoAssignEditDialog({ isOpen: false, rule: null })
+                    fetchAutoAssignRules()
+                  }}>Save</Button>
                 </div>
               </div>
             )}

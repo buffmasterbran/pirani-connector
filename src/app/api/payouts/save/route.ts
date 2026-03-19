@@ -299,6 +299,17 @@ export async function POST(request: NextRequest) {
       })
     }
 
+    // Run auto-assign rules on all transactions (including split children)
+    try {
+      const { runAutoAssignRules } = await import('@/lib/auto-assign')
+      const autoResult = await runAutoAssignRules(payoutId)
+      if (autoResult.applied > 0) {
+        console.log(`🏷️ Auto-assign: applied ${autoResult.applied} rules, skipped ${autoResult.skipped}`)
+      }
+    } catch (autoErr) {
+      console.warn('⚠️ Auto-assign failed (non-fatal):', autoErr)
+    }
+
     return NextResponse.json({ success: true, payoutId, transactionsProcessed })
   } catch (error) {
     console.error('❌ Detailed error saving payout:', error)

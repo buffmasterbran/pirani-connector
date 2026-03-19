@@ -132,10 +132,37 @@ model PayoutMapping {
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 
+  autoAssignRules         AutoAssignRule[]
+
   @@index([mappingType])
   @@index([isActive])
   @@index([isDefaultDepositAccount])
   @@index([isDefaultFeesAccount])
+}
+
+model AutoAssignRule {
+  id                        Int      @id @default(autoincrement())
+  name                      String   // e.g. "Tax Adjustments → E-Com Tax Offset"
+
+  // Conditions (null = wildcard/any)
+  conditionType             String?  // "credit", "debit", "charge", "refund"
+  conditionAdjustmentReason String?  // "tax_adjustment", "shop_cash", etc.
+  conditionSourceName       String?  // "web", "Shop App", etc.
+
+  // Target
+  targetField               String   // "amountDescription" | "feeDescription" | "otherFeesDescription"
+  targetMappingId           Int      // FK → PayoutMapping
+
+  // Ordering & status
+  priority                  Int      @default(0)  // Lower = higher priority (first match wins)
+  isActive                  Boolean  @default(true)
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  targetMapping             PayoutMapping @relation(fields: [targetMappingId], references: [id], onDelete: Cascade)
+
+  @@index([isActive])
+  @@index([priority])
 }
 
 model PaymentMethodMapping {
