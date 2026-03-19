@@ -12,14 +12,6 @@ interface AmountDescriptionSelectProps extends DescriptionSelectProps {
   onUpdateAmountDescription: (transactionId: string, description: string | null) => Promise<void>
 }
 
-interface FeeDescriptionSelectProps extends DescriptionSelectProps {
-  onUpdateFeeDescription: (transactionId: string, description: string | null) => Promise<void>
-}
-
-interface OtherFeesDescriptionSelectProps extends DescriptionSelectProps {
-  onUpdateOtherFeesDescription: (transactionId: string, description: string | null) => Promise<void>
-}
-
 // Shared logic for resolving the current select value from transaction description
 function resolveSelectValue(
   description: string | null | undefined,
@@ -144,17 +136,15 @@ export function AmountDescriptionSelect({
   onUpdateAmountDescription,
   onToggleInclude,
 }: AmountDescriptionSelectProps) {
-  // Show value from whichever description field is populated (auto-assign may set any of them)
-  const activeDescription = transaction.amountDescription || transaction.otherFeesDescription || transaction.feeDescription
   const value = resolveSelectValue(
-    activeDescription,
+    transaction.amountDescription,
     transaction.includeInNetSuite,
     feesDescriptionOptions
   )
 
   return (
     <DescriptionSelectDropdown
-      selectKey={`amount-desc-${transaction.id}-${activeDescription || 'none'}`}
+      selectKey={`amount-desc-${transaction.id}-${transaction.amountDescription || 'none'}`}
       value={value}
       onValueChange={async (val) => {
         await handleDescriptionChange(
@@ -163,72 +153,6 @@ export function AmountDescriptionSelect({
           feesDescriptionOptions,
           transaction.includeInNetSuite,
           onUpdateAmountDescription,
-          onToggleInclude
-        )
-      }}
-      feesDescriptionOptions={feesDescriptionOptions}
-      loadingFeesOptions={loadingFeesOptions}
-    />
-  )
-}
-
-export function FeeDescriptionSelect({
-  transaction,
-  feesDescriptionOptions,
-  loadingFeesOptions,
-  onUpdateFeeDescription,
-  onToggleInclude,
-}: FeeDescriptionSelectProps) {
-  const value = resolveSelectValue(
-    transaction.feeDescription,
-    transaction.includeInNetSuite,
-    feesDescriptionOptions
-  )
-
-  return (
-    <DescriptionSelectDropdown
-      selectKey={`fee-desc-${transaction.id}-${transaction.feeDescription || 'none'}`}
-      value={value}
-      onValueChange={async (val) => {
-        await handleDescriptionChange(
-          val,
-          transaction.id,
-          feesDescriptionOptions,
-          transaction.includeInNetSuite,
-          onUpdateFeeDescription,
-          onToggleInclude
-        )
-      }}
-      feesDescriptionOptions={feesDescriptionOptions}
-      loadingFeesOptions={loadingFeesOptions}
-    />
-  )
-}
-
-export function OtherFeesDescriptionSelect({
-  transaction,
-  feesDescriptionOptions,
-  loadingFeesOptions,
-  onUpdateOtherFeesDescription,
-  onToggleInclude,
-}: OtherFeesDescriptionSelectProps) {
-  const value = resolveSelectValue(
-    transaction.otherFeesDescription,
-    transaction.includeInNetSuite,
-    feesDescriptionOptions
-  )
-
-  return (
-    <DescriptionSelectDropdown
-      selectKey={`other-fees-desc-${transaction.id}-${transaction.otherFeesDescription || 'none'}`}
-      value={value}
-      onValueChange={async (val) => {
-        await handleDescriptionChange(
-          val,
-          transaction.id,
-          feesDescriptionOptions,
-          transaction.includeInNetSuite,
-          onUpdateOtherFeesDescription,
           onToggleInclude
         )
       }}

@@ -260,7 +260,7 @@ export async function POST(request: NextRequest) {
               net: -Math.abs(feeDiff),
               fee: 0,
               includeInNetSuite: true,
-              feeDescription: 'Shop Cash Fee (rounding)',
+              amountDescription: 'Shop Cash Fee (rounding)',
             },
           })
           console.log(`🔀 Created Shop Cash Fee rounding line: ${feeDiff}`)

@@ -104,9 +104,7 @@ model PayoutTransaction {
   netsuiteAmount          Float?
   amountMismatch          Boolean   @default(false)
   includeInNetSuite       Boolean   @default(true)
-  otherFeesDescription    String?
   amountDescription       String?
-  feeDescription          String?
   parentTransactionId     String?
   createdAt               DateTime  @default(now())
 
@@ -150,7 +148,7 @@ model AutoAssignRule {
   conditionSourceName       String?  // "web", "Shop App", etc.
 
   // Target
-  targetField               String   // "amountDescription" | "feeDescription" | "otherFeesDescription"
+  targetField               String   // "amountDescription"
   targetMappingId           Int      // FK → PayoutMapping
 
   // Ordering & status

@@ -3478,7 +3478,7 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
             <CardTitle>Auto-Assign Rules</CardTitle>
             <Button onClick={() => setAutoAssignEditDialog({
               isOpen: true,
-              rule: { name: '', conditionType: '', conditionAdjustmentReason: '', conditionSourceName: '', targetField: 'otherFeesDescription', targetMappingId: '', priority: 0, isActive: true }
+              rule: { name: '', conditionType: '', conditionAdjustmentReason: '', conditionSourceName: '', targetField: 'amountDescription', targetMappingId: '', priority: 0, isActive: true }
             })}>
               + Add Rule
             </Button>
@@ -3497,7 +3497,7 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
                       <th className="px-3 py-2 text-left font-medium text-slate-600">Priority</th>
                       <th className="px-3 py-2 text-left font-medium text-slate-600">Name</th>
                       <th className="px-3 py-2 text-left font-medium text-slate-600">Conditions</th>
-                      <th className="px-3 py-2 text-left font-medium text-slate-600">Target</th>
+                      <th className="px-3 py-2 text-left font-medium text-slate-600">Assign To</th>
                       <th className="px-3 py-2 text-left font-medium text-slate-600">Active</th>
                       <th className="px-3 py-2 text-right font-medium text-slate-600">Actions</th>
                     </tr>
@@ -3515,10 +3515,6 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
                           ].filter(Boolean).join(', ') || 'Any'}
                         </td>
                         <td className="px-3 py-2">
-                          <span className="text-xs bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded">
-                            {rule.targetField === 'amountDescription' ? 'Amount' : rule.targetField === 'feeDescription' ? 'Fee' : 'Other Fees'}
-                          </span>
-                          {' → '}
                           {rule.targetMappingDescription}
                         </td>
                         <td className="px-3 py-2">{rule.isActive ? '✓' : '—'}</td>
@@ -3635,26 +3631,9 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
                     </Select>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3">
                   <div>
-                    <label className="text-sm font-medium text-slate-700">Target Field</label>
-                    <Select
-                      value={autoAssignEditDialog.rule.targetField}
-                      onValueChange={(val) => setAutoAssignEditDialog(prev => ({
-                        ...prev,
-                        rule: prev.rule ? { ...prev.rule, targetField: val } : null
-                      }))}
-                    >
-                      <SelectTrigger><SelectValue placeholder="Select field" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="amountDescription">Amount Description</SelectItem>
-                        <SelectItem value="feeDescription">Fee Description</SelectItem>
-                        <SelectItem value="otherFeesDescription">Other Fees Description</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-slate-700">Target Mapping</label>
+                    <label className="text-sm font-medium text-slate-700">Assign To</label>
                     <Select
                       value={autoAssignEditDialog.rule.targetMappingId}
                       onValueChange={(val) => setAutoAssignEditDialog(prev => ({

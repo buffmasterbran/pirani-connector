@@ -160,9 +160,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
         amountMismatch: transaction.amountMismatch ?? false,
         includeInNetSuite: transaction.includeInNetSuite ?? true,
         adjustmentReason: transaction.adjustmentReason ?? null,
-        otherFeesDescription: (transaction as any).otherFeesDescription ?? null,
         amountDescription: (transaction as any).amountDescription ?? null,
-        feeDescription: (transaction as any).feeDescription ?? null,
         parentTransactionId: transaction.parentTransactionId ?? null,
         children: (transaction.children ?? []).map((child: any) => ({
           id: child.id,

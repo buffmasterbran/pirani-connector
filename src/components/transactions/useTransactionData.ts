@@ -21,9 +21,7 @@ export interface TransactionItem {
   amountMismatch?: boolean
   includeInNetSuite?: boolean
   adjustmentReason?: string | null
-  otherFeesDescription?: string | null
   amountDescription?: string | null
-  feeDescription?: string | null
   parentTransactionId?: string | null
   children?: Array<{
     id: string
@@ -473,18 +471,6 @@ export function useTransactionData({
             }
           }
 
-          // otherFeesDescription dropdown
-          if (txn.otherFeesDescription) {
-            const mapping = findMapping(txn.otherFeesDescription)
-            if (mapping) {
-              const description = mapping.description || txn.otherFeesDescription
-              const amount = typeof txn.amount === 'string' ? parseFloat(txn.amount) : txn.amount
-              const feeValue = typeof txn.fee === 'string' ? parseFloat(txn.fee) : txn.fee
-              const amountToUse = Math.abs(amount || 0) || Math.abs(feeValue || 0)
-              const existing = shopifyFeeMap.get(description) || 0
-              shopifyFeeMap.set(description, existing + amountToUse)
-            }
-          }
         })
 
         // Add NetSuite dropdown selections (only for transactions without cash sale)
@@ -499,19 +485,6 @@ export function useTransactionData({
               const amount = typeof txn.amount === 'string' ? parseFloat(txn.amount) : txn.amount
               const existing = netsuiteFeeMap.get(description) || 0
               netsuiteFeeMap.set(description, existing + Math.abs(amount || 0))
-            }
-          }
-
-          // otherFeesDescription dropdown
-          if (txn.otherFeesDescription && hasNoCashSale) {
-            const mapping = findMapping(txn.otherFeesDescription)
-            if (mapping) {
-              const description = mapping.description || txn.otherFeesDescription
-              const amount = typeof txn.amount === 'string' ? parseFloat(txn.amount) : txn.amount
-              const feeValue = typeof txn.fee === 'string' ? parseFloat(txn.fee) : txn.fee
-              const amountToUse = Math.abs(amount || 0) || Math.abs(feeValue || 0)
-              const existing = netsuiteFeeMap.get(description) || 0
-              netsuiteFeeMap.set(description, existing + amountToUse)
             }
           }
         })

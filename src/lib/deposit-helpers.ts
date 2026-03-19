@@ -120,10 +120,9 @@ export function findPayoutMapping(
 // ---------------------------------------------------------------------------
 
 /**
- * Walk every included transaction and aggregate amounts from the three
- * description dropdowns (`amountDescription`, `feeDescription`,
- * `otherFeesDescription`) into a `Map` keyed by the resolved NetSuite
- * account ID.
+ * Walk every included transaction and aggregate amounts from the
+ * `amountDescription` dropdown into a `Map` keyed by the resolved
+ * NetSuite account ID.
  */
 export function buildDropdownItems(
   transactions: any[],
@@ -132,7 +131,7 @@ export function buildDropdownItems(
   const map = new Map<string, { description: string; amount: number }>()
 
   for (const txn of transactions) {
-    // Skip amountDescription for transactions that already have a NS cash sale/payment
+    // Skip for transactions that already have a NS cash sale/payment
     // — those go into payment.items via buildDepositItems, so adding their amount
     // here would double-count them in the deposit.
     const hasNsPaymentItem = txn.netsuiteTransactionId &&
@@ -145,22 +144,6 @@ export function buildDropdownItems(
       if (mapping?.netsuiteId) {
         const e = map.get(mapping.netsuiteId) || { description: mapping.description || '', amount: 0 }
         e.amount += Number(txn.amount) || 0
-        map.set(mapping.netsuiteId, e)
-      }
-    }
-    if (txn.feeDescription) {
-      const mapping = findPayoutMapping(txn.feeDescription, payoutMappings)
-      if (mapping?.netsuiteId) {
-        const e = map.get(mapping.netsuiteId) || { description: mapping.description || '', amount: 0 }
-        e.amount += Number(txn.fee) || 0
-        map.set(mapping.netsuiteId, e)
-      }
-    }
-    if (txn.otherFeesDescription) {
-      const mapping = findPayoutMapping(txn.otherFeesDescription, payoutMappings)
-      if (mapping?.netsuiteId) {
-        const e = map.get(mapping.netsuiteId) || { description: mapping.description || '', amount: 0 }
-        e.amount += Number(txn.amount) || Number(txn.fee) || 0
         map.set(mapping.netsuiteId, e)
       }
     }

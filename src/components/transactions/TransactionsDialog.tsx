@@ -430,47 +430,6 @@ export function TransactionsDialog({
     }
   }
 
-  const handleUpdateOtherFeesDescription = async (transactionId: string, description: string | null) => {
-    // Optimistically update local state immediately
-    setLocalTransactions(prev =>
-      prev.map(t =>
-        t.id === transactionId
-          ? { ...t, otherFeesDescription: description }
-          : t
-      )
-    )
-
-    try {
-      const response = await fetch(`/api/payouts/transactions/${transactionId}/other-fees-description`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ otherFeesDescription: description }),
-      })
-
-      const data = await response.json()
-
-      if (response.ok && data.success) {
-        if (onRefreshTransactions && isMountedRef.current) {
-          Promise.resolve().then(() => {
-            if (isMountedRef.current && onRefreshTransactions) {
-              onRefreshTransactions()
-            }
-          })
-        }
-      } else {
-        console.error('Error updating other fees description:', data.error)
-        alert(`Error updating other fees description: ${data.error || 'Unknown error'}`)
-        setLocalTransactions(transactions)
-      }
-    } catch (error) {
-      console.error('Error updating other fees description:', error)
-      alert(`Error updating other fees description: ${error instanceof Error ? error.message : 'Unknown error'}`)
-      setLocalTransactions(transactions)
-    }
-  }
-
   const handleUpdateAmountDescription = async (transactionId: string, description: string | null) => {
     // Optimistically update local state immediately for instant UI feedback
     setLocalTransactions(prev =>
@@ -508,47 +467,6 @@ export function TransactionsDialog({
     } catch (error) {
       console.error('Error updating amount description:', error)
       alert(`Error updating amount description: ${error instanceof Error ? error.message : 'Unknown error'}`)
-      setLocalTransactions(transactions)
-    }
-  }
-
-  const handleUpdateFeeDescription = async (transactionId: string, description: string | null) => {
-    // Optimistically update local state immediately
-    setLocalTransactions(prev =>
-      prev.map(t =>
-        t.id === transactionId
-          ? { ...t, feeDescription: description }
-          : t
-      )
-    )
-
-    try {
-      const response = await fetch(`/api/payouts/transactions/${transactionId}/fee-description`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ feeDescription: description }),
-      })
-
-      const data = await response.json()
-
-      if (response.ok && data.success) {
-        if (onRefreshTransactions && isMountedRef.current) {
-          Promise.resolve().then(() => {
-            if (isMountedRef.current && onRefreshTransactions) {
-              onRefreshTransactions()
-            }
-          })
-        }
-      } else {
-        console.error('Error updating fee description:', data.error)
-        alert(`Error updating fee description: ${data.error || 'Unknown error'}`)
-        setLocalTransactions(transactions)
-      }
-    } catch (error) {
-      console.error('Error updating fee description:', error)
-      alert(`Error updating fee description: ${error instanceof Error ? error.message : 'Unknown error'}`)
       setLocalTransactions(transactions)
     }
   }
@@ -811,9 +729,7 @@ export function TransactionsDialog({
             onToggleInclude={handleToggleInclude}
             onReassignNetSuite={handleReassignNetSuite}
             onAddNetSuite={handleAddNetSuite}
-            onUpdateOtherFeesDescription={handleUpdateOtherFeesDescription}
             onUpdateAmountDescription={handleUpdateAmountDescription}
-            onUpdateFeeDescription={handleUpdateFeeDescription}
             onMergeTransactions={handleMergeTransactions}
             onSplitTransaction={(transaction) => {
               setSelectedTransactionForSplit(transaction as any)

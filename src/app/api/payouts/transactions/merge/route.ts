@@ -94,24 +94,12 @@ export async function POST(request: NextRequest) {
       amountMismatch = amountDiff || signMismatch
     }
 
-    // Combine dropdown descriptions (prefer target's, fallback to source's)
+    // Combine dropdown description (prefer target's, fallback to source's)
     let amountDescription = targetTransaction.amountDescription
-    let feeDescription = targetTransaction.feeDescription
-    let otherFeesDescription = targetTransaction.otherFeesDescription
 
     if (!amountDescription) {
       const sourceWithAmountDesc = sourceTransactions.find(t => t.amountDescription)
       if (sourceWithAmountDesc) amountDescription = sourceWithAmountDesc.amountDescription
-    }
-
-    if (!feeDescription) {
-      const sourceWithFeeDesc = sourceTransactions.find(t => t.feeDescription)
-      if (sourceWithFeeDesc) feeDescription = sourceWithFeeDesc.feeDescription
-    }
-
-    if (!otherFeesDescription) {
-      const sourceWithOtherFeesDesc = sourceTransactions.find(t => t.otherFeesDescription)
-      if (sourceWithOtherFeesDesc) otherFeesDescription = sourceWithOtherFeesDesc.otherFeesDescription
     }
 
     // Update target transaction with combined data
@@ -126,8 +114,6 @@ export async function POST(request: NextRequest) {
         netsuiteAmount,
         amountMismatch,
         amountDescription,
-        feeDescription,
-        otherFeesDescription,
         // Keep target's includeInNetSuite unless all sources are excluded
         includeInNetSuite: targetTransaction.includeInNetSuite !== false,
       },

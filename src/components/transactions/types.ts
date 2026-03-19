@@ -19,9 +19,7 @@ export interface Transaction {
   amountMismatch?: boolean
   includeInNetSuite?: boolean
   adjustmentReason?: string | null
-  otherFeesDescription?: string | null
   amountDescription?: string | null
-  feeDescription?: string | null
   parentTransactionId?: string | null
   children?: Array<{
     id: string
@@ -33,9 +31,9 @@ export interface Transaction {
   }>
 }
 
-/** Returns true if the transaction has any dropdown mapping assigned */
-export function hasDropdownAssignment(t: Pick<Transaction, 'amountDescription' | 'feeDescription' | 'otherFeesDescription'>): boolean {
-  return !!(t.amountDescription || t.feeDescription || t.otherFeesDescription)
+/** Returns true if the transaction has a dropdown mapping assigned */
+export function hasDropdownAssignment(t: Pick<Transaction, 'amountDescription'>): boolean {
+  return !!t.amountDescription
 }
 
 export interface OrderSourceMapping {
@@ -68,9 +66,7 @@ export interface TransactionsTableProps {
   onDeleteNetSuiteId?: (transactionId: string) => void
   onReassignNetSuite?: (fromTransactionId: string, toTransactionId: string) => Promise<void>
   onAddNetSuite?: (transactionId: string) => void
-  onUpdateOtherFeesDescription?: (transactionId: string, description: string | null) => Promise<void>
   onUpdateAmountDescription?: (transactionId: string, description: string | null) => Promise<void>
-  onUpdateFeeDescription?: (transactionId: string, description: string | null) => Promise<void>
   onToggleInclude?: (transactionId: string, include: boolean) => Promise<void>
   onMergeTransactions?: (sourceTransactionIds: string[], targetTransactionId: string) => Promise<void>
   onSplitTransaction?: (transaction: Transaction) => void

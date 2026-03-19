@@ -70,9 +70,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (!['amountDescription', 'feeDescription', 'otherFeesDescription'].includes(targetField)) {
+    if (targetField !== 'amountDescription') {
       return NextResponse.json(
-        { success: false, error: 'targetField must be amountDescription, feeDescription, or otherFeesDescription' },
+        { success: false, error: 'targetField must be amountDescription' },
         { status: 400 }
       )
     }

@@ -59,7 +59,7 @@ export async function GET() {
            COUNT(*) FILTER (
              WHERE "includeInNetSuite" = true
                AND "type" != 'payout'
-               AND COALESCE("amountDescription", "feeDescription", "otherFeesDescription") IS NULL
+               AND "amountDescription" IS NULL
                AND ("netsuiteTransactionId" IS NULL OR "netsuiteTransactionId" = '')
                AND "parentTransactionId" IS NULL
            )::int AS "missingNsCount",

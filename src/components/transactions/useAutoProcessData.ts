@@ -12,8 +12,6 @@ interface TransactionLike {
   netsuiteTransactionId?: string | null
   includeInNetSuite?: boolean
   amountDescription?: string | null
-  feeDescription?: string | null
-  otherFeesDescription?: string | null
   parentTransactionId?: string | null
   adjustmentReason?: string | null
   order_edited?: boolean

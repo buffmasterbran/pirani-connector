@@ -31,7 +31,7 @@ export async function runAutoAssignRules(payoutId: string): Promise<AutoAssignRe
 
   for (const txn of transactions) {
     // Skip if any dropdown already assigned
-    if (txn.amountDescription || txn.feeDescription || txn.otherFeesDescription) {
+    if (txn.amountDescription) {
       skipped++
       continue
     }
@@ -54,19 +54,17 @@ export async function runAutoAssignRules(payoutId: string): Promise<AutoAssignRe
 
       if (!valueToStore) continue
 
-      const updateData: Record<string, string> = {}
-      updateData[matchedRule.targetField] = valueToStore
-
+      // Always write to amountDescription — same field the manual dropdown uses
       await prisma.payoutTransaction.update({
         where: { id: txn.id },
-        data: updateData,
+        data: { amountDescription: valueToStore },
       })
 
       applied++
       details.push({
         transactionId: txn.id,
         ruleName: matchedRule.name,
-        field: matchedRule.targetField,
+        field: 'amountDescription',
       })
     }
   }
