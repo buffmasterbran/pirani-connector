@@ -45,12 +45,9 @@ export function TransactionSummary({
   const refundsMatch = Math.abs(totalRefunds - nsRefunds) < 0.01
   const adjustmentsMatch = Math.abs(totalAdjustments - nsAdjustments) < 0.01
 
-  // Compute itemized fee totals from groupedFeeItems (matches what the NS deposit will contain)
-  const totalShopifyFeeItems = groupedFeeItems.reduce((sum, item) => sum + item.shopifyAmount, 0)
-  const totalNetsuiteFeeItems = groupedFeeItems.reduce((sum, item) => sum + item.netsuiteAmount, 0)
-  const feesMatch = groupedFeeItems.length > 0
-    ? Math.abs(totalShopifyFeeItems - totalNetsuiteFeeItems) < 0.01
-    : Math.abs(totalFees - nsFees) < 0.01
+  // Compare raw fee totals (not grouped items, which include dropdown amounts
+  // like E-Com Tax Offset that are already counted in Adjustments on the Shopify side)
+  const feesMatch = Math.abs(totalFees - nsFees) < 0.01
 
   // Create unified list of items to display (always show all items for alignment)
   // Show item if it appears in Shopify OR NetSuite to ensure alignment

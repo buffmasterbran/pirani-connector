@@ -268,8 +268,11 @@ export function useTransactionData({
     .filter((id, index, self) => self.indexOf(id) === index) // unique
 
   // Identify transactions with missing NetSuite IDs
+  // Exclude transactions that have a dropdown selection (handled via deposit mapping)
+  // or are excluded/ignored
   const missingNSTransactions = localTransactions.filter(
     t => t.order_name && t.order_name !== '—' && !t.netsuiteTransactionId
+      && !t.dropdownSelection && t.includeInNetSuite !== false
   )
 
   // Separate top-level (Shopify-visible) from child (split) transactions
