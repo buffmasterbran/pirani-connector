@@ -63,7 +63,7 @@ export async function GET() {
                AND ("netsuiteTransactionId" IS NULL OR "netsuiteTransactionId" = '')
                AND "parentTransactionId" IS NULL
            )::int AS "missingNsCount",
-           COALESCE(SUM("net") FILTER (WHERE "includeInNetSuite" = true AND "parentTransactionId" IS NULL), 0)::float AS "shopifyNet",
+           COALESCE(SUM("amount") FILTER (WHERE "includeInNetSuite" = true AND "parentTransactionId" IS NULL), 0)::float AS "shopifyTotal",
            COALESCE(SUM(CASE
              WHEN "netsuiteAmount" IS NOT NULL THEN "netsuiteAmount"
              ELSE "amount"
@@ -80,9 +80,9 @@ export async function GET() {
     const matchMap = new Map<string, { missingNsCount: number; matched: boolean }>()
     for (const m of matchStats) {
       const missing = Number(m.missingNsCount) || 0
-      const shopifyNet = Number(m.shopifyNet) || 0
+      const shopifyTotal = Number(m.shopifyTotal) || 0
       const nsTotal = Number(m.nsTotal) || 0
-      const amountsMatch = Math.abs(shopifyNet - nsTotal) < 0.01
+      const amountsMatch = Math.abs(shopifyTotal - nsTotal) < 0.01
       matchMap.set(m.payoutId, { missingNsCount: missing, matched: missing === 0 && amountsMatch })
     }
 
