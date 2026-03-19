@@ -309,8 +309,8 @@ export function useTransactionData({
       return sum + (amount || 0)
     }, 0)
 
-  // Sum all fees from top-level transactions only (children don't carry fees)
-  const totalFeesRaw = topLevelTransactions.reduce((sum, t) => {
+  // Sum fees from included transactions (same set as charges/refunds/adjustments)
+  const totalFeesRaw = includedTransactions.reduce((sum, t) => {
     const fee = typeof t.fee === 'string' ? parseFloat(t.fee) : (t.fee ?? 0)
     // Fees can be positive or negative in DB, but we want absolute value for summing
     // Then we'll make it negative for display
