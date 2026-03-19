@@ -3620,7 +3620,7 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
                         rule: prev.rule ? { ...prev.rule, targetField: val } : null
                       }))}
                     >
-                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectTrigger><SelectValue placeholder="Select field" /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="amountDescription">Amount Description</SelectItem>
                         <SelectItem value="feeDescription">Fee Description</SelectItem>
@@ -3637,10 +3637,10 @@ export function MappingsSection({ activeSubSection }: MappingsSectionProps) {
                         rule: prev.rule ? { ...prev.rule, targetMappingId: val } : null
                       }))}
                     >
-                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectTrigger><SelectValue placeholder="Select mapping" /></SelectTrigger>
                       <SelectContent>
                         {payoutMappings
-                          .filter(m => m.mappingType === 'fees_description' && m.isActive)
+                          .filter(m => m.isActive)
                           .map(m => (
                             <SelectItem key={m.id} value={String(m.id)}>
                               {m.description || m.netsuiteId}
