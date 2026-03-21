@@ -160,6 +160,7 @@ export async function updateSOForMarketplace(soId: string, taxAmount?: number): 
 
   // Build PATCH body
   const patchBody: any = {
+    istaxable: false,
     taxItem: { id: taxCodeId },
     paymentoption: null,
   }
