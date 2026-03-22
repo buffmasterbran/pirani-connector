@@ -310,7 +310,7 @@ export function useTransactionData({
     }, 0)
 
   const totalAdjustments = includedTransactions
-    .filter(t => t.adjustmentReason && t.adjustmentReason !== null)
+    .filter(t => (t.adjustmentReason && t.adjustmentReason !== null) || t.type === 'dispute')
     .reduce((sum, t) => {
       const amount = typeof t.amount === 'string' ? parseFloat(t.amount) : t.amount
       return sum + (amount || 0)
@@ -373,7 +373,7 @@ export function useTransactionData({
     .reduce((sum, t) => sum + getNetSuiteAmount(t), 0) // Refunds are already negative
 
   const nsAdjustments = includedTransactionsForNetSuite
-    .filter(t => t.adjustmentReason && t.adjustmentReason !== null)
+    .filter(t => (t.adjustmentReason && t.adjustmentReason !== null) || t.type === 'dispute')
     .reduce((sum, t) => sum + getNetSuiteAmount(t), 0)
 
   // Calculate NetSuite fees: only actual transaction fees (fee column).
@@ -479,7 +479,7 @@ export function useTransactionData({
               const description = mapping.description || txn.amountDescription
               const amount = typeof txn.amount === 'string' ? parseFloat(txn.amount) : txn.amount
               const existing = shopifyFeeMap.get(description) || 0
-              shopifyFeeMap.set(description, existing + Math.abs(amount || 0))
+              shopifyFeeMap.set(description, existing + (amount || 0))
             }
           }
 
@@ -496,7 +496,7 @@ export function useTransactionData({
               const description = mapping.description || txn.amountDescription
               const amount = typeof txn.amount === 'string' ? parseFloat(txn.amount) : txn.amount
               const existing = netsuiteFeeMap.get(description) || 0
-              netsuiteFeeMap.set(description, existing + Math.abs(amount || 0))
+              netsuiteFeeMap.set(description, existing + (amount || 0))
             }
           }
         })
