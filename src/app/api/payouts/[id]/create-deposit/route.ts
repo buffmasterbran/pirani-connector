@@ -57,7 +57,7 @@ async function prepareBatches(payout: any, validate: boolean) {
 
   const includedTransactions = payout.transactions.filter((txn: any) => txn.includeInNetSuite !== false)
   const topLevelTransactions = payout.transactions.filter((txn: any) => !txn.parentTransactionId)
-  const totalFees = includedTransactions.reduce((sum: number, txn: any) => sum + (txn.fee || 0), 0)
+  const totalFees = -includedTransactions.reduce((sum: number, txn: any) => sum + Math.abs(txn.fee || 0), 0)
 
   const payoutMappings = await prisma.payoutMapping.findMany({ where: { isActive: true } })
   const dropdownItems = buildDropdownItems(includedTransactions, payoutMappings)
