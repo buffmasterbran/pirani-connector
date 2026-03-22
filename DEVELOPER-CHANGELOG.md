@@ -34,12 +34,191 @@ const patchBody: any = {
 ### 2. Removed unused DB columns and code references
 
 **Columns dropped from `PayoutTransaction`:** `feeDescription`, `otherFeesDescription`
-
 **Column dropped from `AutoAssignRule`:** `targetField`
 
-**Files updated:** Prisma schema, API routes, UI components, deposit helpers — all references to these columns were removed. Auto-assign rules now write only to `amountDescription`.
+**Why:** Only `amountDescription` was used by the UI dropdown. The other two fields were never wired up and caused deploy errors.
 
-**Why:** Only `amountDescription` was used by the UI dropdown. The other two fields were never wired up and caused confusion.
+#### File-by-file changes:
+
+**`prisma/schema.prisma`**
+
+Before (PayoutTransaction model):
+```prisma
+  otherFeesDescription    String?
+  amountDescription       String?
+  feeDescription          String?
+```
+
+After:
+```prisma
+  amountDescription       String?
+```
+
+Before (AutoAssignRule model):
+```prisma
+  targetField               String   // "amountDescription" | "feeDescription" | "otherFeesDescription"
+```
+
+After:
+```prisma
+  targetField               String   // "amountDescription"
+```
+
+---
+
+**`src/lib/auto-assign.ts`**
+
+Before (line 34 — skip check):
+```js
+if (txn.amountDescription || txn.feeDescription || txn.otherFeesDescription) {
+```
+
+After:
+```js
+if (txn.amountDescription) {
+```
+
+Before (lines 57-59 — dynamic field write):
+```js
+const updateData: Record<string, string> = {}
+updateData[matchedRule.targetField] = valueToStore
+
+await prisma.payoutTransaction.update({
+  where: { id: txn.id },
+  data: updateData,
+})
+```
+
+After:
+```js
+// Always write to amountDescription — same field the manual dropdown uses
+await prisma.payoutTransaction.update({
+  where: { id: txn.id },
+  data: { amountDescription: valueToStore },
+})
+```
+
+Before (line 67 — detail logging):
+```js
+field: matchedRule.targetField,
+```
+
+After:
+```js
+field: 'amountDescription',
+```
+
+---
+
+**`src/app/api/mappings/auto-assign-rules/route.ts`**
+
+Before (line 73 — validation):
+```js
+if (!['amountDescription', 'feeDescription', 'otherFeesDescription'].includes(targetField)) {
+  return NextResponse.json(
+    { success: false, error: 'targetField must be amountDescription, feeDescription, or otherFeesDescription' },
+    { status: 400 }
+  )
+}
+```
+
+After:
+```js
+if (targetField !== 'amountDescription') {
+  return NextResponse.json(
+    { success: false, error: 'targetField must be amountDescription' },
+    { status: 400 }
+  )
+}
+```
+
+---
+
+**`src/lib/deposit-helpers.ts`**
+
+Before (lines 137-162 — buildDropdownItems had 3 blocks):
+```js
+if (txn.amountDescription) { ... }
+if (txn.feeDescription) { ... }
+if (txn.otherFeesDescription) { ... }
+```
+
+After (only amountDescription block remains):
+```js
+if (txn.amountDescription) { ... }
+```
+
+The `feeDescription` and `otherFeesDescription` blocks were deleted entirely.
+
+---
+
+**`src/components/transactions/types.ts`**
+
+Before:
+```ts
+otherFeesDescription?: string | null
+amountDescription?: string | null
+feeDescription?: string | null
+```
+
+After:
+```ts
+amountDescription?: string | null
+```
+
+Before (hasDropdownAssignment):
+```ts
+export function hasDropdownAssignment(t: Pick<Transaction, 'amountDescription' | 'feeDescription' | 'otherFeesDescription'>): boolean {
+  return !!(t.amountDescription || t.feeDescription || t.otherFeesDescription)
+}
+```
+
+After:
+```ts
+export function hasDropdownAssignment(t: Pick<Transaction, 'amountDescription'>): boolean {
+  return !!t.amountDescription
+}
+```
+
+---
+
+**`src/components/transactions/TransactionCellEditors.tsx`**
+
+Deleted `FeeDescriptionSelect` and `OtherFeesDescriptionSelect` components entirely (~70 lines removed). Only `AmountDescriptionSelect` remains.
+
+Before (AmountDescriptionSelect resolved from all 3 fields):
+```js
+const activeDescription = transaction.amountDescription || transaction.otherFeesDescription || transaction.feeDescription
+```
+
+After:
+```js
+transaction.amountDescription
+```
+
+---
+
+**`src/components/transactions/TransactionsDialog.tsx`**
+
+Deleted `handleUpdateOtherFeesDescription` and `handleUpdateFeeDescription` handler functions entirely (~80 lines removed). Removed their props from the `TransactionsTable` call.
+
+---
+
+**`src/components/transactions/TransactionsTable.tsx`**
+
+Removed `onUpdateOtherFeesDescription` and `onUpdateFeeDescription` props.
+
+---
+
+**`src/components/transactions/useTransactionData.ts`**
+
+Removed `otherFeesDescription` and `feeDescription` from the `TransactionItem` interface. Deleted two blocks in the fee comparison logic that aggregated `otherFeesDescription` into Shopify and NetSuite fee maps (~25 lines removed).
+
+---
+
+**`src/components/transactions/useAutoProcessData.ts`**
+
+Removed `feeDescription` and `otherFeesDescription` from the `TransactionLike` interface.
 
 ---
 
@@ -65,8 +244,9 @@ const totalFees = -includedTransactions.reduce((sum: number, txn: any) => sum + 
 
 **File:** `src/app/sections/HelpSection.tsx`
 
-- Added new "Disputes & Chargebacks" card with three sections: How Disputes Work, Setting Up Dispute Handling, Won Disputes warning
-- Updated dropdown section title (removed references to removed Fee/Other Fees dropdowns)
+- Added new "Disputes & Chargebacks" card with three FAQ sections: How Disputes Work, Setting Up Dispute Handling, Won Disputes warning
+- Updated dropdown section title from "Using Dropdown Assignments (Amount, Fee, Other Fees)" to "Using Dropdown Assignments"
+- Simplified dropdown description (removed bullet points for Fee and Other Fees dropdowns)
 
 **Why:** Disputes are handled as "other" items in the deposit mapped to a single GL account (NS account 1020 "Chargebacks"). No NS transactions needed — dispute amounts flow through the deposit and offset over time when won or covered by chargeback protection.
 
@@ -74,12 +254,119 @@ const totalFees = -includedTransactions.reduce((sum: number, txn: any) => sum + 
 
 ### 5. "Orders with Issues" filter — now includes non-order transactions
 
-**Files:**
-- `src/components/transactions/useTransactionData.ts` — Lines 214-247
-- `src/components/transactions/TransactionsDialog.tsx` — Lines 584-601
+**File:** `src/components/transactions/useTransactionData.ts` — Lines 214-247
 
-**Before:** The "Orders with Issues" counter and filter only counted transactions that had a valid `source_order_id`. Transactions without an order ID (disputes, chargeback protection, unassigned payout lines) were detected as problematic but never shown in the count or filter results.
+**Before (3 counting blocks, all identical pattern):**
+```js
+// Count problematic transactions (for "Orders with Issues")
+const problematicOrderIds = new Set<string>()
+localTransactions.forEach(t => {
+  if (isProblematicTransaction(t) && t.source_order_id && t.source_order_id !== 'N/A') {
+    problematicOrderIds.add(t.source_order_id)
+  }
+})
+const problematicOrdersCount = problematicOrderIds.size
+```
 
-**After:** Non-order problematic transactions are now counted and displayed when the "Orders with Issues" checkbox is checked.
+**After (total count — lines 214-225):**
+```js
+// Count problematic transactions (for "Orders with Issues")
+const problematicOrderIds = new Set<string>()
+let problematicNonOrderCount = 0
+localTransactions.forEach(t => {
+  if (isProblematicTransaction(t)) {
+    if (t.source_order_id && t.source_order_id !== 'N/A') {
+      problematicOrderIds.add(t.source_order_id)
+    } else {
+      problematicNonOrderCount++
+    }
+  }
+})
+const problematicOrdersCount = problematicOrderIds.size + problematicNonOrderCount
+```
+
+**Before (non-web count — same pattern as above):**
+```js
+if (isProblematicTransaction(t) && t.source_order_id && t.source_order_id !== 'N/A') {
+  problematicNonWebOrderIds.add(t.source_order_id)
+}
+```
+
+**After (non-web count — lines 240-260):**
+```js
+// Non-order transactions (no source) count as non-web
+if (!t.source_name) return true
+```
+added to filter, plus:
+```js
+if (isProblematicTransaction(t)) {
+  if (t.source_order_id && t.source_order_id !== 'N/A') {
+    problematicNonWebOrderIds.add(t.source_order_id)
+  } else {
+    problematicNonWebNonOrderCount++
+  }
+}
+```
+```js
+const problematicNonWebOrdersCount = problematicNonWebOrderIds.size + problematicNonWebNonOrderCount
+```
+
+Note: The web count block was NOT changed (disputes have no source, so they don't count as web orders).
+
+---
+
+**File:** `src/components/transactions/TransactionsDialog.tsx` — Lines 584-601
+
+**Before:**
+```js
+if (filterMissingCashSale) {
+  const problematicOrderIds = new Set<string>()
+  filtered.forEach(t => {
+    if (isProblematicTransaction(t) && t.source_order_id && t.source_order_id !== 'N/A') {
+      problematicOrderIds.add(t.source_order_id)
+    }
+  })
+
+  if (problematicOrderIds.size === 0) {
+    return []
+  }
+
+  return filtered.filter(t =>
+    t.source_order_id &&
+    t.source_order_id !== 'N/A' &&
+    problematicOrderIds.has(t.source_order_id)
+  )
+}
+```
+
+**After:**
+```js
+if (filterMissingCashSale) {
+  const problematicOrderIds = new Set<string>()
+  const problematicNonOrderIds = new Set<string>()
+  filtered.forEach(t => {
+    if (isProblematicTransaction(t)) {
+      if (t.source_order_id && t.source_order_id !== 'N/A') {
+        problematicOrderIds.add(t.source_order_id)
+      } else {
+        problematicNonOrderIds.add(t.id)
+      }
+    }
+  })
+
+  if (problematicOrderIds.size === 0 && problematicNonOrderIds.size === 0) {
+    return []
+  }
+
+  return filtered.filter(t =>
+    // Show non-order problematic transactions directly
+    problematicNonOrderIds.has(t.id) ||
+    // Show all transactions for problematic order IDs
+    (t.source_order_id &&
+    t.source_order_id !== 'N/A' &&
+    problematicOrderIds.has(t.source_order_id))
+  )
+}
+```
 
 **Why:** Dispute and chargeback protection lines have no order ID (`#N/A`), so they were invisible to the issues filter even when unassigned.
