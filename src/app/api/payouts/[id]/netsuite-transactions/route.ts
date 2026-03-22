@@ -21,7 +21,8 @@ function classifyTransactions(payout: NonNullable<Awaited<ReturnType<typeof load
     (txn) =>
       (txn.orderLine?.shopifyOrderName || txn.shopifyOrderId) &&
       !txn.netsuiteTransactionId &&
-      txn.includeInNetSuite !== false
+      txn.includeInNetSuite !== false &&
+      !txn.amountDescription // Skip dropdown-assigned transactions (they go to deposit GL lines)
   )
 
   const cashSales: string[] = []

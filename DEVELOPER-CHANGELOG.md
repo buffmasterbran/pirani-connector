@@ -561,3 +561,32 @@ After creating children from `adjustment_order_transactions`, if the amounts don
 Added `t.source_order_id` to the `splitOrderIds` set so the remainder child can get the correct `orderLineId`.
 
 **Result:** Re-importing payout 130217836801 should now create the 2 missing children and close the $1.08 gap.
+
+---
+
+### 9. "Get Missing NS Transactions" — skip dropdown-assigned transactions
+
+**File:** `src/app/api/payouts/[id]/netsuite-transactions/route.ts` — Line 24
+
+**Before:**
+```js
+const transactionsNeedingNS = payout.transactions.filter(
+  (txn) =>
+    (txn.orderLine?.shopifyOrderName || txn.shopifyOrderId) &&
+    !txn.netsuiteTransactionId &&
+    txn.includeInNetSuite !== false
+)
+```
+
+**After:**
+```js
+const transactionsNeedingNS = payout.transactions.filter(
+  (txn) =>
+    (txn.orderLine?.shopifyOrderName || txn.shopifyOrderId) &&
+    !txn.netsuiteTransactionId &&
+    txn.includeInNetSuite !== false &&
+    !txn.amountDescription
+)
+```
+
+**Why:** Transactions with dropdown assignments (E-Com Tax Offset, Shopify Advertising, Chargebacks, etc.) go to deposit GL lines via the "Other" section — they don't have corresponding NS transactions. The API was sending them to SuiteQL matching anyway, which could incorrectly assign NS IDs. The UI count (`useTransactionData.ts`) already excluded these via `hasDropdownAssignment()`, but the API route did not.
