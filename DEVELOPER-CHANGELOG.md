@@ -590,3 +590,23 @@ const transactionsNeedingNS = payout.transactions.filter(
 ```
 
 **Why:** Transactions with dropdown assignments (E-Com Tax Offset, Shopify Advertising, Chargebacks, etc.) go to deposit GL lines via the "Other" section — they don't have corresponding NS transactions. The API was sending them to SuiteQL matching anyway, which could incorrectly assign NS IDs. The UI count (`useTransactionData.ts`) already excluded these via `hasDropdownAssignment()`, but the API route did not.
+
+---
+
+### 10. Fee breakdown sub-categories not displaying amounts
+
+**File:** `src/components/transactions/TransactionSummary.tsx` — Line 205
+
+**Before:**
+```jsx
+feeItem.netsuiteAmount > 0 ? (
+  `-${currency} ${feeItem.netsuiteAmount.toFixed(2)}`
+```
+
+**After:**
+```jsx
+feeItem.netsuiteAmount !== 0 ? (
+  `-${currency} ${Math.abs(feeItem.netsuiteAmount).toFixed(2)}`
+```
+
+**Why:** Dropdown-assigned transaction amounts are negative (e.g., E-Com Tax Offset = -$67.89). The condition `> 0` never matched negative values, so all sub-categories (Chargebacks, E-Com Tax Offset, Shopify Advertising) always showed "—" instead of their actual amounts. Changed to `!== 0` with `Math.abs()` since the `-` prefix is already hardcoded in the template.

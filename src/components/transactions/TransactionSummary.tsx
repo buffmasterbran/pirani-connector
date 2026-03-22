@@ -202,8 +202,8 @@ export function TransactionSummary({
                         <span className="text-xs font-medium text-red-600 text-right min-w-[100px]">
                           {hideSensitiveData ? (
                             <span className="text-gray-500">{'••••••'}</span>
-                          ) : feeItem.netsuiteAmount > 0 ? (
-                            `-${currency} ${feeItem.netsuiteAmount.toFixed(2)}`
+                          ) : feeItem.netsuiteAmount !== 0 ? (
+                            `-${currency} ${Math.abs(feeItem.netsuiteAmount).toFixed(2)}`
                           ) : (
                             <span className="text-slate-400">{'\u2014'}</span>
                           )}
