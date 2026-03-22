@@ -302,17 +302,11 @@ export function HelpSection() {
             <FaqItem
               id="dropdowns"
               icon={<DollarSign className="h-4 w-4 text-purple-600" />}
-              title="Using Dropdown Assignments (Amount, Fee, Other Fees)"
+              title="Using Dropdown Assignments"
               expandedFaq={expandedFaq}
               setExpandedFaq={setExpandedFaq}
             >
-              <p className="mb-2">For transactions that do not have a NetSuite cash sale or refund (fees, credits, debits), use the dropdown menus to assign them to a GL account:</p>
-
-              <ul className="list-disc list-inside space-y-2 ml-2">
-                <li><strong>Amount dropdown:</strong> Assigns the transaction&apos;s <strong>amount</strong> to a GL account. Use for non-order transactions (credits, debits) that need to go to a specific account.</li>
-                <li><strong>Fee dropdown:</strong> Assigns the transaction&apos;s <strong>fee</strong> to a GL account. Most charges auto-map fees to the Shopify Fees account.</li>
-                <li><strong>Other Fees dropdown:</strong> For additional fee categorization when a transaction has fees that go to a different account than the standard Shopify Fees.</li>
-              </ul>
+              <p className="mb-2">For transactions that do not have a NetSuite cash sale or refund (fees, credits, debits, disputes), use the dropdown menu to assign them to a GL account. The dropdown routes the transaction&apos;s <strong>amount</strong> to the selected account as an &quot;other&quot; item in the deposit.</p>
 
               <p className="mt-3 font-medium">Current GL Account Mappings:</p>
               <div className="overflow-x-auto mt-1">
@@ -855,6 +849,96 @@ export function HelpSection() {
               </ul>
               <p className="mt-2">Excluded transactions will not appear in the deposit&apos;s payment items or other items, and will not count toward the summary totals.</p>
             </FaqItem>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ============ DISPUTES & CHARGEBACKS ============ */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ShieldCheck className="h-5 w-5 text-red-600" />
+            Disputes &amp; Chargebacks
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+
+            <FaqItem
+              id="disputes-overview"
+              icon={<ShieldCheck className="h-4 w-4 text-red-500" />}
+              title="How Disputes Work"
+              expandedFaq={expandedFaq}
+              setExpandedFaq={setExpandedFaq}
+            >
+              <p className="mb-2">When a customer disputes a charge with their bank, Shopify creates <strong>dispute</strong> transactions in the payout. These do not require any new NetSuite transactions &mdash; they flow through the deposit as &quot;other&quot; items mapped to a single GL account.</p>
+
+              <p className="font-medium mt-3 mb-2">What Appears in the Payout:</p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-gray-100">
+                      <th className="border p-2 text-left">Payout Line</th>
+                      <th className="border p-2 text-left">Amount</th>
+                      <th className="border p-2 text-left">What It Means</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr><td className="border p-2 font-mono">dispute (negative)</td><td className="border p-2">e.g. -$49.11</td><td className="border p-2">Lost dispute &mdash; Shopify clawed back the original charge amount</td></tr>
+                    <tr><td className="border p-2 font-mono">dispute fee</td><td className="border p-2">$15.00</td><td className="border p-2">Per-dispute fee charged by Shopify</td></tr>
+                    <tr><td className="border p-2 font-mono">dispute (positive)</td><td className="border p-2">e.g. +$41.94</td><td className="border p-2">Won dispute &mdash; money returned to you</td></tr>
+                    <tr><td className="border p-2 font-mono">chargeback_protection credit</td><td className="border p-2">e.g. +$64.11</td><td className="border p-2">Shopify reimburses you for a lost dispute (amount + fee)</td></tr>
+                    <tr><td className="border p-2 font-mono">chargeback_protection debit</td><td className="border p-2">e.g. -$56.94</td><td className="border p-2">Claws back protection payout after you win (no longer needed)</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </FaqItem>
+
+            <FaqItem
+              id="disputes-setup"
+              icon={<ClipboardList className="h-4 w-4 text-red-500" />}
+              title="Setting Up Dispute Handling"
+              expandedFaq={expandedFaq}
+              setExpandedFaq={setExpandedFaq}
+            >
+              <p className="font-medium mb-2">One-time setup:</p>
+              <ol className="list-decimal list-inside space-y-2 ml-2">
+                <li>Create a <strong>Disputes GL account</strong> in NetSuite (expense account).</li>
+                <li>In Settings &gt; Payout Mappings, create a <strong>&quot;Shopify Disputes&quot;</strong> mapping pointing to that NS account ID.</li>
+                <li>In Settings &gt; Auto-Assign Rules, create two rules:
+                  <ul className="list-disc list-inside ml-6 mt-1 space-y-1">
+                    <li><code>type = dispute</code> &rarr; Shopify Disputes</li>
+                    <li><code>adjustmentReason = chargeback_protection</code> &rarr; Shopify Disputes</li>
+                  </ul>
+                </li>
+              </ol>
+
+              <Tip variant="info">
+                <p>All dispute lines go to the same account. Losses increase the balance, wins and chargeback protection offset it. The account balance shows your net dispute exposure over time.</p>
+              </Tip>
+            </FaqItem>
+
+            <FaqItem
+              id="disputes-won"
+              icon={<ShieldCheck className="h-4 w-4 text-green-600" />}
+              title="Won Disputes &mdash; Important Warning"
+              expandedFaq={expandedFaq}
+              setExpandedFaq={setExpandedFaq}
+            >
+              <p className="mb-2">When you win a dispute, the money comes back as a <strong>positive</strong> dispute line. The app may auto-match it to the original Cash Sale in NetSuite because it shares the same Shopify order ID.</p>
+
+              <Tip variant="warning">
+                <p><strong>Do not</strong> leave the NS Cash Sale ID on a won dispute. The Cash Sale was already deposited in the original payout &mdash; re-depositing it would double-count the cash. Clear the NS ID and assign the &quot;Shopify Disputes&quot; dropdown instead.</p>
+              </Tip>
+
+              <p className="mt-2">The correct flow for a won dispute:</p>
+              <ol className="list-decimal list-inside space-y-1 ml-2">
+                <li>Clear the auto-assigned NS Cash Sale ID</li>
+                <li>Assign the &quot;Shopify Disputes&quot; dropdown</li>
+                <li>The positive amount offsets previous losses in the Disputes GL account</li>
+              </ol>
+            </FaqItem>
+
           </div>
         </CardContent>
       </Card>
