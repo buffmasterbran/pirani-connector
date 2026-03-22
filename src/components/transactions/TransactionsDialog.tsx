@@ -583,20 +583,28 @@ export function TransactionsDialog({
     // that have at least one problematic transaction
     if (filterMissingCashSale) {
       const problematicOrderIds = new Set<string>()
+      const problematicNonOrderIds = new Set<string>()
       filtered.forEach(t => {
-        if (isProblematicTransaction(t) && t.source_order_id && t.source_order_id !== 'N/A') {
-          problematicOrderIds.add(t.source_order_id)
+        if (isProblematicTransaction(t)) {
+          if (t.source_order_id && t.source_order_id !== 'N/A') {
+            problematicOrderIds.add(t.source_order_id)
+          } else {
+            problematicNonOrderIds.add(t.id)
+          }
         }
       })
 
-      if (problematicOrderIds.size === 0) {
+      if (problematicOrderIds.size === 0 && problematicNonOrderIds.size === 0) {
         return []
       }
 
       return filtered.filter(t =>
-        t.source_order_id &&
+        // Show non-order problematic transactions directly
+        problematicNonOrderIds.has(t.id) ||
+        // Show all transactions for problematic order IDs
+        (t.source_order_id &&
         t.source_order_id !== 'N/A' &&
-        problematicOrderIds.has(t.source_order_id)
+        problematicOrderIds.has(t.source_order_id))
       )
     }
 

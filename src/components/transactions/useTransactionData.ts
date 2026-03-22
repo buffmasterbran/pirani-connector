@@ -213,12 +213,17 @@ export function useTransactionData({
 
     // Count problematic transactions (for "Orders with Issues")
     const problematicOrderIds = new Set<string>()
+    let problematicNonOrderCount = 0
     localTransactions.forEach(t => {
-      if (isProblematicTransaction(t) && t.source_order_id && t.source_order_id !== 'N/A') {
-        problematicOrderIds.add(t.source_order_id)
+      if (isProblematicTransaction(t)) {
+        if (t.source_order_id && t.source_order_id !== 'N/A') {
+          problematicOrderIds.add(t.source_order_id)
+        } else {
+          problematicNonOrderCount++
+        }
       }
     })
-    const problematicOrdersCount = problematicOrderIds.size
+    const problematicOrdersCount = problematicOrderIds.size + problematicNonOrderCount
 
     // Count problematic web orders
     const problematicWebOrderIds = new Set<string>()
@@ -233,18 +238,25 @@ export function useTransactionData({
     })
     const problematicWebOrdersCount = problematicWebOrderIds.size
 
-    // Count problematic non-web orders
+    // Count problematic non-web orders (includes non-order transactions like disputes)
     const problematicNonWebOrderIds = new Set<string>()
+    let problematicNonWebNonOrderCount = 0
     localTransactions.filter(t => {
       if (t.is_web_order === false) return true
       if (t.is_web_order === true) return false
+      // Non-order transactions (no source) count as non-web
+      if (!t.source_name) return true
       return t.source_name !== 'web' && t.source_name !== 'checkout'
     }).forEach(t => {
-      if (isProblematicTransaction(t) && t.source_order_id && t.source_order_id !== 'N/A') {
-        problematicNonWebOrderIds.add(t.source_order_id)
+      if (isProblematicTransaction(t)) {
+        if (t.source_order_id && t.source_order_id !== 'N/A') {
+          problematicNonWebOrderIds.add(t.source_order_id)
+        } else {
+          problematicNonWebNonOrderCount++
+        }
       }
     })
-    const problematicNonWebOrdersCount = problematicNonWebOrderIds.size
+    const problematicNonWebOrdersCount = problematicNonWebOrderIds.size + problematicNonWebNonOrderCount
 
     return {
       webOrdersCount,
