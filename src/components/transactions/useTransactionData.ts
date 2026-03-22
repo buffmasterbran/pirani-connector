@@ -324,12 +324,11 @@ export function useTransactionData({
     }, 0)
 
   // Sum fees from included transactions (same set as charges/refunds/adjustments)
+  // Fees are positive for charges (Shopify takes money) and negative for
+  // fee refunds (e.g. won dispute fee reversal). Signed sum is correct.
   const totalFeesRaw = includedTransactions.reduce((sum, t) => {
     const fee = typeof t.fee === 'string' ? parseFloat(t.fee) : (t.fee ?? 0)
-    // Fees can be positive or negative in DB, but we want absolute value for summing
-    // Then we'll make it negative for display
-    const feeValue = fee || 0
-    return sum + Math.abs(feeValue)
+    return sum + (fee || 0)
   }, 0)
 
   // Fees are displayed as negative (they reduce the payout)
@@ -382,7 +381,7 @@ export function useTransactionData({
   const nsFeesRaw = includedTransactionsForNetSuite
     .reduce((sum, t) => {
       const fee = typeof t.fee === 'string' ? parseFloat(t.fee) : t.fee
-      return sum + Math.abs(fee || 0)
+      return sum + (fee || 0)
     }, 0)
   const nsFees = -nsFeesRaw // Fees are negative
 
@@ -454,18 +453,18 @@ export function useTransactionData({
         const shopifyFeeMap = new Map<string, number>()
         const netsuiteFeeMap = new Map<string, number>()
 
-        // Add ALL fees from transactions table to Shopify Fees (sum all fees)
+        // Add ALL fees from transactions table to Shopify Fees (signed sum)
         const shopifyFeesRaw = localTransactions.reduce((sum, t) => {
           const fee = typeof t.fee === 'string' ? parseFloat(t.fee) : t.fee
-          return sum + Math.abs(fee || 0)
+          return sum + (fee || 0)
         }, 0)
         // Always set Shopify Fees, even if 0, so it shows the total
         shopifyFeeMap.set('Shopify Fees', shopifyFeesRaw)
 
-        // Add ALL fees from included transactions to NetSuite Fees (sum all fees)
+        // Add ALL fees from included transactions to NetSuite Fees (signed sum)
         const netsuiteFeesRaw = includedTransactionsForNetSuite.reduce((sum, t) => {
           const fee = typeof t.fee === 'string' ? parseFloat(t.fee) : t.fee
-          return sum + Math.abs(fee || 0)
+          return sum + (fee || 0)
         }, 0)
         // Always set Shopify Fees, even if 0, so it shows the total
         netsuiteFeeMap.set('Shopify Fees', netsuiteFeesRaw)
@@ -505,14 +504,14 @@ export function useTransactionData({
         // Recalculate to make sure it's the total of all fees (not affected by dropdown selections)
         const allFeesTotal = localTransactions.reduce((sum, t) => {
           const fee = typeof t.fee === 'string' ? parseFloat(t.fee) : t.fee
-          return sum + Math.abs(fee || 0)
+          return sum + (fee || 0)
         }, 0)
         shopifyFeeMap.set('Shopify Fees', allFeesTotal)
 
         // For NetSuite, sum all fees from included transactions
         const allNetSuiteFeesTotal = includedTransactionsForNetSuite.reduce((sum, t) => {
           const fee = typeof t.fee === 'string' ? parseFloat(t.fee) : t.fee
-          return sum + Math.abs(fee || 0)
+          return sum + (fee || 0)
         }, 0)
         netsuiteFeeMap.set('Shopify Fees', allNetSuiteFeesTotal)
 

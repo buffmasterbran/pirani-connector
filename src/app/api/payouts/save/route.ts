@@ -137,6 +137,8 @@ export async function POST(request: NextRequest) {
 
     // Auto-split transactions that have adjustment_order_transactions (e.g. Shop Cash)
     // Shopify merges multiple orders into one payout line — this splits them back out
+    // Only split when there are 2+ orders merged (length > 1).
+    // Single-order credits (length === 1) work fine without splitting.
     const transactionsToAutoSplit = allTransactions.filter(
       (t: any) => Array.isArray(t.adjustment_order_transactions) && t.adjustment_order_transactions.length > 1
     )
@@ -144,17 +146,12 @@ export async function POST(request: NextRequest) {
     if (transactionsToAutoSplit.length > 0) {
       console.log(`🔀 Auto-splitting ${transactionsToAutoSplit.length} merged transactions`)
 
-      // Log the first transaction's adjustment_order_transactions structure for debugging
-      if (transactionsToAutoSplit.length > 0) {
-        const sample = transactionsToAutoSplit[0]
-        console.log(`🔀 Sample adjustment_order_transactions:`, JSON.stringify(sample.adjustment_order_transactions?.slice(0, 2)))
-        console.log(`🔀 Sample transaction keys:`, Object.keys(sample).join(', '))
-      }
-
       // Collect all order IDs from the splits so we can look up orderLineIds
       // Shopify nests order info: sub.order.id and sub.order.name
+      // Also include the parent's source_order_id as a safety net
       const splitOrderIds = new Set<string>()
       for (const t of transactionsToAutoSplit) {
+        if (t.source_order_id) splitOrderIds.add(String(t.source_order_id))
         for (const sub of t.adjustment_order_transactions) {
           const orderId = sub.order?.id ?? sub.order_id
           if (orderId) splitOrderIds.add(String(orderId))
@@ -174,52 +171,48 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Also look up order names for display
-      const orderNameMap = new Map<string, string>()
-      const orderIdsForNames = [...splitOrderIds]
-      if (orderIdsForNames.length > 0) {
-        const orderLines = await prisma.orderLine.findMany({
-          where: { shopifyOrderId: { in: orderIdsForNames }, isDeleted: false },
-          select: { shopifyOrderId: true, shopifyOrderName: true },
-          distinct: ['shopifyOrderId'],
-        })
-        for (const ol of orderLines) {
-          if (ol.shopifyOrderName) orderNameMap.set(ol.shopifyOrderId, ol.shopifyOrderName)
-        }
-      }
-
       for (const transaction of transactionsToAutoSplit) {
+        try {
         const parentId = String(transaction.id)
         const subs: any[] = transaction.adjustment_order_transactions
 
-        // Check if this parent already has children (re-import case)
-        const existingChildren = await prisma.payoutTransaction.count({
-          where: { parentTransactionId: parentId },
+        // Find which children already exist (re-import safe)
+        // On re-import, only create MISSING children — preserves manual edits (NS IDs, dropdowns)
+        const existingChildRows = await prisma.payoutTransaction.findMany({
+          where: { id: { startsWith: `${parentId}-auto` } },
+          select: { id: true },
         })
-        if (existingChildren > 0) {
-          console.log(`🔀 Skipping ${parentId} — already has ${existingChildren} split children`)
+        const existingChildIds = new Set(existingChildRows.map(c => c.id))
+
+        if (existingChildIds.size >= subs.length) {
+          console.log(`🔀 Skipping ${parentId} — already has ${existingChildIds.size} split children`)
           continue
         }
 
         const parentCurrency = transaction.currency ?? payout.currency ?? null
         const processedAtRaw = transaction.processed_at ?? transaction.processedAt ?? null
         const processedAt = processedAtRaw ? new Date(processedAtRaw) : payoutDate ?? null
+        const parentFee = transaction.fee != null ? Number(transaction.fee) : 0
+        const parentAmount = transaction.amount != null ? Number(transaction.amount) : 0
 
         // Create a standalone transaction for each order in the merged transaction
-        // These are top-level rows (no parentTransactionId) so they show as individual
-        // lines that can be matched to NS payments normally
+        // These are top-level rows that can be matched to NS payments normally
         let totalChildFees = 0
+        let created = 0
         for (let j = 0; j < subs.length; j++) {
           const sub = subs[j]
-          // Shopify nests: sub.order.id, sub.order.name, sub.fees, sub.net
+          const childId = `${parentId}-auto-${j}`
+          const childFee = sub.fees != null ? Number(sub.fees) : 0
+          totalChildFees += childFee
+
+          // Skip if this child already exists (incomplete split re-import)
+          if (existingChildIds.has(childId)) continue
+
           const childOrderId = sub.order?.id ? String(sub.order.id) : (sub.order_id ? String(sub.order_id) : null)
           const childOrderName = sub.order?.name ?? null
           const childAmount = sub.amount != null ? Number(sub.amount) : 0
-          const childFee = sub.fees != null ? Number(sub.fees) : 0
           const childNet = sub.net != null ? Number(sub.net) : childAmount
           const childOrderLineId = childOrderId ? (orderLineMap.get(childOrderId) ?? null) : null
-          const childId = `${parentId}-auto-${j}`
-          totalChildFees += childFee
 
           await prisma.payoutTransaction.create({
             data: {
@@ -232,21 +225,52 @@ export async function POST(request: NextRequest) {
               processedAt,
               amount: childAmount,
               net: childNet,
-              fee: childFee ? -Math.abs(childFee) : 0,
+              fee: Math.abs(childFee || 0),
               adjustmentReason: transaction.adjustment_reason ?? null,
               includeInNetSuite: true,
             },
           })
+          created++
 
           console.log(`🔀   Child ${j}: ${childOrderName || childOrderId || '?'} = $${childAmount} (fee: $${childFee})`)
         }
 
-        // Create a separate fee line for the total Shop Cash fees
-        // (individual fees are already on each child row, but this captures any rounding diff)
-        const parentFee = transaction.fee != null ? Number(transaction.fee) : 0
+        // Safety net: if Shopify omitted the primary order from adjustment_order_transactions,
+        // the children amounts won't sum to the parent. Create a remainder child.
+        const totalChildAmounts = subs.reduce((sum: number, s: any) => sum + (s.amount != null ? Number(s.amount) : 0), 0)
+        const remainderAmount = Math.round((parentAmount - totalChildAmounts) * 100) / 100
+        const remainderId = `${parentId}-auto-${subs.length}`
+        if (Math.abs(remainderAmount) > 0.01 && !existingChildIds.has(remainderId)) {
+          const parentOrderId = transaction.source_order_id ? String(transaction.source_order_id) : null
+          const remainderFee = Math.round((Math.abs(parentFee) - totalChildFees) * 100) / 100
+          const remainderNet = Math.round((remainderAmount - remainderFee) * 100) / 100
+          const remainderOrderLineId = parentOrderId ? (orderLineMap.get(parentOrderId) ?? null) : null
+
+          await prisma.payoutTransaction.create({
+            data: {
+              id: remainderId,
+              payoutId,
+              shopifyOrderId: parentOrderId,
+              orderLineId: remainderOrderLineId,
+              type: transaction.type ?? null,
+              currency: parentCurrency,
+              processedAt,
+              amount: remainderAmount,
+              net: remainderNet,
+              fee: Math.abs(remainderFee || 0),
+              adjustmentReason: transaction.adjustment_reason ?? null,
+              includeInNetSuite: true,
+            },
+          })
+          totalChildFees += remainderFee
+          created++
+          console.log(`🔀   Child ${subs.length} (inferred remainder): ${parentOrderId || '?'} = $${remainderAmount} (fee: $${remainderFee})`)
+        }
+
+        // Fee rounding line — captures any diff between parent fee and sum of child fees
         const feeDiff = Math.abs(parentFee) - totalChildFees
-        if (Math.abs(feeDiff) > 0.01) {
-          const feeId = `${parentId}-auto-fee`
+        const feeId = `${parentId}-auto-fee`
+        if (Math.abs(feeDiff) > 0.01 && !existingChildIds.has(feeId)) {
           await prisma.payoutTransaction.create({
             data: {
               id: feeId,
@@ -272,10 +296,14 @@ export async function POST(request: NextRequest) {
           data: { includeInNetSuite: false },
         })
 
-        const orderNames = subs.map((s: any) => {
-          return s.order?.name || s.order_id || '?'
-        }).join(', ')
-        console.log(`🔀 Split ${parentId} into ${subs.length} children: ${orderNames}`)
+        const orderNames = subs.map((s: any) => s.order?.name || s.order_id || '?').join(', ')
+        if (created > 0) {
+          console.log(`🔀 Split ${parentId} into ${subs.length} children (${created} new, ${existingChildIds.size} existed): ${orderNames}`)
+        }
+
+        } catch (splitErr) {
+          console.error(`🔀 ❌ Error splitting ${transaction.id} (non-fatal):`, splitErr)
+        }
       }
     }
 
