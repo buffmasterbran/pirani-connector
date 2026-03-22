@@ -370,3 +370,65 @@ if (filterMissingCashSale) {
 ```
 
 **Why:** Dispute and chargeback protection lines have no order ID (`#N/A`), so they were invisible to the issues filter even when unassigned.
+
+---
+
+### 6. Proposed NetSuite total — disputes excluded from calculation
+
+**File:** `src/components/transactions/useTransactionData.ts`
+
+Two bugs caused the "Proposed NetSuite" summary to show a different amount than the Shopify payout total:
+
+#### Bug A: Dispute transactions excluded from Adjustments total (Lines 312 and 375)
+
+Dispute transactions (`type: "dispute"`) have `adjustmentReason: null`, so they weren't counted in Charges, Refunds, or Adjustments — their amounts were completely missing from the totals.
+
+**Before (Shopify side — line 312):**
+```js
+const totalAdjustments = includedTransactions
+    .filter(t => t.adjustmentReason && t.adjustmentReason !== null)
+```
+
+**After:**
+```js
+const totalAdjustments = includedTransactions
+    .filter(t => (t.adjustmentReason && t.adjustmentReason !== null) || t.type === 'dispute')
+```
+
+**Before (NetSuite side — line 375):**
+```js
+const nsAdjustments = includedTransactionsForNetSuite
+    .filter(t => t.adjustmentReason && t.adjustmentReason !== null)
+```
+
+**After:**
+```js
+const nsAdjustments = includedTransactionsForNetSuite
+    .filter(t => (t.adjustmentReason && t.adjustmentReason !== null) || t.type === 'dispute')
+```
+
+#### Bug B: Dropdown item amounts using `Math.abs()` instead of signed values (Lines 482 and 499)
+
+The grouped fee items display (Chargebacks, E-Com Tax Offset, etc.) was using `Math.abs()` on dropdown-assigned transaction amounts. This caused chargebacks to show as the sum of absolute values (e.g., $244.86) instead of the correct net (-$32.76).
+
+**Before (Shopify dropdown aggregation — line 482):**
+```js
+shopifyFeeMap.set(description, existing + Math.abs(amount || 0))
+```
+
+**After:**
+```js
+shopifyFeeMap.set(description, existing + (amount || 0))
+```
+
+**Before (NetSuite dropdown aggregation — line 499):**
+```js
+netsuiteFeeMap.set(description, existing + Math.abs(amount || 0))
+```
+
+**After:**
+```js
+netsuiteFeeMap.set(description, existing + (amount || 0))
+```
+
+**Why:** Disputes have mixed positive (won disputes) and negative (lost disputes) amounts. Using `Math.abs()` inflated the Chargebacks line and the adjustments filter excluded disputes entirely, causing a false "Mismatch" warning in the payout summary header.
