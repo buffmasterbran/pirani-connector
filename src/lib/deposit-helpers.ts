@@ -281,9 +281,9 @@ export async function getUndepositedIds(ids: number[]): Promise<{
       const status = (txn.statusname || '').toLowerCase()
       if (status.includes('deposited') && !status.includes('not deposited')) {
         skipped.push({ id, tranid: txn.tranid, reason: `Already deposited (${txn.statusname})` })
-      } else if (txn.account && txn.account !== '150') {
-        // Account 150 = Undeposited Funds. Transactions posted directly to a bank
-        // account (e.g., Chase Checking) bypass the deposit workflow and can't be included.
+      } else if (txn.account && txn.account !== '122') {
+        // Account 122 = Undeposited Funds (internal ID). Transactions posted directly
+        // to a bank account (e.g., Chase Checking) bypass the deposit workflow.
         skipped.push({ id, tranid: txn.tranid, reason: `Wrong account (not Undeposited Funds)` })
       } else {
         valid.add(id)
