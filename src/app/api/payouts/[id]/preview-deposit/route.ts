@@ -67,7 +67,8 @@ export async function GET(
     const { valid: validIds, skipped } = await getUndepositedIds(allIds)
 
     const notFound = skipped.filter(s => s.reason === 'Not found in NetSuite')
-    const alreadyDeposited = skipped.filter(s => s.reason !== 'Not found in NetSuite')
+    const wrongAccount = skipped.filter(s => s.reason.includes('Wrong account'))
+    const alreadyDeposited = skipped.filter(s => !s.reason.includes('Not found') && !s.reason.includes('Wrong account'))
 
     // Enrich not-found with DB info
     const notFoundDetails = notFound.map(s => {
@@ -91,6 +92,27 @@ export async function GET(
         success: false,
         error: `${notFound.length} transaction(s) reference NetSuite IDs that no longer exist. Fix these before pushing.`,
         notFound: notFoundDetails,
+        skipped,
+      }, { status: 400 })
+    }
+
+    // Block if any transactions are posted to a bank account instead of Undeposited Funds
+    if (wrongAccount.length > 0) {
+      return NextResponse.json({
+        success: false,
+        error: `${wrongAccount.length} transaction(s) are posted to a bank account instead of Undeposited Funds. Change their account to "150 Undeposited Funds" in NetSuite before pushing.`,
+        wrongAccount: wrongAccount.map(s => {
+          const dbTxn = payout.transactions.find(
+            (t: any) => t.netsuiteTransactionId && parseInt(t.netsuiteTransactionId, 10) === s.id
+          )
+          return {
+            nsId: s.id,
+            tranid: s.tranid,
+            nsName: dbTxn?.netsuiteTransactionName || null,
+            nsType: dbTxn?.netsuiteTransactionType || null,
+            reason: s.reason,
+          }
+        }),
         skipped,
       }, { status: 400 })
     }

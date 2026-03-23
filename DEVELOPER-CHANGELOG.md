@@ -610,3 +610,17 @@ feeItem.netsuiteAmount !== 0 ? (
 ```
 
 **Why:** Dropdown-assigned transaction amounts are negative (e.g., E-Com Tax Offset = -$67.89). The condition `> 0` never matched negative values, so all sub-categories (Chargebacks, E-Com Tax Offset, Shopify Advertising) always showed "—" instead of their actual amounts. Changed to `!== 0` with `Math.abs()` since the `-` prefix is already hardcoded in the template.
+
+---
+
+### 11. Block deposit push when NS transactions are on wrong account
+
+**Files:**
+- `src/lib/deposit-helpers.ts` — Added `Transaction.account` to SuiteQL validation query
+- `src/app/api/payouts/[id]/preview-deposit/route.ts` — Added wrong-account check
+
+**Before:** The deposit validation only checked if transactions were "already deposited" via their status. A Customer Refund (or any transaction) posted directly to a bank account (e.g., Chase Checking) instead of "150 Undeposited Funds" would pass validation but fail or double-post when the deposit tried to include it.
+
+**After:** The SuiteQL query now also fetches `Transaction.account`. Any transaction with an account other than `150` (Undeposited Funds) is flagged and blocked with: *"X transaction(s) are posted to a bank account instead of Undeposited Funds. Change their account to '150 Undeposited Funds' in NetSuite before pushing."*
+
+**Why:** Discovered when a Customer Refund (CUSTRFND26) was accidentally set to Chase Checking instead of Undeposited Funds. Without this check, the deposit would either fail silently or create incorrect GL entries.

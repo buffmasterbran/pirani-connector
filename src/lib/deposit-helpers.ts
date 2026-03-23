@@ -222,7 +222,7 @@ export function buildDepositPayload(
 // SuiteQL validation — check which NS IDs exist and their deposit status
 // ---------------------------------------------------------------------------
 
-interface TxnStatus { id: string; tranid: string; type: string; statusname: string }
+interface TxnStatus { id: string; tranid: string; type: string; statusname: string; account: string }
 
 export async function getUndepositedIds(ids: number[]): Promise<{
   valid: Set<number>
@@ -240,7 +240,7 @@ export async function getUndepositedIds(ids: number[]): Promise<{
   for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
     const chunk = ids.slice(i, i + CHUNK_SIZE)
     const idList = chunk.join(',')
-    const query = `SELECT Transaction.id, Transaction.tranid, Transaction.type, BUILTIN.DF(Transaction.status) AS statusname FROM Transaction WHERE Transaction.id IN (${idList})`
+    const query = `SELECT Transaction.id, Transaction.tranid, Transaction.type, BUILTIN.DF(Transaction.status) AS statusname, Transaction.account FROM Transaction WHERE Transaction.id IN (${idList})`
 
     const authorization = generateOAuthHeader('POST', SUITEQL_URL)
     try {
@@ -281,6 +281,10 @@ export async function getUndepositedIds(ids: number[]): Promise<{
       const status = (txn.statusname || '').toLowerCase()
       if (status.includes('deposited') && !status.includes('not deposited')) {
         skipped.push({ id, tranid: txn.tranid, reason: `Already deposited (${txn.statusname})` })
+      } else if (txn.account && txn.account !== '150') {
+        // Account 150 = Undeposited Funds. Transactions posted directly to a bank
+        // account (e.g., Chase Checking) bypass the deposit workflow and can't be included.
+        skipped.push({ id, tranid: txn.tranid, reason: `Wrong account (not Undeposited Funds)` })
       } else {
         valid.add(id)
       }
