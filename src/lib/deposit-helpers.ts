@@ -49,6 +49,15 @@ export function isPaymentTransaction(txnName: string): boolean {
   )
 }
 
+/** Returns `true` when the NetSuite transaction name looks like a Customer Refund. */
+export function isCustomerRefund(txnName: string): boolean {
+  const name = (txnName || '').toUpperCase().trim()
+  return (
+    name.startsWith('CUSTRFND') ||
+    name.includes('CUSTOMER REFUND')
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Transaction filtering
 // ---------------------------------------------------------------------------
@@ -74,8 +83,8 @@ export function filterValidTransactions(transactions: any[]): any[] {
 /**
  * Given the list of transactions that have valid NS IDs, build the
  * `payment.items` array for the deposit.  Transactions are included if they
- * are a cash sale / refund **or** a payment.  Duplicates (same NS ID) are
- * removed.
+ * are a cash sale / refund, payment, or customer refund.  Duplicates (same
+ * NS ID) are removed.
  */
 export function buildDepositItems(transactions: any[]): DepositItem[] {
   const cashSalesAndRefunds = transactions.filter((txn: any) =>
@@ -84,8 +93,11 @@ export function buildDepositItems(transactions: any[]): DepositItem[] {
   const payments = transactions.filter((txn: any) =>
     isPaymentTransaction(txn.netsuiteTransactionName || ''),
   )
+  const customerRefunds = transactions.filter((txn: any) =>
+    isCustomerRefund(txn.netsuiteTransactionName || ''),
+  )
 
-  const allDepositTransactions = [...cashSalesAndRefunds, ...payments]
+  const allDepositTransactions = [...cashSalesAndRefunds, ...payments, ...customerRefunds]
 
   return allDepositTransactions
     .map((txn: any) => {
@@ -131,13 +143,14 @@ export function buildDropdownItems(
   const map = new Map<string, { description: string; amount: number }>()
 
   for (const txn of transactions) {
-    // Skip for transactions that already have a NS cash sale/payment
+    // Skip for transactions that already have a NS cash sale/payment/customer refund
     // — those go into payment.items via buildDepositItems, so adding their amount
     // here would double-count them in the deposit.
     const hasNsPaymentItem = txn.netsuiteTransactionId &&
       String(txn.netsuiteTransactionId).trim() !== '' &&
       (isCashSaleOrRefund(txn.netsuiteTransactionName || '') ||
-       isPaymentTransaction(txn.netsuiteTransactionName || ''))
+       isPaymentTransaction(txn.netsuiteTransactionName || '') ||
+       isCustomerRefund(txn.netsuiteTransactionName || ''))
 
     if (txn.amountDescription && !hasNsPaymentItem) {
       const mapping = findPayoutMapping(txn.amountDescription, payoutMappings)

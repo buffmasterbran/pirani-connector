@@ -624,3 +624,15 @@ feeItem.netsuiteAmount !== 0 ? (
 **After:** The SuiteQL query now also fetches `Transaction.account`. Any transaction with an account other than `150` (Undeposited Funds) is flagged and blocked with: *"X transaction(s) are posted to a bank account instead of Undeposited Funds. Change their account to '150 Undeposited Funds' in NetSuite before pushing."*
 
 **Why:** Discovered when a Customer Refund (CUSTRFND26) was accidentally set to Chase Checking instead of Undeposited Funds. Without this check, the deposit would either fail silently or create incorrect GL entries.
+
+---
+
+### 12. Include Customer Refunds (CUSTRFND) in deposit payment items
+
+**File:** `src/lib/deposit-helpers.ts`
+
+**Before:** `buildDepositItems()` only recognized Cash Sales (`CS*`), Cash Refunds (`RFND*`), and Payments (`PYMT*`, `CUSTPYMT*`). Customer Refunds (`CUSTRFND*`) were silently excluded from the deposit — they never appeared in the JSON payload.
+
+**After:** Added `isCustomerRefund()` helper that matches `CUSTRFND*` and `CUSTOMER REFUND`. Customer Refunds are now included in `payment.items` alongside cash sales, refunds, and payments. Also updated `buildDropdownItems()` to skip customer refunds (prevents double-counting).
+
+**Why:** Customer Refunds (e.g., CUSTRFND25 for a $184.99 Visa refund) need to be included in the deposit's Payments tab. Without this, the deposit total would be wrong and the refund would never clear the bank.
