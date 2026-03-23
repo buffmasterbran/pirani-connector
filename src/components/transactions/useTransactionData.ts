@@ -396,38 +396,6 @@ export function useTransactionData({
   // Calculate total: sum all components (refunds, fees are already negative)
   const totalNetSuiteAmount = nsCharges + nsRefunds + nsAdjustments + nsMarketplaceSalesTax + nsFees
 
-  // --- Deposit Structure Classification ---
-  // Classify transactions the same way the NS deposit does: Payments tab vs Cash Back tab
-  const isNsCashSale = (t: TransactionItem) => {
-    const n = (t.netsuiteTransactionName || '').toUpperCase().trim()
-    return n.startsWith('CS') || n.includes('CASH SALE')
-  }
-  const isNsRefund = (t: TransactionItem) => {
-    const n = (t.netsuiteTransactionName || '').toUpperCase().trim()
-    return n.startsWith('RFND') || n.includes('CASH REFUND')
-  }
-  const isNsPayment = (t: TransactionItem) => {
-    const n = (t.netsuiteTransactionName || '').toUpperCase().trim()
-    return n.startsWith('PYMT') || n.startsWith('CUSTPYMT') || n.includes('PAYMENT')
-  }
-
-  // Payment tab items
-  const depositCashSales = includedTransactionsForNetSuite.filter(isNsCashSale)
-  const depositRefunds = includedTransactionsForNetSuite.filter(isNsRefund)
-  const depositPayments = includedTransactionsForNetSuite.filter(isNsPayment)
-
-  const depositCashSalesTotal = depositCashSales.reduce((s, t) => s + getNetSuiteAmount(t), 0)
-  const depositRefundsTotal = depositRefunds.reduce((s, t) => s + getNetSuiteAmount(t), 0)
-  const depositPaymentsTotal = depositPayments.reduce((s, t) => s + getNetSuiteAmount(t), 0)
-  const paymentsTabTotal = depositCashSalesTotal + depositRefundsTotal + depositPaymentsTotal
-
-  // Cash Back total: nsFees (already negative) + dropdown item amounts (already negative)
-  const cashBackTotal = nsFees + groupedFeeItems
-    .filter(fi => fi.description !== 'Shopify Fees')
-    .reduce((s, fi) => s + fi.netsuiteAmount, 0)
-
-  const depositTotal = paymentsTabTotal + cashBackTotal
-
   const currency = payoutCurrency || localTransactions[0]?.currency || 'USD'
   const transactionsWithNS = localTransactions.filter(t => t.netsuiteTransactionId)
 
@@ -609,15 +577,5 @@ export function useTransactionData({
     totalNetSuiteAmount,
     currency,
     transactionsWithNS,
-    // Deposit structure
-    paymentsTabTotal,
-    depositCashSalesTotal,
-    depositCashSalesCount: depositCashSales.length,
-    depositRefundsTotal,
-    depositRefundsCount: depositRefunds.length,
-    depositPaymentsTotal,
-    depositPaymentsCount: depositPayments.length,
-    cashBackTotal,
-    depositTotal,
   }
 }

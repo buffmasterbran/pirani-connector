@@ -65,15 +65,6 @@ export function TransactionsDialog({
     totalNetSuiteAmount,
     currency,
     transactionsWithNS,
-    paymentsTabTotal,
-    depositCashSalesTotal,
-    depositCashSalesCount,
-    depositRefundsTotal,
-    depositRefundsCount,
-    depositPaymentsTotal,
-    depositPaymentsCount,
-    cashBackTotal,
-    depositTotal,
   } = useTransactionData({
     transactions,
     payoutTotalAmount,
@@ -674,15 +665,6 @@ export function TransactionsDialog({
           groupedFeeItems={groupedFeeItems}
           includedTransactionsForNetSuite={includedTransactionsForNetSuite}
           transactionsWithNS={transactionsWithNS}
-          paymentsTabTotal={paymentsTabTotal}
-          depositCashSalesTotal={depositCashSalesTotal}
-          depositCashSalesCount={depositCashSalesCount}
-          depositRefundsTotal={depositRefundsTotal}
-          depositRefundsCount={depositRefundsCount}
-          depositPaymentsTotal={depositPaymentsTotal}
-          depositPaymentsCount={depositPaymentsCount}
-          cashBackTotal={cashBackTotal}
-          depositTotal={depositTotal}
         />
 
         {/* Tax adjustment helper notice */}

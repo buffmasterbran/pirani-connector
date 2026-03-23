@@ -610,30 +610,3 @@ feeItem.netsuiteAmount !== 0 ? (
 ```
 
 **Why:** Dropdown-assigned transaction amounts are negative (e.g., E-Com Tax Offset = -$67.89). The condition `> 0` never matched negative values, so all sub-categories (Chargebacks, E-Com Tax Offset, Shopify Advertising) always showed "—" instead of their actual amounts. Changed to `!== 0` with `Math.abs()` since the `-` prefix is already hardcoded in the template.
-
----
-
-### 11. "Proposed NetSuite" column → actual NS Deposit structure
-
-**Files:**
-- `src/components/transactions/useTransactionData.ts` — Added deposit structure classification
-- `src/components/transactions/TransactionSummary.tsx` — Replaced NS column layout
-- `src/components/transactions/TransactionsDialog.tsx` — Pass new props
-
-**Before:** The "Proposed NetSuite" column showed Charges / Refunds / Adjustments / Fees — mirroring the Shopify breakdown. These categories don't match what the NS deposit actually shows, making it impossible to compare the webapp side-by-side with the NS deposit.
-
-**After:** The column now shows the actual NS deposit structure:
-- **Payments** (total) — matches the NS deposit "Payments" tab
-  - Cash Sales (count) — e.g., CS53086, CS53125
-  - Refunds (count) — e.g., RFND1234
-  - Customer Payments (count) — e.g., PYMT5678
-- **Cash Back** (total) — matches the NS deposit "Cash Back" tab
-  - Shopify Fees
-  - Chargebacks (Disputes)
-  - E-Com Tax Offset
-  - Shopify Advertising Fees
-- **Deposit Total** = Payments + Cash Back
-
-**How it works:** Transactions are classified by their `netsuiteTransactionName` pattern (CS*, RFND*, PYMT*, CUSTPYMT*) — the same logic used by `deposit-helpers.ts` when building the actual deposit payload. No new API calls needed.
-
-**Why:** The user needs to open the webapp and the NS deposit side-by-side and immediately confirm "that matches" or "something is wrong." The biggest concern is a missing cash sale that's masked by a fee offset — the Payments total would be wrong even if the Deposit Total happens to balance. The Status column also shows "Missing NS IDs" count to flag unmatched transactions.
