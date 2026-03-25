@@ -1,20 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { handleApiError } from '@/lib/api-helpers'
+import { getMappings } from '@/lib/mapping-crud'
 
 export async function GET() {
-  try {
-    const mappings = await prisma.paymentMethodMapping.findMany({
-      where: { isActive: true },
-      orderBy: { createdAt: 'asc' },
-    })
-    return NextResponse.json({ success: true, data: mappings })
-  } catch (error) {
-    console.error('Error fetching payment method mappings:', error)
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch payment method mappings' },
-      { status: 500 },
-    )
-  }
+  return getMappings(prisma.paymentMethodMapping, 'paymentMethodMapping', {
+    where: { isActive: true },
+    orderBy: { createdAt: 'asc' },
+  })
 }
 
 export async function POST(request: NextRequest) {
@@ -45,11 +38,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: mapping })
   } catch (error) {
-    console.error('Error creating payment method mapping:', error)
-    return NextResponse.json(
-      { success: false, error: 'Failed to create payment method mapping' },
-      { status: 500 },
-    )
+    return handleApiError(error, 'POST paymentMethodMapping')
   }
 }
 
@@ -105,10 +94,6 @@ export async function PUT(request: NextRequest) {
 
     return NextResponse.json({ success: true, results })
   } catch (error) {
-    console.error('Error saving payment method mappings:', error)
-    return NextResponse.json(
-      { success: false, error: 'Failed to save payment method mappings' },
-      { status: 500 },
-    )
+    return handleApiError(error, 'PUT paymentMethodMapping')
   }
 }

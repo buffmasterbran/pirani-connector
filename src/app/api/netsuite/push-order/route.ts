@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { buildNetSuiteSalesOrderPayload, createNetSuiteSalesOrder } from '@/lib/netsuite-sales-order'
+import { buildNetSuiteSalesOrderPayload, createNetSuiteSalesOrder } from '@/lib/netsuite'
 import { prisma } from '@/lib/prisma'
 
 /**
@@ -24,20 +24,20 @@ export async function POST(request: NextRequest) {
 
     console.log(`🚀 Building NetSuite sales order payload for Shopify order: ${shopifyOrderId}`)
 
-    // Build the payload
-    const { payload, errors } = await buildNetSuiteSalesOrderPayload(shopifyOrderId)
+    // Build the payload (resolveCustomer is called internally — 3-tier lookup/create)
+    const { payload, errors, customerWasCreated, isMarketplaceOrder, marketplaceSource } = await buildNetSuiteSalesOrderPayload(shopifyOrderId)
 
     // Log any warnings/errors
     if (errors.length > 0) {
       console.warn(`⚠️ Warnings while building payload:`, errors)
     }
 
-    // Validate critical fields
+    // Validate critical fields — customer resolution is now automatic, but can still fail
     if (!payload.entity.id) {
       return NextResponse.json(
         {
           success: false,
-          error: 'Customer does not have a NetSuite ID. Please ensure the customer has been matched to NetSuite.',
+          error: 'Could not resolve NetSuite customer. Check warnings for details.',
           warnings: errors,
         },
         { status: 400 }
@@ -50,6 +50,20 @@ export async function POST(request: NextRequest) {
           success: false,
           error: 'No valid line items found. All items must have SKUs.',
           warnings: errors,
+        },
+        { status: 400 }
+      )
+    }
+
+    // Check for blocking errors (missing mappings)
+    const blockingErrors = errors.filter((e) => e.startsWith('BLOCKING:'))
+    if (blockingErrors.length > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: blockingErrors.map((e) => e.replace('BLOCKING: ', '')).join('\n'),
+          warnings: errors,
+          payload,
         },
         { status: 400 }
       )
@@ -94,8 +108,12 @@ export async function POST(request: NextRequest) {
       success: true,
       salesOrderId: result.salesOrderId,
       salesOrderName: result.salesOrderName,
+      customerWasCreated,
+      isMarketplaceOrder,
+      marketplaceSource,
       warnings: errors.length > 0 ? errors : undefined,
       payload, // Include payload for debugging/review
+      responseDebug: result.responseDebug, // NetSuite response details for debugging
     })
   } catch (error) {
     console.error('❌ Error pushing order to NetSuite:', error)
@@ -130,7 +148,7 @@ export async function GET(request: NextRequest) {
 
     console.log(`🔍 Previewing NetSuite sales order payload for Shopify order: ${shopifyOrderId}`)
 
-    const { payload, errors } = await buildNetSuiteSalesOrderPayload(shopifyOrderId)
+    const { payload, errors, customerWasCreated, isMarketplaceOrder, marketplaceSource } = await buildNetSuiteSalesOrderPayload(shopifyOrderId)
 
     // Fetch customer and address details for preview
     const orderLines = await prisma.orderLine.findMany({
@@ -206,14 +224,17 @@ export async function GET(request: NextRequest) {
       success: true,
       payload,
       customerInfo,
+      customerWasCreated,
+      isMarketplaceOrder,
+      marketplaceSource,
       addressInfo,
       warnings: errors.length > 0 ? errors : undefined,
       validation: {
         hasCustomerId: !!payload.entity.id,
-        hasBillingAddress: !!payload.billAddressList?.id,
-        hasShippingAddress: !!payload.shipAddressList?.id,
+        hasBillingAddress: !!payload.billingAddress,
+        hasShippingAddress: !!payload.shippingAddress,
         itemCount: payload.item.items.length,
-        allItemsHaveSku: payload.item.items.every((item) => !!item.item.itemid),
+        allItemsHaveSku: payload.item.items.every((item) => !!item.item.refName),
       },
     })
   } catch (error) {

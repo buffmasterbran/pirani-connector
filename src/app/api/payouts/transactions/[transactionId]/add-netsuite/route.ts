@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { logTransactionChange } from '@/lib/audit-log'
 
 export async function POST(
   request: NextRequest,
@@ -7,7 +8,7 @@ export async function POST(
 ) {
   try {
     const { transactionId } = params
-    const { netsuiteTransactionId, netsuiteTransactionName, netsuiteAmount } = await request.json()
+    const { netsuiteTransactionId, netsuiteTransactionName, netsuiteAmount, netsuiteTransactionType } = await request.json()
 
     if (!netsuiteTransactionId || !netsuiteTransactionName || netsuiteAmount === undefined) {
       return NextResponse.json(
@@ -36,24 +37,19 @@ export async function POST(
     }
 
     // Calculate amount mismatch
-    // For payments, prioritize net amount (after fees) for comparison
-    // Check if this is a payment transaction by name
-    const netsuiteNameUpper = (netsuiteTransactionName || '').toUpperCase().trim()
-    const isPayment = netsuiteNameUpper.startsWith('PYMT') ||
-                      netsuiteNameUpper.startsWith('CUSTPYMT') ||
-                      netsuiteNameUpper.includes('PAYMENT')
-    
-    // For payments, use net amount; for others, prefer amount then net
-    const shopifyAmount = isPayment 
-      ? (transaction.net || transaction.amount || 0)
-      : (transaction.amount || transaction.net || 0)
-    
+    // NS payments reflect full invoice amount, so always compare on amount (not net)
+    const shopifyAmount = transaction.amount || transaction.net || 0
+
     const netsuiteAmountNum = typeof netsuiteAmount === 'string' ? parseFloat(netsuiteAmount) : netsuiteAmount
-    
-    // Compare absolute values for payments (amounts can be negative)
+
+    // Compare absolute values for amount difference
     const shopifyAmountAbs = Math.abs(shopifyAmount)
     const netsuiteAmountAbs = Math.abs(netsuiteAmountNum)
-    const amountMismatch = Math.abs(shopifyAmountAbs - netsuiteAmountAbs) > 0.01 // Allow 1 cent tolerance
+    const amountDiff = Math.abs(shopifyAmountAbs - netsuiteAmountAbs) > 0.01
+    // Also flag if signs disagree (e.g., Shopify -44.53 vs NS +44.53)
+    const signMismatch = shopifyAmount !== 0 && netsuiteAmountNum !== 0 &&
+      ((shopifyAmount > 0) !== (netsuiteAmountNum > 0))
+    const amountMismatch = amountDiff || signMismatch
 
     // Update the transaction
     await prisma.payoutTransaction.update({
@@ -61,14 +57,25 @@ export async function POST(
       data: {
         netsuiteTransactionId: String(netsuiteTransactionId),
         netsuiteTransactionName: netsuiteTransactionName,
+        netsuiteTransactionType: netsuiteTransactionType || null,
         netsuiteAmount: netsuiteAmountNum,
         amountMismatch,
       },
     })
 
+    logTransactionChange(transactionId, transaction.payoutId, 'add_netsuite', {
+      netsuiteTransactionId,
+      netsuiteTransactionName,
+      netsuiteAmount: netsuiteAmountNum,
+      amountMismatch,
+    })
+
     return NextResponse.json({
       success: true,
       message: 'NetSuite transaction added successfully',
+      warning: signMismatch
+        ? `Sign mismatch: Shopify amount is ${shopifyAmount.toFixed(2)} but NS amount is ${netsuiteAmountNum.toFixed(2)}`
+        : undefined,
       data: {
         transactionId,
         netsuiteTransactionId,

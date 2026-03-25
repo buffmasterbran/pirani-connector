@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { logTransactionChange } from '@/lib/audit-log'
 
 export async function PATCH(
   request: NextRequest,
@@ -35,6 +36,11 @@ export async function PATCH(
       data: {
         includeInNetSuite,
       },
+    })
+
+    logTransactionChange(transactionId, transaction.payoutId, 'toggle_include', {
+      before: transaction.includeInNetSuite,
+      after: includeInNetSuite,
     })
 
     return NextResponse.json({

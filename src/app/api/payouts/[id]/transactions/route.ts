@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-
-const toISO = (date: Date | null | undefined) => (date ? date.toISOString() : null)
+import { toISO } from '@/lib/api-helpers'
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> | { id: string } }) {
   try {
@@ -24,13 +23,16 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
       }, { status: 500 })
     }
     
-    // Fetch transactions with payout data included
+    // Fetch transactions with payout data and split children included
     const transactions = await prismaClient.payoutTransaction.findMany({
       where: { payoutId },
       orderBy: [{ processedAt: 'desc' }, { id: 'asc' }],
       include: {
         orderLine: true,
         payout: true,
+        children: {
+          orderBy: { createdAt: 'asc' },
+        },
       },
     })
     
@@ -119,23 +121,23 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
 
     // Get payout data from transaction relation (should be available if transactions exist)
     const payoutData = transactions[0]?.payout
-    
-    const payload = transactions.map((transaction: any) => {
-      // Try to get order name from relation first, then fallback to lookup map
-      const orderLineData = transaction.orderLine 
+
+    const mapTransaction = (transaction: any) => {
+      const orderLineData = transaction.orderLine
         ? {
             name: transaction.orderLine.shopifyOrderName,
             sourceName: (transaction.orderLine as any).sourceName ?? null,
             appId: (transaction.orderLine as any).appId ?? null,
+            tags: (transaction.orderLine as any).tags ?? null,
           }
         : (transaction.shopifyOrderId ? orderNameMap.get(transaction.shopifyOrderId) : null)
-      
+
       const orderName = orderLineData?.name ?? null
       const sourceName = orderLineData?.sourceName ?? null
       const appId = orderLineData?.appId ?? null
-      
-      // Determine if it's a web order: sourceName is 'web' or 'checkout'
+      const tags = (orderLineData as any)?.tags ?? null
       const isWebOrder = sourceName === 'web' || sourceName === 'checkout'
+      const orderEdited = tags ? /orderediting/.test(tags) : false
 
       return {
         id: transaction.id,
@@ -144,6 +146,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
         source_name: sourceName,
         app_id: appId,
         is_web_order: isWebOrder,
+        order_edited: orderEdited,
         amount: transaction.amount ?? 0,
         fee: transaction.fee ?? 0,
         net: transaction.net ?? 0,
@@ -152,15 +155,26 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
         processedAt: toISO(transaction.processedAt),
         netsuiteTransactionId: transaction.netsuiteTransactionId ?? null,
         netsuiteTransactionName: transaction.netsuiteTransactionName ?? null,
+        netsuiteTransactionType: transaction.netsuiteTransactionType ?? null,
         netsuiteAmount: transaction.netsuiteAmount ?? null,
         amountMismatch: transaction.amountMismatch ?? false,
         includeInNetSuite: transaction.includeInNetSuite ?? true,
         adjustmentReason: transaction.adjustmentReason ?? null,
-        otherFeesDescription: (transaction as any).otherFeesDescription ?? null,
         amountDescription: (transaction as any).amountDescription ?? null,
-        feeDescription: (transaction as any).feeDescription ?? null,
+        parentTransactionId: transaction.parentTransactionId ?? null,
+        children: (transaction.children ?? []).map((child: any) => ({
+          id: child.id,
+          netsuiteTransactionId: child.netsuiteTransactionId ?? null,
+          netsuiteTransactionName: child.netsuiteTransactionName ?? null,
+          netsuiteAmount: child.netsuiteAmount ?? null,
+          amount: child.amount ?? 0,
+        })),
       }
-    })
+    }
+
+    // Only return top-level transactions (exclude children, they're nested under parents)
+    const topLevelTransactions = transactions.filter((t: any) => !t.parentTransactionId)
+    const payload = topLevelTransactions.map(mapTransaction)
 
     return NextResponse.json({ 
       transactions: payload,

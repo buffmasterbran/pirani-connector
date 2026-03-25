@@ -17,7 +17,7 @@ export async function PUT(
     }
 
     const body = await request.json()
-    const { appId, sourceName, friendlyName, isActive } = body
+    const { appId, sourceName, friendlyName, isActive, isTaxable } = body
 
     if (!friendlyName) {
       return NextResponse.json(
@@ -64,6 +64,7 @@ export async function PUT(
         appId: appId ? Number(appId) : null,
         sourceName: sourceName || null,
         friendlyName,
+        isTaxable: isTaxable !== undefined ? isTaxable : true,
         isActive: isActive !== undefined ? isActive : true,
       },
     })

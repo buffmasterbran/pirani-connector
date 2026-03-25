@@ -15,7 +15,8 @@ import {
   HelpCircle,
   Users,
   MapPin as MapPinIcon,
-  Package
+  Package,
+  FlaskConical
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -58,7 +59,7 @@ export function Sidebar({ activeSection, onSectionChange }: SidebarProps) {
       color: 'text-pink-600'
     },
     {
-      id: 'products',
+      id: 'product-sync',
       name: 'Products',
       icon: Package,
       color: 'text-orange-600'
@@ -69,6 +70,12 @@ export function Sidebar({ activeSection, onSectionChange }: SidebarProps) {
       icon: MapPin,
       color: 'text-purple-600',
       hasSubsections: true
+    },
+    {
+      id: 'script-testing',
+      name: 'Script Testing',
+      icon: FlaskConical,
+      color: 'text-cyan-600'
     },
     {
       id: 'settings',

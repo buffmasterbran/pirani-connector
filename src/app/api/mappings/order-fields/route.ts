@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { handleApiError } from '@/lib/api-helpers'
 
 // GET - Fetch all order field mappings from database
 export async function GET() {
@@ -11,24 +12,13 @@ export async function GET() {
       },
     })
     
-    // Try to fetch translation mappings separately if the table exists
     let translationMappingsMap = new Map<number, any[]>()
     try {
-      // Use raw query to avoid Prisma client type issues
-      const rawTranslations = await prisma.$queryRaw<Array<{
-        id: number
-        orderFieldMappingId: number
-        shopifyValue: string
-        netsuiteValue: string
-        isActive: number
-      }>>`
-        SELECT id, orderFieldMappingId, shopifyValue, netsuiteValue, isActive
-        FROM OrderFieldTranslationMapping
-        WHERE isActive = 1
-        ORDER BY id ASC
-      `
-      
-      // Group by orderFieldMappingId
+      const rawTranslations = await prisma.orderFieldTranslationMapping.findMany({
+        where: { isActive: true },
+        orderBy: { id: 'asc' },
+      })
+
       for (const tm of rawTranslations) {
         const mappingId = tm.orderFieldMappingId
         if (!translationMappingsMap.has(mappingId)) {
@@ -39,11 +29,10 @@ export async function GET() {
           orderFieldMappingId: tm.orderFieldMappingId,
           shopifyValue: tm.shopifyValue,
           netsuiteValue: tm.netsuiteValue,
-          isActive: Boolean(tm.isActive),
+          isActive: tm.isActive,
         })
       }
     } catch (tmError: any) {
-      // Table doesn't exist or query failed - that's okay, we'll just have empty translations
       console.warn('Could not fetch translation mappings:', tmError?.message)
     }
     
@@ -78,16 +67,7 @@ export async function GET() {
 
     return NextResponse.json({ success: true, data: formattedMappings })
   } catch (error) {
-    console.error('Error fetching order field mappings:', error)
-    console.error('Error details:', error instanceof Error ? error.message : String(error))
-    return NextResponse.json(
-      { 
-        success: false, 
-        error: 'Failed to fetch order field mappings',
-        details: error instanceof Error ? error.message : String(error)
-      },
-      { status: 500 }
-    )
+    return handleApiError(error, 'GET orderFieldMapping')
   }
 }
 
@@ -138,11 +118,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: formattedMapping })
   } catch (error) {
-    console.error('Error creating order field mapping:', error)
-    return NextResponse.json(
-      { success: false, error: 'Failed to create order field mapping' },
-      { status: 500 }
-    )
+    return handleApiError(error, 'POST orderFieldMapping')
   }
 }
 
@@ -292,17 +268,6 @@ export async function PUT(request: NextRequest) {
       results,
     })
   } catch (error) {
-    console.error('Error batch saving order field mappings:', error)
-    console.error('Error details:', error instanceof Error ? error.stack : String(error))
-    console.error('Error message:', error instanceof Error ? error.message : String(error))
-    
-    return NextResponse.json(
-      { 
-        success: false, 
-        error: 'Failed to save order field mappings',
-        details: error instanceof Error ? error.message : String(error)
-      },
-      { status: 500 }
-    )
+    return handleApiError(error, 'PUT orderFieldMapping')
   }
 }

@@ -1,5 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import {
+  filterValidTransactions,
+  buildDepositItems,
+  buildDropdownItems,
+  buildOtherItems,
+  buildDepositPayload,
+  getUndepositedIds,
+} from '@/lib/deposit-helpers'
 
 export async function GET(
   request: NextRequest,
@@ -27,26 +35,8 @@ export async function GET(
       )
     }
 
-    // Get ALL transactions with NetSuite IDs (cash sales, refunds, and payments) that are included
-    const transactionsWithNS = payout.transactions.filter(
-      (txn) => 
-        txn.netsuiteTransactionId && 
-        txn.netsuiteTransactionId.trim() !== '' &&
-        (txn.includeInNetSuite !== false)
-    )
-
-    // Separate transactions by type for different handling
-    const cashSalesAndRefunds = transactionsWithNS.filter((txn) => {
-      const name = (txn.netsuiteTransactionName || '').toUpperCase().trim()
-      return name.startsWith('CS') || name.startsWith('RFND') || 
-             name.includes('CASH SALE') || name.includes('CASH REFUND')
-    })
-    
-    const payments = transactionsWithNS.filter((txn) => {
-      const name = (txn.netsuiteTransactionName || '').toUpperCase().trim()
-      return name.startsWith('PYMT') || name.startsWith('CUSTPYMT') || 
-             name.includes('PAYMENT')
-    })
+    // Use shared helpers to filter and classify transactions
+    const transactionsWithNS = filterValidTransactions(payout.transactions)
 
     if (transactionsWithNS.length === 0) {
       const totalTransactions = payout.transactions.length
@@ -59,93 +49,8 @@ export async function GET(
       )
     }
 
-    // Calculate total fees (negative amount for "other" items) - only from included transactions
-    const totalFees = payout.transactions
-      .filter((txn) => txn.includeInNetSuite !== false)
-      .reduce((sum, txn) => {
-        return sum + (txn.fee || 0)
-      }, 0)
-
-    // Get payout mappings to resolve dropdown selections to account IDs and descriptions
-    const payoutMappings = await prisma.payoutMapping.findMany({
-      where: { isActive: true },
-    })
-
-    // Helper function to find mapping by netsuiteId or description
-    const findMapping = (value: string | null | undefined) => {
-      if (!value) return null
-      return payoutMappings.find(
-        (m) => m.netsuiteId === value || m.description === value
-      )
-    }
-
-    // Collect transactions with dropdown selections and group by mapping
-    const includedTransactions = payout.transactions.filter(
-      (txn) => txn.includeInNetSuite !== false
-    )
-
-    // Map to store grouped dropdown items: key = netsuiteId, value = { description, totalAmount }
-    const dropdownItemsMap = new Map<string, { description: string; amount: number }>()
-
-    includedTransactions.forEach((txn) => {
-      // Check amountDescription dropdown
-      if (txn.amountDescription) {
-        const mapping = findMapping(txn.amountDescription)
-        if (mapping && mapping.netsuiteId) {
-          const key = mapping.netsuiteId
-          const existing = dropdownItemsMap.get(key) || { description: mapping.description || '', amount: 0 }
-          existing.amount += Number(txn.amount) || 0
-          dropdownItemsMap.set(key, existing)
-        }
-      }
-
-      // Check feeDescription dropdown
-      if (txn.feeDescription) {
-        const mapping = findMapping(txn.feeDescription)
-        if (mapping && mapping.netsuiteId) {
-          const key = mapping.netsuiteId
-          const existing = dropdownItemsMap.get(key) || { description: mapping.description || '', amount: 0 }
-          existing.amount += Number(txn.fee) || 0
-          dropdownItemsMap.set(key, existing)
-        }
-      }
-
-      // Check otherFeesDescription dropdown
-      if (txn.otherFeesDescription) {
-        const mapping = findMapping(txn.otherFeesDescription)
-        if (mapping && mapping.netsuiteId) {
-          const key = mapping.netsuiteId
-          const existing = dropdownItemsMap.get(key) || { description: mapping.description || '', amount: 0 }
-          // For otherFeesDescription, use the amount field (or fee if amount is 0)
-          const amountToUse = Number(txn.amount) || Number(txn.fee) || 0
-          existing.amount += amountToUse
-          dropdownItemsMap.set(key, existing)
-        }
-      }
-    })
-
-    // Prepare deposit request
-    const payoutDate = payout.payoutDate || new Date()
-    
-    // Get NetSuite transaction IDs for cash sales, refunds, and payments - convert string to number
-    // All transaction types go into payment.items with deposit: true
-    const allDepositTransactions = [...cashSalesAndRefunds, ...payments]
-    const depositItems = allDepositTransactions
-      .map((txn) => {
-        const nsId = txn.netsuiteTransactionId
-        if (!nsId) return null
-        const idNum = parseInt(nsId, 10)
-        if (isNaN(idNum)) {
-          return null
-        }
-        // Cash sales, refunds, and payments are all included as deposit items
-        return { deposit: true, id: idNum }
-      })
-      .filter((item): item is { deposit: true; id: number } => item !== null)
-      // Remove duplicates (in case same NetSuite transaction ID appears multiple times)
-      .filter((item, index, self) => 
-        index === self.findIndex((t) => t.id === item.id)
-      )
+    // Build deposit items using shared helper
+    const depositItems = buildDepositItems(transactionsWithNS)
 
     if (depositItems.length === 0) {
       return NextResponse.json(
@@ -157,50 +62,109 @@ export async function GET(
       )
     }
 
-    const depositRequest: {
-      account: { id: string }
-      trandate: string
-      memo: string
-      payment: { items: Array<{ deposit: boolean; id: number }> }
-      other?: { items: Array<{ description: string; amount: number; account: { id: string } }> }
-    } = {
-      account: { id: '217' }, // Default account ID
-      trandate: payoutDate.toISOString(),
-      memo: `Shopify payout ${payoutId.slice(-8)}`,
-      payment: {
-        items: depositItems,
-      },
-    }
+    // Validate deposit items against NetSuite (check for stale/already-deposited IDs)
+    const allIds = depositItems.map(i => i.id)
+    const { valid: validIds, skipped } = await getUndepositedIds(allIds)
 
-    // Build "other.items" array
-    const otherItems: Array<{ description: string; amount: number; account: { id: string } }> = []
+    const notFound = skipped.filter(s => s.reason === 'Not found in NetSuite')
+    const wrongAccount = skipped.filter(s => s.reason.includes('Wrong account'))
+    const alreadyDeposited = skipped.filter(s => !s.reason.includes('Not found') && !s.reason.includes('Wrong account'))
 
-    // Add fees if there are any (always as negative value)
-    if (totalFees !== 0) {
-      otherItems.push({
-        description: 'Shopify Fees',
-        amount: totalFees < 0 ? totalFees : -Math.abs(totalFees), // Ensure negative
-        account: { id: '989' }, // Fees account
-      })
-    }
-
-    // Add dropdown items (grouped and summed)
-    dropdownItemsMap.forEach((item, netsuiteId) => {
-      if (item.amount !== 0) {
-        otherItems.push({
-          description: item.description,
-          amount: item.amount,
-          account: { id: netsuiteId },
-        })
+    // Enrich not-found with DB info
+    const notFoundDetails = notFound.map(s => {
+      const dbTxn = payout.transactions.find(
+        (t: any) => t.netsuiteTransactionId && parseInt(t.netsuiteTransactionId, 10) === s.id
+      )
+      return {
+        nsId: s.id,
+        tranid: s.tranid,
+        nsName: dbTxn?.netsuiteTransactionName || null,
+        nsType: dbTxn?.netsuiteTransactionType || null,
+        shopifyOrderId: dbTxn?.shopifyOrderId || null,
+        shopifyType: dbTxn?.type || null,
+        amount: dbTxn?.amount ?? null,
       }
     })
 
-    // Only add "other" section if there are items
-    if (otherItems.length > 0) {
-      depositRequest.other = {
-        items: otherItems,
-      }
+    // Block if any NS IDs don't exist
+    if (notFound.length > 0) {
+      return NextResponse.json({
+        success: false,
+        error: `${notFound.length} transaction(s) reference NetSuite IDs that no longer exist. Fix these before pushing.`,
+        notFound: notFoundDetails,
+        skipped,
+      }, { status: 400 })
     }
+
+    // Block if any transactions are posted to a bank account instead of Undeposited Funds
+    if (wrongAccount.length > 0) {
+      return NextResponse.json({
+        success: false,
+        error: `${wrongAccount.length} transaction(s) are posted to a bank account instead of Undeposited Funds. Change their account to "150 Undeposited Funds" in NetSuite before pushing.`,
+        wrongAccount: wrongAccount.map(s => {
+          const dbTxn = payout.transactions.find(
+            (t: any) => t.netsuiteTransactionId && parseInt(t.netsuiteTransactionId, 10) === s.id
+          )
+          return {
+            nsId: s.id,
+            tranid: s.tranid,
+            nsName: dbTxn?.netsuiteTransactionName || null,
+            nsType: dbTxn?.netsuiteTransactionType || null,
+            reason: s.reason,
+          }
+        }),
+        skipped,
+      }, { status: 400 })
+    }
+
+    // Block if any are already deposited — including them would mess up the deposit totals
+    if (alreadyDeposited.length > 0) {
+      return NextResponse.json({
+        success: false,
+        error: `${alreadyDeposited.length} transaction(s) are already deposited in NetSuite. Remove or reassign these before pushing.`,
+        alreadyDeposited: alreadyDeposited.map(s => {
+          const dbTxn = payout.transactions.find(
+            (t: any) => t.netsuiteTransactionId && parseInt(t.netsuiteTransactionId, 10) === s.id
+          )
+          return {
+            nsId: s.id,
+            tranid: s.tranid,
+            nsName: dbTxn?.netsuiteTransactionName || null,
+            nsType: dbTxn?.netsuiteTransactionType || null,
+            reason: s.reason,
+          }
+        }),
+        skipped,
+      }, { status: 400 })
+    }
+
+    const validDepositItems = depositItems.filter(i => validIds.has(i.id))
+
+    // Calculate total fees from included transactions
+    const totalFees = payout.transactions
+      .filter((txn) => txn.includeInNetSuite !== false)
+      .reduce((sum, txn) => {
+        return sum + (txn.fee || 0)
+      }, 0)
+
+    // Get payout mappings and build dropdown items using shared helpers
+    const payoutMappings = await prisma.payoutMapping.findMany({
+      where: { isActive: true },
+    })
+    const includedTransactions = payout.transactions.filter(
+      (txn) => txn.includeInNetSuite !== false
+    )
+    const dropdownItems = buildDropdownItems(includedTransactions, payoutMappings)
+    const otherItems = buildOtherItems(totalFees, dropdownItems, '989')
+
+    // Build the full deposit payload using shared helper
+    const payoutDate = payout.payoutDate || new Date()
+    const depositRequest = buildDepositPayload(
+      payoutId,
+      payoutDate.toISOString(),
+      validDepositItems,
+      otherItems,
+    )
 
     return NextResponse.json({
       success: true,
@@ -209,7 +173,12 @@ export async function GET(
         totalTransactions: payout.transactions.length,
         transactionsWithNS: transactionsWithNS.length,
         totalFees,
-        depositItemsCount: depositItems.length,
+        depositItemsCount: validDepositItems.length,
+      },
+      validation: {
+        totalChecked: depositItems.length,
+        valid: validDepositItems.length,
+        skippedCount: skipped.length,
       },
     })
   } catch (error) {
@@ -224,4 +193,3 @@ export async function GET(
     )
   }
 }
-

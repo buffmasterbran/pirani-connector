@@ -22,6 +22,7 @@ interface AddNetSuiteTransactionDialogProps {
     netsuiteTransactionId: string
     netsuiteTransactionName: string
     netsuiteAmount: number
+    netsuiteTransactionType?: string
   }) => Promise<void>
 }
 
@@ -37,10 +38,12 @@ export function AddNetSuiteTransactionDialog({
   const [transactionType, setTransactionType] = useState<{
     cashSale: boolean
     refund: boolean
+    customerRefund: boolean
     payment: boolean
   }>({
     cashSale: false,
     refund: false,
+    customerRefund: false,
     payment: false,
   })
   const [isSaving, setIsSaving] = useState(false)
@@ -70,19 +73,38 @@ export function AddNetSuiteTransactionDialog({
       return
     }
 
+    // Warn on sign mismatch (but still allow)
+    const shopifyAmt = transaction.amount || transaction.net || 0
+    if (shopifyAmt !== 0 && amount !== 0 && ((shopifyAmt > 0) !== (amount > 0))) {
+      if (!window.confirm(
+        `Warning: Sign mismatch — Shopify amount is ${shopifyAmt.toFixed(2)} but you entered ${amount.toFixed(2)}. ` +
+        `The signs don't match. Are you sure you want to continue?`
+      )) {
+        return
+      }
+    }
+
+    // Derive type from checkbox selection
+    const selectedType = transactionType.customerRefund ? 'customerRefund'
+      : transactionType.refund ? 'cashRefund'
+      : transactionType.payment ? 'payment'
+      : transactionType.cashSale ? 'cashSale'
+      : undefined
+
     setIsSaving(true)
     try {
       await onSave({
         netsuiteTransactionId: netsuiteTransactionId.trim(),
         netsuiteTransactionName: netsuiteTransactionName.trim(),
         netsuiteAmount: amount,
+        netsuiteTransactionType: selectedType,
       })
       
       // Reset form
       setNetsuiteTransactionId("")
       setNetsuiteTransactionName("")
       setNetsuiteAmount("")
-      setTransactionType({ cashSale: false, refund: false, payment: false })
+      setTransactionType({ cashSale: false, refund: false, customerRefund: false, payment: false })
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save transaction")
@@ -96,7 +118,7 @@ export function AddNetSuiteTransactionDialog({
       setNetsuiteTransactionId("")
       setNetsuiteTransactionName("")
       setNetsuiteAmount("")
-      setTransactionType({ cashSale: false, refund: false, payment: false })
+      setTransactionType({ cashSale: false, refund: false, customerRefund: false, payment: false })
       setError(null)
       onClose()
     }
@@ -224,7 +246,23 @@ export function AddNetSuiteTransactionDialog({
                   htmlFor="type-refund"
                   className="text-sm font-normal cursor-pointer"
                 >
-                  Refund
+                  Cash Refund
+                </Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="type-customer-refund"
+                  checked={transactionType.customerRefund}
+                  onCheckedChange={(checked) =>
+                    setTransactionType((prev) => ({ ...prev, customerRefund: checked === true }))
+                  }
+                  disabled={isSaving}
+                />
+                <Label
+                  htmlFor="type-customer-refund"
+                  className="text-sm font-normal cursor-pointer"
+                >
+                  Customer Refund
                 </Label>
               </div>
               <div className="flex items-center space-x-2">

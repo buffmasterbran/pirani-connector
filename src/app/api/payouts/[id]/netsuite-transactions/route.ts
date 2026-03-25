@@ -1,423 +1,249 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { fetchNetSuiteTransactions, matchNetSuiteTransactions } from '@/lib/netsuite'
+import { fetchNetSuiteTransactions } from '@/lib/netsuite'
+
+async function loadPayoutData(payoutId: string) {
+  const payout = await prisma.payout.findUnique({
+    where: { id: payoutId },
+    include: {
+      transactions: {
+        include: {
+          orderLine: { select: { shopifyOrderName: true } },
+        },
+      },
+    },
+  })
+  return payout
+}
+
+function classifyTransactions(payout: NonNullable<Awaited<ReturnType<typeof loadPayoutData>>>) {
+  const transactionsNeedingNS = payout.transactions.filter(
+    (txn) =>
+      (txn.orderLine?.shopifyOrderName || txn.shopifyOrderId) &&
+      !txn.netsuiteTransactionId &&
+      txn.includeInNetSuite !== false &&
+      !txn.amountDescription // Skip dropdown-assigned transactions (they go to deposit GL lines)
+  )
+
+  const cashSales: string[] = []
+  const refunds: string[] = []
+  const payments: string[] = []
+  const customerRefunds: string[] = []
+
+  for (const txn of transactionsNeedingNS) {
+    const orderName =
+      txn.orderLine?.shopifyOrderName ||
+      (txn.shopifyOrderId ? `#${txn.shopifyOrderId}` : null)
+    if (!orderName) continue
+
+    const isCustomerRefund = txn.type === 'customerRefund' || txn.type === 'custrfnd' || txn.type?.toLowerCase() === 'customerrefund'
+    const isRefund = txn.type === 'refund' || txn.type === 'cashRefund' || txn.amount === null || (txn.amount !== null && txn.amount < 0)
+    const isPayment = txn.type === 'payment' || txn.type === 'custpymt' || txn.type?.toLowerCase().includes('payment')
+
+    if (isCustomerRefund) customerRefunds.push(orderName)
+    else if (isPayment) payments.push(orderName)
+    else if (isRefund) refunds.push(orderName)
+    else cashSales.push(orderName)
+  }
+
+  return { cashSales, refunds, payments, customerRefunds, transactionsNeedingNS }
+}
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
-    // Handle both sync and async params (Next.js 14 vs 15)
     const resolvedParams = params instanceof Promise ? await params : params
     const payoutId = resolvedParams.id
 
-    // Get payout and transactions
-    const payout = await prisma.payout.findUnique({
-      where: { id: payoutId },
-      include: {
-        transactions: {
-          include: {
-            orderLine: {
-              select: {
-                shopifyOrderName: true,
-              },
-            },
-          },
-        },
-      },
-    })
-
-    if (!payout) {
-      return NextResponse.json(
-        { success: false, error: 'Payout not found' },
-        { status: 404 }
-      )
+    const payoutOrNull = await loadPayoutData(payoutId)
+    if (!payoutOrNull) {
+      return NextResponse.json({ success: false, error: 'Payout not found' }, { status: 404 })
     }
+    const payout = payoutOrNull
 
-    // Get transactions that need NetSuite IDs (have order name but no NetSuite transaction ID, and are included)
-    const transactionsNeedingNS = payout.transactions.filter(
-      (txn) =>
-        (txn.orderLine?.shopifyOrderName || txn.shopifyOrderId) &&
-        !txn.netsuiteTransactionId &&
-        (txn.includeInNetSuite !== false)
-    )
+    const { cashSales, refunds, payments, customerRefunds, transactionsNeedingNS } = classifyTransactions(payout)
 
     if (transactionsNeedingNS.length === 0) {
-      return NextResponse.json({
-        success: true,
-        message: 'All transactions already have NetSuite IDs',
-        updated: 0,
-        errors: [],
-      })
+      return NextResponse.json({ success: true, message: 'All transactions already have NetSuite IDs', updated: 0, errors: [] })
     }
 
-    // Group transactions by type (charge/refund/payment) and collect order names
-    const cashSales: string[] = []
-    const refunds: string[] = []
-    const payments: string[] = []
-
-    for (const txn of transactionsNeedingNS) {
-      const orderName =
-        txn.orderLine?.shopifyOrderName ||
-        (txn.shopifyOrderId ? `#${txn.shopifyOrderId}` : null)
-
-      if (!orderName) continue
-
-      // Determine transaction type based on transaction type or amount
-      const isRefund =
-        txn.type === 'refund' ||
-        txn.amount === null ||
-        (txn.amount !== null && txn.amount < 0)
-      
-      const isPayment =
-        txn.type === 'payment' ||
-        txn.type === 'custpymt' ||
-        txn.type?.toLowerCase().includes('payment')
-
-      if (isPayment) {
-        payments.push(orderName)
-      } else if (isRefund) {
-        refunds.push(orderName)
-      } else {
-        cashSales.push(orderName)
-      }
-    }
-
-    if (cashSales.length === 0 && refunds.length === 0 && payments.length === 0) {
-      return NextResponse.json({
-        success: true,
-        message: 'No transactions to fetch',
-        updated: 0,
-        errors: [],
-      })
-    }
-
-    // NetSuite has a limit of 4000 search results per request
-    // Since each order name can match multiple transactions (cash sale, refund, payment),
-    // we need to use a conservative batch size. Using 1500 to account for multiple matches per order.
-    // The total order names per batch (cash sales + refunds + payments) should not exceed 1500
-    const MAX_ORDER_NAMES_PER_BATCH = 1500
-
-    // Helper function to split array into batches
-    const chunkArray = <T,>(array: T[], size: number): T[][] => {
-      const chunks: T[][] = []
-      for (let i = 0; i < array.length; i += size) {
-        chunks.push(array.slice(i, i + size))
-      }
-      return chunks
-    }
-
-    // Prepare base request data
+    // Fetch all NetSuite transactions in a single call
     const payoutDate = payout.payoutDate || new Date()
-    const baseRequest = {
-      account: 217, // Default account ID, could be made configurable
+    const nsRequest = {
+      account: 217,
       memo: `Shopify payout ${payoutId.slice(-8)}`,
-      date: payoutDate.toISOString().split('T')[0], // YYYY-MM-DD format
+      date: payoutDate.toISOString().split('T')[0],
+      cashsales: cashSales,
+      refunds: refunds,
+      payments: payments.length > 0 ? payments : undefined,
+      customerRefunds: customerRefunds.length > 0 ? customerRefunds : undefined,
     }
 
-    // Create batch requests ensuring total order names per batch doesn't exceed limit
-    // We'll distribute cash sales, refunds, and payments across batches
-    const batchRequests: Array<{
-      cashsales: string[]
-      refunds: string[]
-      payments?: string[]
-    }> = []
+    console.log(`📦 Fetching NS transactions: ${cashSales.length} CS, ${refunds.length} RF, ${payments.length} PM, ${customerRefunds.length} CR`)
+    const nsResponse = await fetchNetSuiteTransactions(nsRequest)
 
-    // Process all order names in batches, distributing across transaction types
-    let cashSalesIndex = 0
-    let refundsIndex = 0
-    let paymentsIndex = 0
-
-    while (cashSalesIndex < cashSales.length || refundsIndex < refunds.length || paymentsIndex < payments.length) {
-      const batchCashSales: string[] = []
-      const batchRefunds: string[] = []
-      const batchPayments: string[] = []
-      let totalInBatch = 0
-
-      // Fill batch with cash sales first
-      while (cashSalesIndex < cashSales.length && totalInBatch < MAX_ORDER_NAMES_PER_BATCH) {
-        batchCashSales.push(cashSales[cashSalesIndex])
-        cashSalesIndex++
-        totalInBatch++
-      }
-
-      // Then add refunds
-      while (refundsIndex < refunds.length && totalInBatch < MAX_ORDER_NAMES_PER_BATCH) {
-        batchRefunds.push(refunds[refundsIndex])
-        refundsIndex++
-        totalInBatch++
-      }
-
-      // Finally add payments
-      while (paymentsIndex < payments.length && totalInBatch < MAX_ORDER_NAMES_PER_BATCH) {
-        batchPayments.push(payments[paymentsIndex])
-        paymentsIndex++
-        totalInBatch++
-      }
-
-      // Only create a batch if it has at least one order name
-      if (batchCashSales.length > 0 || batchRefunds.length > 0 || batchPayments.length > 0) {
-        batchRequests.push({
-          cashsales: batchCashSales,
-          refunds: batchRefunds,
-          payments: batchPayments.length > 0 ? batchPayments : undefined,
-        })
-      }
+    if (nsResponse.status !== 'success') {
+      return NextResponse.json({ success: false, error: `NetSuite fetch failed: ${nsResponse.message}` }, { status: 500 })
     }
 
-    // Fetch from NetSuite in parallel for all batches
-    console.log(`📦 Processing ${batchRequests.length} batch(es) to stay under NetSuite's 4000 result limit`)
-    
-    const netsuiteResponses = await Promise.all(
-      batchRequests.map(async (batch, index) => {
-        const netsuiteRequest = {
-          ...baseRequest,
-          ...batch,
-        }
-        console.log(`  Batch ${index + 1}/${batchRequests.length}: ${batch.cashsales.length} cash sales, ${batch.refunds.length} refunds, ${batch.payments?.length || 0} payments`)
-        return fetchNetSuiteTransactions(netsuiteRequest)
-      })
-    )
-
-    // Check for errors in any batch
-    const failedBatches = netsuiteResponses.filter(response => response.status !== 'success')
-    if (failedBatches.length > 0) {
-      const errorMessages = failedBatches.map(r => r.message || 'Unknown error').join('; ')
-      return NextResponse.json(
-        {
-          success: false,
-          error: `NetSuite API returned errors in ${failedBatches.length} batch(es): ${errorMessages}`,
-        },
-        { status: 500 }
-      )
+    const nsResults = {
+      cashsales: nsResponse.details.cashsales,
+      refunds: nsResponse.details.refunds,
+      payments: nsResponse.details.payments || [],
+      customerRefunds: nsResponse.details.customerRefunds || [],
     }
 
-    // Combine results from all batches
-    const netsuiteData = {
-      status: 'success' as const,
-      message: 'Combined results from multiple batches',
-      details: {
-        cashsales: netsuiteResponses.flatMap(r => r.details.cashsales),
-        refunds: netsuiteResponses.flatMap(r => r.details.refunds),
-        payments: netsuiteResponses.flatMap(r => r.details.payments || []),
-      },
+    console.log(`✅ NS results: ${nsResults.cashsales.length} CS, ${nsResults.refunds.length} RF, ${nsResults.payments.length} PM, ${nsResults.customerRefunds.length} CR`)
+    if (nsResults.payments.length > 0) {
+      console.log(`💳 Payments found:`, nsResults.payments.map(p => `${p.tranid} (ref: ${p.otherrefnum}, amt: ${p.amount})`).join(', '))
     }
 
-    console.log(`✅ Combined results: ${netsuiteData.details.cashsales.length} cash sales, ${netsuiteData.details.refunds.length} refunds, ${netsuiteData.details.payments.length} payments`)
-
-    // Match NetSuite transactions to our transactions by order name AND transaction type
-    // Store ALL transactions for each order name (not just one) since orders can have both charges and refunds
+    // Match NS results against DB transactions
     const transactionMap = new Map<string, Array<typeof payout.transactions[0]>>()
     for (const txn of payout.transactions) {
-      // Only include transactions that are marked for NetSuite matching
       if (txn.includeInNetSuite === false) continue
-      
-      const orderName =
-        txn.orderLine?.shopifyOrderName ||
-        (txn.shopifyOrderId ? `#${txn.shopifyOrderId}` : null)
-      if (orderName) {
-        // Normalize order name for consistent matching
-        const normalizedOrderName = orderName.startsWith('#') ? orderName : `#${orderName}`
-        
-        if (!transactionMap.has(normalizedOrderName)) {
-          transactionMap.set(normalizedOrderName, [])
-        }
-        transactionMap.get(normalizedOrderName)!.push(txn)
-        
-        // Also store without # for matching flexibility
-        const orderNameWithoutHash = orderName.startsWith('#') ? orderName.substring(1) : orderName
-        if (!transactionMap.has(orderNameWithoutHash)) {
-          transactionMap.set(orderNameWithoutHash, [])
-        }
-        transactionMap.get(orderNameWithoutHash)!.push(txn)
+      const orderName = txn.orderLine?.shopifyOrderName || (txn.shopifyOrderId ? `#${txn.shopifyOrderId}` : null)
+      if (!orderName) continue
+
+      const normalized = orderName.startsWith('#') ? orderName : `#${orderName}`
+      const bare = orderName.startsWith('#') ? orderName.substring(1) : orderName
+
+      for (const key of [normalized, bare]) {
+        if (!transactionMap.has(key)) transactionMap.set(key, [])
+        transactionMap.get(key)!.push(txn)
       }
     }
 
-    // Helper function to normalize order name for matching
-    const normalizeOrderName = (orderName: string): string => {
-      return orderName.startsWith('#') ? orderName : `#${orderName}`
-    }
+    const normalize = (n: string) => (n.startsWith('#') ? n : `#${n}`)
+    const isRefundTxn = (txn: typeof payout.transactions[0]) =>
+      txn.type === 'refund' || txn.amount === null || (txn.amount !== null && txn.amount < 0)
 
-    // Helper function to determine if a transaction is a refund
-    const isRefundTransaction = (txn: typeof payout.transactions[0]): boolean => {
-      return txn.type === 'refund' || 
-             txn.amount === null || 
-             (txn.amount !== null && txn.amount < 0)
-    }
-
-    // Update transactions with NetSuite data
-    let updated = 0
+    const updates: Array<{
+      id: string
+      netsuiteTransactionId: string
+      netsuiteTransactionName: string
+      netsuiteAmount: number
+      amountMismatch: boolean
+    }> = []
     const errors: string[] = []
+    const matchedTxnIds = new Set<string>()
+    const matchedNsIds = new Set<number>()
 
-    // Process cash sales - only match to charge transactions
-    for (const cashSale of netsuiteData.details.cashsales) {
-      const normalizedOrderName = normalizeOrderName(cashSale.otherrefnum)
-      const transactions = transactionMap.get(normalizedOrderName) || transactionMap.get(cashSale.otherrefnum) || []
-      
-      // Find charge transactions (not refunds) for this order
-      const chargeTransactions = transactions.filter(txn => !isRefundTransaction(txn))
-      
-      // Try to match by amount first (most accurate)
-      let matchedTxn = chargeTransactions.find(txn => {
-        const shopifyAmount = txn.amount || txn.net || 0
-        const netsuiteAmount = cashSale.amount
-        return Math.abs(shopifyAmount - netsuiteAmount) < 0.01 // Within 1 cent tolerance
-      })
-      
-      // If no exact amount match, use the first charge transaction (fallback)
-      if (!matchedTxn && chargeTransactions.length > 0) {
-        matchedTxn = chargeTransactions[0]
-      }
-      
-      if (matchedTxn) {
-        const shopifyAmount = matchedTxn.amount || matchedTxn.net || 0
-        const netsuiteAmount = cashSale.amount
-        const amountMismatch = Math.abs(shopifyAmount - netsuiteAmount) > 0.01 // Allow 1 cent tolerance
+    const matchNS = (
+      nsItems: Array<{ id: number; tranid: string; otherrefnum: string; amount: number }>,
+      filterFn: (txn: typeof payout.transactions[0]) => boolean,
+      useAbsAmount: boolean,
+    ) => {
+      for (const nsItem of nsItems) {
+        if (matchedNsIds.has(nsItem.id)) continue
+        const key1 = normalize(nsItem.otherrefnum)
+        const txns = transactionMap.get(key1) || transactionMap.get(nsItem.otherrefnum) || []
+        const candidates = txns.filter(t => filterFn(t) && !matchedTxnIds.has(t.id))
 
-        await prisma.payoutTransaction.update({
-          where: { id: matchedTxn.id },
-          data: {
-            netsuiteTransactionId: String(cashSale.id),
-            netsuiteTransactionName: cashSale.tranid,
-            netsuiteAmount: netsuiteAmount,
-            amountMismatch,
-          },
+        let matched = candidates.find(txn => {
+          const shopAmt = useAbsAmount ? Math.abs(txn.amount || txn.net || 0) : (txn.amount || txn.net || 0)
+          const nsAmt = useAbsAmount ? Math.abs(nsItem.amount) : nsItem.amount
+          return Math.abs(shopAmt - nsAmt) < 0.01
         })
+        if (!matched && candidates.length > 0) matched = candidates[0]
 
-        updated++
-        if (amountMismatch) {
-          errors.push(
-            `${cashSale.otherrefnum}: Amount mismatch - Shopify: ${shopifyAmount.toFixed(2)}, NetSuite: ${netsuiteAmount.toFixed(2)}`
-          )
-        }
-      }
-    }
+        if (matched) {
+          matchedTxnIds.add(matched.id)
+          matchedNsIds.add(nsItem.id)
+          const rawShopAmt = matched.amount || matched.net || 0
+          const rawNsAmt = nsItem.amount
+          const shopAmt = useAbsAmount ? Math.abs(rawShopAmt) : rawShopAmt
+          const nsAmt = useAbsAmount ? Math.abs(rawNsAmt) : rawNsAmt
+          const amountDiff = Math.abs(shopAmt - nsAmt) > 0.01
+          // Also flag if signs disagree (e.g., Shopify -44.53 vs NS +44.53)
+          const signMismatch = rawShopAmt !== 0 && rawNsAmt !== 0 &&
+            ((rawShopAmt > 0) !== (rawNsAmt > 0))
+          const mismatch = amountDiff || signMismatch
 
-    // Process refunds - only match to refund transactions
-    for (const refund of netsuiteData.details.refunds) {
-      const normalizedOrderName = normalizeOrderName(refund.otherrefnum)
-      const transactions = transactionMap.get(normalizedOrderName) || transactionMap.get(refund.otherrefnum) || []
-      
-      // Find refund transactions for this order
-      const refundTransactions = transactions.filter(txn => isRefundTransaction(txn))
-      
-      // Try to match by amount first (most accurate)
-      let matchedTxn = refundTransactions.find(txn => {
-        // Compare absolute values since Shopify might store refunds as positive or negative
-        const shopifyAmount = Math.abs(txn.net || txn.amount || 0)
-        const netsuiteAmount = Math.abs(refund.amount) // NetSuite refunds are negative
-        return Math.abs(shopifyAmount - netsuiteAmount) < 0.01 // Within 1 cent tolerance
-      })
-      
-      // If no exact amount match, use the first refund transaction (fallback)
-      if (!matchedTxn && refundTransactions.length > 0) {
-        matchedTxn = refundTransactions[0]
-      }
-      
-      if (matchedTxn) {
-        // Compare absolute values since Shopify might store refunds as positive or negative
-        const shopifyAmount = Math.abs(matchedTxn.net || matchedTxn.amount || 0)
-        const netsuiteAmount = Math.abs(refund.amount) // NetSuite refunds are negative
-        const amountMismatch = Math.abs(shopifyAmount - netsuiteAmount) > 0.01
-
-        await prisma.payoutTransaction.update({
-          where: { id: matchedTxn.id },
-          data: {
-            netsuiteTransactionId: String(refund.id),
-            netsuiteTransactionName: refund.tranid,
-            netsuiteAmount: refund.amount, // Keep negative for refunds
-            amountMismatch,
-          },
-        })
-
-        updated++
-        if (amountMismatch) {
-          errors.push(
-            `${refund.otherrefnum}: Amount mismatch - Shopify: ${shopifyAmount.toFixed(2)}, NetSuite: ${netsuiteAmount.toFixed(2)}`
-          )
-        }
-      }
-    }
-
-    // Process payments - match to payment transactions
-    if (netsuiteData.details.payments) {
-      for (const payment of netsuiteData.details.payments) {
-        const normalizedOrderName = normalizeOrderName(payment.otherrefnum)
-        const transactions = transactionMap.get(normalizedOrderName) || transactionMap.get(payment.otherrefnum) || []
-        
-        // Find payment transactions for this order
-        const paymentTransactions = transactions.filter(txn => 
-          txn.type === 'payment' ||
-          txn.type === 'custpymt' ||
-          txn.type?.toLowerCase().includes('payment')
-        )
-        
-        // Try to match by amount first (most accurate)
-        // For payments, use net amount (after fees) for matching, as NetSuite payment amounts typically match the net
-        let matchedTxn = paymentTransactions.find(txn => {
-          const shopifyAmount = Math.abs(txn.net || txn.amount || 0)
-          const netsuiteAmount = Math.abs(payment.amount)
-          return Math.abs(shopifyAmount - netsuiteAmount) < 0.01 // Within 1 cent tolerance
-        })
-        
-        // If no exact amount match, use the first payment transaction (fallback)
-        if (!matchedTxn && paymentTransactions.length > 0) {
-          matchedTxn = paymentTransactions[0]
-        }
-        
-        // If no payment transaction found, try matching to any transaction for this order
-        if (!matchedTxn) {
-          const allTransactions = transactions.filter(txn => !isRefundTransaction(txn))
-          matchedTxn = allTransactions.find(txn => {
-            const shopifyAmount = Math.abs(txn.net || txn.amount || 0)
-            const netsuiteAmount = Math.abs(payment.amount)
-            return Math.abs(shopifyAmount - netsuiteAmount) < 0.01
-          }) || allTransactions[0]
-        }
-        
-        if (matchedTxn) {
-          // For payments, compare net amount (after fees) with NetSuite amount
-          // This is consistent with how we match payments above
-          const shopifyAmount = Math.abs(matchedTxn.net || matchedTxn.amount || 0)
-          const netsuiteAmount = Math.abs(payment.amount)
-          const amountMismatch = Math.abs(shopifyAmount - netsuiteAmount) > 0.01
-
-          await prisma.payoutTransaction.update({
-            where: { id: matchedTxn.id },
-            data: {
-              netsuiteTransactionId: String(payment.id),
-              netsuiteTransactionName: payment.tranid,
-              netsuiteAmount: payment.amount,
-              amountMismatch,
-            },
+          updates.push({
+            id: matched.id,
+            netsuiteTransactionId: String(nsItem.id),
+            netsuiteTransactionName: nsItem.tranid,
+            netsuiteAmount: nsItem.amount,
+            amountMismatch: mismatch,
           })
 
-          updated++
-          if (amountMismatch) {
-            errors.push(
-              `${payment.otherrefnum}: Amount mismatch - Shopify: ${shopifyAmount.toFixed(2)}, NetSuite: ${netsuiteAmount.toFixed(2)}`
-            )
+          if (mismatch) {
+            const reason = signMismatch ? 'Sign mismatch' : 'Amount mismatch'
+            errors.push(`${nsItem.otherrefnum}: ${reason} - Shopify: ${rawShopAmt.toFixed(2)}, NS: ${rawNsAmt.toFixed(2)}`)
           }
         }
       }
     }
 
+    matchNS(nsResults.cashsales, t => !isRefundTxn(t) && t.type !== 'customerRefund' && t.type !== 'custrfnd', false)
+    matchNS(nsResults.refunds, t => isRefundTxn(t) && t.type !== 'customerRefund' && t.type !== 'custrfnd', true)
+    matchNS(nsResults.customerRefunds, t => t.type === 'customerRefund' || t.type === 'custrfnd' || t.type?.toLowerCase() === 'customerrefund', true)
+    // First try matching payments to payment-typed transactions
+    const beforePaymentMatch = updates.length
+    matchNS(nsResults.payments, t => t.type === 'payment' || t.type === 'custpymt' || (t.type?.toLowerCase().includes('payment') ?? false), true)
+    console.log(`💳 Payment strict match: ${updates.length - beforePaymentMatch} matched`)
+    // Fallback: match remaining payments to any unmatched transaction with the same order ref
+    // This handles Shop Cash credits (type='credit') that need a NS payment
+    const beforeFallback = updates.length
+    matchNS(nsResults.payments, () => true, true)
+    console.log(`💳 Payment fallback match: ${updates.length - beforeFallback} matched`)
+
+    // Bulk update matched transactions in chunks (Postgres max 32767 bind vars, 6 per row)
+    const UPDATE_CHUNK_SIZE = 4000
+    if (updates.length > 0) {
+      for (let i = 0; i < updates.length; i += UPDATE_CHUNK_SIZE) {
+        const chunk = updates.slice(i, i + UPDATE_CHUNK_SIZE)
+
+        let nsIdCase = ''
+        let nsNameCase = ''
+        let nsAmountCase = ''
+        let mismatchCase = ''
+        const sqlParams: any[] = []
+        let pIdx = 1
+
+        for (const u of chunk) {
+          nsIdCase += ` WHEN "id" = $${pIdx} THEN $${pIdx + 1}`
+          nsNameCase += ` WHEN "id" = $${pIdx} THEN $${pIdx + 2}`
+          nsAmountCase += ` WHEN "id" = $${pIdx} THEN $${pIdx + 3}::float`
+          mismatchCase += ` WHEN "id" = $${pIdx} THEN $${pIdx + 4}::boolean`
+          sqlParams.push(u.id, u.netsuiteTransactionId, u.netsuiteTransactionName, u.netsuiteAmount, u.amountMismatch)
+          pIdx += 5
+        }
+
+        const ids = chunk.map(u => u.id)
+        const idPlaceholders = ids.map((_, idx) => `$${pIdx + idx}`).join(', ')
+        sqlParams.push(...ids)
+
+        const sql = `
+          UPDATE "PayoutTransaction" SET
+            "netsuiteTransactionId" = CASE ${nsIdCase} END,
+            "netsuiteTransactionName" = CASE ${nsNameCase} END,
+            "netsuiteAmount" = CASE ${nsAmountCase} END,
+            "amountMismatch" = CASE ${mismatchCase} END
+          WHERE "id" IN (${idPlaceholders})
+        `
+        await prisma.$executeRawUnsafe(sql, ...sqlParams)
+        console.log(`💾 Updated ${i + chunk.length}/${updates.length} transactions`)
+      }
+    }
+
     return NextResponse.json({
       success: true,
-      message: `Updated ${updated} transaction(s) with NetSuite IDs`,
-      updated,
+      updated: updates.length,
+      cashSalesMatched: nsResults.cashsales.length,
+      refundsMatched: nsResults.refunds.length,
+      paymentsMatched: nsResults.payments.length,
+      customerRefundsMatched: nsResults.customerRefunds.length,
       errors: errors.length > 0 ? errors : undefined,
     })
   } catch (error) {
-    console.error('❌ Error fetching NetSuite transactions:', error)
+    console.error('Error in netsuite-transactions:', error)
     return NextResponse.json(
-      {
-        success: false,
-        error:
-          error instanceof Error ? error.message : 'Failed to fetch NetSuite transactions',
-      },
-      { status: 500 }
+      { success: false, error: error instanceof Error ? error.message : 'Failed to process NetSuite transactions' },
+      { status: 500 },
     )
   }
 }
-

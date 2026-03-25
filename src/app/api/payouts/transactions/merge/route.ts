@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { logTransactionChange } from '@/lib/audit-log'
 
 export async function POST(request: NextRequest) {
   try {
@@ -73,7 +74,6 @@ export async function POST(request: NextRequest) {
     let netsuiteTransactionId = targetTransaction.netsuiteTransactionId
     let netsuiteTransactionName = targetTransaction.netsuiteTransactionName
     let netsuiteAmount = targetTransaction.netsuiteAmount
-    let amountMismatch = targetTransaction.amountMismatch
 
     // If target doesn't have NetSuite ID but a source does, use the source's
     if (!netsuiteTransactionId) {
@@ -82,28 +82,24 @@ export async function POST(request: NextRequest) {
         netsuiteTransactionId = sourceWithNetSuite.netsuiteTransactionId
         netsuiteTransactionName = sourceWithNetSuite.netsuiteTransactionName
         netsuiteAmount = sourceWithNetSuite.netsuiteAmount
-        amountMismatch = sourceWithNetSuite.amountMismatch
       }
     }
 
-    // Combine dropdown descriptions (prefer target's, fallback to source's)
+    // Recalculate amountMismatch after merge
+    let amountMismatch = false
+    if (netsuiteAmount !== null && netsuiteAmount !== undefined) {
+      const amountDiff = Math.abs(Math.abs(combinedAmount) - Math.abs(netsuiteAmount)) > 0.01
+      const signMismatch = combinedAmount !== 0 && netsuiteAmount !== 0 &&
+        ((combinedAmount > 0) !== (netsuiteAmount > 0))
+      amountMismatch = amountDiff || signMismatch
+    }
+
+    // Combine dropdown description (prefer target's, fallback to source's)
     let amountDescription = targetTransaction.amountDescription
-    let feeDescription = targetTransaction.feeDescription
-    let otherFeesDescription = targetTransaction.otherFeesDescription
 
     if (!amountDescription) {
       const sourceWithAmountDesc = sourceTransactions.find(t => t.amountDescription)
       if (sourceWithAmountDesc) amountDescription = sourceWithAmountDesc.amountDescription
-    }
-
-    if (!feeDescription) {
-      const sourceWithFeeDesc = sourceTransactions.find(t => t.feeDescription)
-      if (sourceWithFeeDesc) feeDescription = sourceWithFeeDesc.feeDescription
-    }
-
-    if (!otherFeesDescription) {
-      const sourceWithOtherFeesDesc = sourceTransactions.find(t => t.otherFeesDescription)
-      if (sourceWithOtherFeesDesc) otherFeesDescription = sourceWithOtherFeesDesc.otherFeesDescription
     }
 
     // Update target transaction with combined data
@@ -118,8 +114,6 @@ export async function POST(request: NextRequest) {
         netsuiteAmount,
         amountMismatch,
         amountDescription,
-        feeDescription,
-        otherFeesDescription,
         // Keep target's includeInNetSuite unless all sources are excluded
         includeInNetSuite: targetTransaction.includeInNetSuite !== false,
       },
@@ -130,6 +124,15 @@ export async function POST(request: NextRequest) {
       where: {
         id: { in: sourceTransactionIds },
       },
+    })
+
+    logTransactionChange(targetTransactionId, targetTransaction.payoutId, 'merge', {
+      sourceTransactionIds,
+      before: {
+        target: { amount: targetTransaction.amount, fee: targetTransaction.fee, net: targetTransaction.net },
+        sources: sourceTransactions.map(t => ({ id: t.id, type: t.type, amount: t.amount, fee: t.fee, net: t.net })),
+      },
+      after: { amount: combinedAmount, fee: combinedFee, net: combinedNet },
     })
 
     return NextResponse.json({

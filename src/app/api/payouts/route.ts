@@ -1,84 +1,97 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { toISO } from '@/lib/api-helpers'
 
-const toISO = (date: Date | null | undefined) => (date ? date.toISOString() : null)
+export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
     const payouts = await prisma.payout.findMany({
       orderBy: { payoutDate: 'desc' },
       include: {
-        transactions: {
-          include: {
-            orderLine: true,
-          },
-        },
+        _count: { select: { transactions: true } },
       },
     })
 
-    // Get all unique shopifyOrderIds from all transactions that don't have orderLine relation
-    const missingOrderIds = new Set<string>()
-    for (const payout of payouts) {
-      for (const transaction of payout.transactions) {
-        if (transaction.shopifyOrderId && !transaction.orderLine) {
-          missingOrderIds.add(transaction.shopifyOrderId)
-        }
-      }
+    if (payouts.length === 0) {
+      return NextResponse.json({ payouts: [] })
     }
 
-    // Lookup order names for transactions without orderLine relation
-    const orderNameMap = new Map<string, string>()
-    if (missingOrderIds.size > 0) {
-      const orderLines = await prisma.orderLine.findMany({
-        where: {
-          shopifyOrderId: { in: Array.from(missingOrderIds) },
-          isDeleted: false,
-        },
-        select: {
-          shopifyOrderId: true,
-          shopifyOrderName: true,
-        },
-      })
-      
-      for (const orderLine of orderLines) {
-        orderNameMap.set(orderLine.shopifyOrderId, orderLine.shopifyOrderName)
-      }
+    const payoutIds = payouts.map(p => p.id)
+
+    let aggregates: any[] = []
+    try {
+      aggregates = await prisma.$queryRawUnsafe(
+        `SELECT "payoutId",
+                COALESCE(SUM("amount"), 0)::float AS "sumAmount",
+                COALESCE(SUM("net"), 0)::float AS "sumNet"
+         FROM "PayoutTransaction"
+         WHERE "payoutId" = ANY($1::text[])
+           AND "parentTransactionId" IS NULL
+         GROUP BY "payoutId"`,
+        payoutIds,
+      )
+    } catch {
+      aggregates = await prisma.$queryRawUnsafe(
+        `SELECT "payoutId",
+                COALESCE(SUM("amount"), 0)::float AS "sumAmount",
+                COALESCE(SUM("net"), 0)::float AS "sumNet"
+         FROM "PayoutTransaction"
+         WHERE "payoutId" = ANY($1::text[])
+         GROUP BY "payoutId"`,
+        payoutIds,
+      )
+    }
+
+    const aggMap = new Map<string, { sumAmount: number; sumNet: number }>()
+    for (const a of aggregates) {
+      aggMap.set(a.payoutId, { sumAmount: Number(a.sumAmount), sumNet: Number(a.sumNet) })
+    }
+
+    // Compute match status for each payout:
+    // - Count transactions missing NS IDs (excluding payout-type and dropdown-assigned)
+    // - Compare Shopify net total vs NetSuite amount total
+    let matchStats: any[] = []
+    try {
+      matchStats = await prisma.$queryRawUnsafe(
+        `SELECT
+           "payoutId",
+           COUNT(*) FILTER (
+             WHERE "includeInNetSuite" = true
+               AND "type" != 'payout'
+               AND "amountDescription" IS NULL
+               AND ("netsuiteTransactionId" IS NULL OR "netsuiteTransactionId" = '')
+               AND "parentTransactionId" IS NULL
+           )::int AS "missingNsCount",
+           COALESCE(SUM("amount") FILTER (WHERE "includeInNetSuite" = true AND "parentTransactionId" IS NULL), 0)::float AS "shopifyTotal",
+           COALESCE(SUM(CASE
+             WHEN "netsuiteAmount" IS NOT NULL THEN "netsuiteAmount"
+             ELSE "amount"
+           END) FILTER (WHERE "includeInNetSuite" = true AND "parentTransactionId" IS NULL), 0)::float AS "nsTotal"
+         FROM "PayoutTransaction"
+         WHERE "payoutId" = ANY($1::text[])
+         GROUP BY "payoutId"`,
+        payoutIds,
+      )
+    } catch (err) {
+      console.warn('⚠️ Match status query failed, skipping:', err)
+    }
+
+    const matchMap = new Map<string, { missingNsCount: number; matched: boolean }>()
+    for (const m of matchStats) {
+      const missing = Number(m.missingNsCount) || 0
+      const shopifyTotal = Number(m.shopifyTotal) || 0
+      const nsTotal = Number(m.nsTotal) || 0
+      const amountsMatch = Math.abs(shopifyTotal - nsTotal) < 0.01
+      matchMap.set(m.payoutId, { missingNsCount: missing, matched: missing === 0 && amountsMatch })
     }
 
     const payload = payouts.map((payout) => {
-      const transactions = payout.transactions.map((transaction) => {
-        // Try to get order name from relation first, then fallback to lookup map
-        const orderName = transaction.orderLine?.shopifyOrderName 
-          ?? (transaction.shopifyOrderId ? orderNameMap.get(transaction.shopifyOrderId) : null)
-          ?? null
-
-        return {
-          id: transaction.id,
-          source_order_id: transaction.shopifyOrderId ?? 'N/A',
-          order_name: orderName,
-          amount: transaction.amount ?? 0,
-          fee: transaction.fee ?? 0,
-          net: transaction.net ?? 0,
-          type: transaction.type ?? 'charge',
-          currency: transaction.currency ?? payout.currency ?? 'USD',
-          processedAt: toISO(transaction.processedAt),
-          netsuiteTransactionId: transaction.netsuiteTransactionId ?? null,
-          netsuiteTransactionName: transaction.netsuiteTransactionName ?? null,
-          netsuiteAmount: transaction.netsuiteAmount ?? null,
-          amountMismatch: transaction.amountMismatch ?? false,
-          includeInNetSuite: transaction.includeInNetSuite ?? true,
-          adjustmentReason: transaction.adjustmentReason ?? null,
-          otherFeesDescription: transaction.otherFeesDescription ?? null,
-          amountDescription: transaction.amountDescription ?? null,
-          feeDescription: transaction.feeDescription ?? null,
-        }
-      })
-
-      const expectedDepositAmount = transactions.reduce((acc, current) => acc + (current.amount ?? 0), 0)
-      const actualDepositAmount = transactions.reduce((acc, current) => acc + (current.net ?? 0), 0)
+      const agg = aggMap.get(payout.id) ?? { sumAmount: 0, sumNet: 0 }
+      const match = matchMap.get(payout.id) ?? { missingNsCount: 0, matched: false }
+      const expectedDepositAmount = agg.sumAmount
+      const actualDepositAmount = agg.sumNet
       const varianceAmount = actualDepositAmount - expectedDepositAmount
-      
-      // Use Shopify's payout totalAmount if available, otherwise fall back to calculated actualDepositAmount
       const payoutAmount = payout.totalAmount ?? actualDepositAmount
 
       return {
@@ -92,11 +105,16 @@ export async function GET() {
         expectedDepositAmount,
         actualDepositAmount,
         varianceAmount,
+        transactionCount: (payout as any)._count?.transactions ?? 0,
         netsuiteDepositNumber: payout.netsuiteDepositId ?? null,
         netsuiteDepositId: payout.netsuiteDepositId ?? null,
+        pushedToNsBy: (payout as any).pushedToNsBy ?? null,
+        pushedToNsAt: (payout as any).pushedToNsAt ? toISO((payout as any).pushedToNsAt) : null,
         createdAt: toISO(payout.createdAt),
         updatedAt: toISO(payout.updatedAt),
-        transactions,
+        matchStatus: match.matched ? 'matched' : 'mismatch',
+        missingNsCount: match.missingNsCount,
+        transactions: [],
       }
     })
 

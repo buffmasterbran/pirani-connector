@@ -50,6 +50,8 @@ SHOPIFY_API_VERSION=2025-10
 DATABASE_URL="file:./dev.db"
 ```
 
+**Shopify 401?** The app needs an **Admin API access token** (from a legacy custom app or from OAuth), not the Dev Dashboard Client ID/secret. See **[docs/SHOPIFY_CREDENTIALS.md](docs/SHOPIFY_CREDENTIALS.md)** for setup options (legacy custom app vs developer app + OAuth).
+
 ### Import Workflow
 
 - `POST /api/shopify/orders` – fetches the latest Shopify orders, flattens line items, and upserts the `OrderLine` table.

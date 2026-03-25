@@ -1,5 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native"]
 }
 
 datasource db {
@@ -54,6 +55,7 @@ model OrderLine {
   lineItemTotal          Float?
   lineItemNet            Float?
   lineItemMetadata       String?
+  tags                   String?   // Comma-separated Shopify order tags
   sourceName             String?   // Shopify order source_name (e.g., 'web', '3890849' for Shop App)
   appId                  Int?      // Shopify app_id
   isDeleted              Boolean   @default(false)
@@ -76,6 +78,8 @@ model Payout {
   payoutDate        DateTime?
   type              String?
   netsuiteDepositId String?
+  pushedToNsBy      String?
+  pushedToNsAt      DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -96,20 +100,23 @@ model PayoutTransaction {
   adjustmentReason        String?
   netsuiteTransactionId   String?
   netsuiteTransactionName String?
+  netsuiteTransactionType String?
   netsuiteAmount          Float?
   amountMismatch          Boolean   @default(false)
   includeInNetSuite       Boolean   @default(true)
-  otherFeesDescription    String?
   amountDescription       String?
-  feeDescription          String?
+  parentTransactionId     String?
   createdAt               DateTime  @default(now())
 
-  payout    Payout     @relation(fields: [payoutId], references: [id], onDelete: Cascade)
-  orderLine OrderLine? @relation(fields: [orderLineId], references: [id])
+  payout    Payout              @relation(fields: [payoutId], references: [id], onDelete: Cascade)
+  orderLine OrderLine?          @relation(fields: [orderLineId], references: [id])
+  parent    PayoutTransaction?  @relation("TransactionSplits", fields: [parentTransactionId], references: [id], onDelete: Cascade)
+  children  PayoutTransaction[] @relation("TransactionSplits")
 
   @@index([payoutId])
   @@index([shopifyOrderId])
   @@index([adjustmentReason])
+  @@index([parentTransactionId])
 }
 
 model PayoutMapping {
@@ -123,10 +130,37 @@ model PayoutMapping {
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 
+  autoAssignRules         AutoAssignRule[]
+
   @@index([mappingType])
   @@index([isActive])
   @@index([isDefaultDepositAccount])
   @@index([isDefaultFeesAccount])
+}
+
+model AutoAssignRule {
+  id                        Int      @id @default(autoincrement())
+  name                      String   // e.g. "Tax Adjustments → E-Com Tax Offset"
+
+  // Conditions (null = wildcard/any)
+  conditionType             String?  // "credit", "debit", "charge", "refund"
+  conditionAdjustmentReason String?  // "tax_adjustment", "shop_cash", etc.
+  conditionSourceName       String?  // "web", "Shop App", etc.
+
+  // Target
+  targetField               String   // "amountDescription"
+  targetMappingId           Int      // FK → PayoutMapping
+
+  // Ordering & status
+  priority                  Int      @default(0)  // Lower = higher priority (first match wins)
+  isActive                  Boolean  @default(true)
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  targetMapping             PayoutMapping @relation(fields: [targetMappingId], references: [id], onDelete: Cascade)
+
+  @@index([isActive])
+  @@index([priority])
 }
 
 model PaymentMethodMapping {
@@ -158,6 +192,7 @@ model OrderSourceMapping {
   appId       Int?     // Shopify app_id (e.g., 2329312, 3890849)
   sourceName  String?  // Shopify source_name (e.g., 'web', 'checkout')
   friendlyName String  // Display name (e.g., 'Facebook', 'Shop App', 'Web')
+  isTaxable   Boolean  @default(true) // Whether NS should calculate tax for orders from this source
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -322,6 +357,270 @@ model Customer {
   @@index([shopifyCustomerId])
   @@index([email])
   @@index([netsuiteCustomerId])
+}
+
+// ============================================================
+// Product Sync Models
+// ============================================================
+
+enum ProductSyncMatchStatus {
+  matched
+  unmatched
+  multiple_matches
+  error
+}
+
+enum ProductSyncStatus {
+  pending
+  success
+  error
+  skipped
+}
+
+enum SyncType {
+  full
+  incremental
+  manual_single
+  manual_all
+}
+
+enum SyncRunStatus {
+  running
+  completed
+  completed_with_errors
+  failed
+}
+
+enum SyncJobType {
+  scheduled
+  manual
+}
+
+enum SyncJobStatus {
+  pending
+  running
+  completed
+  failed
+}
+
+model ProductSyncStoreConfig {
+  id                          String   @id @default(uuid())
+  storeName                   String
+  storeLabel                  String?
+  shopifyDomain               String   @unique
+  shopifyAccessTokenEncrypted String
+  shopifyApiVersion           String   @default("2025-10")
+  netsuiteFlagFieldId         String
+  netsuitePriceLevelId        Int
+  netsuiteComparePriceLevelId Int?
+  syncEnabled                 Boolean  @default(true)
+  syncIntervalMinutes         Int      @default(15)
+  lowStockThreshold           Int      @default(10)
+  lowStockIntervalMinutes     Int      @default(5)
+  includeNonInventory         Boolean  @default(false)
+  isActive                    Boolean  @default(true)
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+
+  locationMappings ProductSyncLocationMapping[]
+  productMappings  ProductSyncMapping[]
+  fieldMappings    ProductSyncFieldMapping[]
+  syncLogs         ProductSyncLog[]
+  syncJobs         ProductSyncJob[]
+}
+
+model ProductSyncLocationMapping {
+  id                   String   @id @default(uuid())
+  storeConfigId        String
+  netsuiteLocationId   Int
+  netsuiteLocationName String?
+  shopifyLocationId    String
+  shopifyLocationName  String?
+  isActive             Boolean  @default(true)
+  createdAt            DateTime @default(now())
+
+  storeConfig ProductSyncStoreConfig @relation(fields: [storeConfigId], references: [id], onDelete: Cascade)
+
+  @@unique([storeConfigId, netsuiteLocationId, shopifyLocationId])
+  @@index([storeConfigId])
+}
+
+model ProductSyncMapping {
+  id                     String                @id @default(uuid())
+  storeConfigId          String
+  netsuiteItemId         Int?
+  netsuiteSku            String
+  netsuiteName           String?
+  netsuiteColor          String?
+  netsuiteSize           String?
+  netsuiteItemType       String?
+  shopifyProductId       String?
+  shopifyVariantId       String?
+  shopifyInventoryItemId String?
+  shopifyProductTitle    String?
+  shopifyProductHandle   String?
+  matchStatus            ProductSyncMatchStatus @default(unmatched)
+  netsuiteCurrentPrice   Decimal?               @db.Decimal(10, 2)
+  netsuiteCurrentQty     Int?
+  lastSyncedPrice        Decimal?               @db.Decimal(10, 2)
+  lastSyncedComparePrice Decimal?               @db.Decimal(10, 2)
+  lastSyncedQuantity     Int?
+  lastSyncAt             DateTime?
+  lastSyncStatus         ProductSyncStatus      @default(pending)
+  lastSyncError          String?
+  netsuiteFlagValue      String?
+  netsuiteExtraFields    Json?
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+
+  storeConfig ProductSyncStoreConfig @relation(fields: [storeConfigId], references: [id], onDelete: Cascade)
+
+  @@unique([storeConfigId, netsuiteSku])
+  @@index([netsuiteSku])
+  @@index([matchStatus])
+  @@index([lastSyncStatus])
+  @@index([storeConfigId])
+}
+
+model ProductSyncLog {
+  id              String        @id @default(uuid())
+  storeConfigId   String?
+  syncType        SyncType
+  startedAt       DateTime      @default(now())
+  completedAt     DateTime?
+  status          SyncRunStatus @default(running)
+  itemsProcessed  Int           @default(0)
+  itemsUpdated    Int           @default(0)
+  itemsSkipped    Int           @default(0)
+  itemsErrored    Int           @default(0)
+  priceUpdates    Int           @default(0)
+  quantityUpdates Int           @default(0)
+  errorSummary    Json?
+  durationMs      Int?
+  createdAt       DateTime      @default(now())
+
+  storeConfig ProductSyncStoreConfig? @relation(fields: [storeConfigId], references: [id])
+  syncJobs    ProductSyncJob[]
+
+  @@index([storeConfigId])
+  @@index([startedAt(sort: Desc)])
+}
+
+model ProductSyncJob {
+  id            String        @id @default(uuid())
+  storeConfigId String
+  jobType       SyncJobType
+  status        SyncJobStatus @default(pending)
+  nextRunAt     DateTime?
+  lastRunAt     DateTime?
+  lastRunLogId  String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  storeConfig ProductSyncStoreConfig @relation(fields: [storeConfigId], references: [id], onDelete: Cascade)
+  lastRunLog  ProductSyncLog?        @relation(fields: [lastRunLogId], references: [id])
+
+  @@unique([storeConfigId, jobType])
+  @@index([storeConfigId])
+}
+
+model CachedNetSuiteLocation {
+  id        Int      @id
+  name      String
+  fetchedAt DateTime @default(now())
+}
+
+model CachedNetSuitePriceLevel {
+  id        Int      @id
+  name      String
+  fetchedAt DateTime @default(now())
+}
+
+model ProductSyncFieldMapping {
+  id              String   @id @default(uuid())
+  storeConfigId   String?
+  mappingType     String   // "flag_field" | "special" | "item_field"
+  shopifyField    String   // e.g., "price", "inventory_quantity", "title", "sku"
+  netsuiteFieldId String?  // e.g., "itemid", "displayname", "salesDescription"
+  defaultValue    String?
+  isRequired      Boolean  @default(false)
+  isEnabled       Boolean  @default(true)
+  sortOrder       Int      @default(0)
+  category        String   @default("standard") // "required" | "standard" | "uncommon"
+  specialConfig   Json?    // For special mappings: { priceLevelId, locationId, etc. }
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  storeConfig ProductSyncStoreConfig? @relation(fields: [storeConfigId], references: [id], onDelete: Cascade)
+
+  @@unique([storeConfigId, shopifyField])
+  @@index([storeConfigId])
+}
+
+model WebhookLog {
+  id              Int      @id @default(autoincrement())
+  endpoint        String
+  method          String   @default("POST")
+  requestPayload  Json?
+  responsePayload Json?
+  responseStatus  Int?
+  durationMs      Int?
+  source          String?
+  itemCount       Int?
+  summary         String?
+  createdAt       DateTime @default(now())
+
+  @@index([endpoint])
+  @@index([createdAt(sort: Desc)])
+}
+
+model Fulfillment {
+  id                    Int       @id @default(autoincrement())
+  shopifyOrderId        String
+  netsuiteSoId          String?
+  netsuiteIfId          String    @unique
+  shopifyFulfillmentId  String?
+  trackingNumber        String?
+  carrier               String?
+  shippedDate           DateTime?
+  lineItems             Json?
+  status                String    @default("synced")
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([shopifyOrderId])
+  @@index([netsuiteSoId])
+  @@index([status])
+}
+
+model TransactionAuditLog {
+  id              Int      @id @default(autoincrement())
+  transactionId   String
+  payoutId        String
+  action          String   // merge, split, split_delete, toggle_include, set_amount_desc, set_fee_desc, set_other_fees_desc, add_netsuite, clear_netsuite, reassign_netsuite
+  details         Json?    // { before: {...}, after: {...}, sourceIds: [...], etc. }
+  createdAt       DateTime @default(now())
+
+  @@index([transactionId])
+  @@index([payoutId])
+  @@index([createdAt(sort: Desc)])
+}
+
+model TransactionHint {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique // Machine key: "excluded", "mismatch", "marketplace_charge", etc.
+  label     String   // Human-readable label shown in Settings UI
+  message   String   // Hint text shown to users (supports {reason} placeholder for adjustments)
+  icon      String   @default("?") // Emoji icon prefix
+  bgColor   String   @default("bg-blue-50") // Tailwind bg class for the hint row
+  textColor String   @default("text-blue-700") // Tailwind text class
+  sortOrder Int      @default(0) // Display order in Settings (lower = higher)
+  isActive  Boolean  @default(true) // Toggle hint on/off without deleting
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([code])
 }
 
 model CustomerAddress {

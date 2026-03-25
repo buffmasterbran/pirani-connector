@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { logTransactionChange } from '@/lib/audit-log'
 
 export async function DELETE(
   request: NextRequest,
@@ -28,6 +29,14 @@ export async function DELETE(
         netsuiteTransactionName: null,
         netsuiteAmount: null,
         amountMismatch: false,
+      },
+    })
+
+    logTransactionChange(transactionId, transaction.payoutId, 'clear_netsuite', {
+      before: {
+        netsuiteTransactionId: transaction.netsuiteTransactionId,
+        netsuiteTransactionName: transaction.netsuiteTransactionName,
+        netsuiteAmount: transaction.netsuiteAmount,
       },
     })
 
