@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { TransactionsDialog } from '@/components/transactions'
 import { Loader, LoaderWithText } from '@/components/Loader'
-import { Download, Filter, X, Loader2, Search, ExternalLink } from 'lucide-react'
+import { Download, Filter, X, Loader2, Search, ExternalLink, Plus } from 'lucide-react'
 import JsonView from '@uiw/react-json-view'
 import { safeToLocaleDateString } from '@/lib/dateUtils'
 
@@ -755,12 +755,12 @@ export function PayoutsSection() {
       if (response.ok) {
         setPayouts(prev => prev.map(payout =>
           payout.id === selectedPayoutForEdit.id
-            ? { ...payout, netsuiteDepositNumber: editingNetSuiteId.trim() }
+            ? { ...payout, netsuiteDepositNumber: editingNetSuiteId.trim(), netsuiteDepositId: editingNetSuiteId.trim() }
             : payout
         ))
         setSavedPayouts(prev => prev.map(p =>
           p.id === String(selectedPayoutForEdit.id)
-            ? { ...p, netsuiteDepositNumber: editingNetSuiteId.trim() }
+            ? { ...p, netsuiteDepositNumber: editingNetSuiteId.trim(), netsuiteDepositId: editingNetSuiteId.trim() }
             : p
         ))
 
@@ -1366,18 +1366,27 @@ export function PayoutsSection() {
                           </span>
                         )}
                         {payout.inDatabase && !payout.netsuiteDepositNumber && (
-                          payout.matchStatus === 'matched' ? (
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                              Matched
-                            </span>
-                          ) : (
-                            <span
-                              className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800"
-                              title={payout.missingNsCount ? `${payout.missingNsCount} transaction(s) missing NetSuite IDs` : 'Amounts do not match'}
+                          <>
+                            {payout.matchStatus === 'matched' ? (
+                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                Matched
+                              </span>
+                            ) : (
+                              <span
+                                className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800"
+                                title={payout.missingNsCount ? `${payout.missingNsCount} transaction(s) missing NetSuite IDs` : 'Amounts do not match'}
+                              >
+                                Mismatch{payout.missingNsCount ? ` (${payout.missingNsCount} missing)` : ''}
+                              </span>
+                            )}
+                            <button
+                              onClick={() => openEditNetSuiteIdDialog(payout)}
+                              className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-100 text-blue-600 hover:bg-blue-200 cursor-pointer transition-colors"
+                              title="Link existing NetSuite deposit"
                             >
-                              Mismatch{payout.missingNsCount ? ` (${payout.missingNsCount} missing)` : ''}
-                            </span>
-                          )
+                              <Plus className="h-3.5 w-3.5" />
+                            </button>
+                          </>
                         )}
                       </div>
 
@@ -1868,7 +1877,7 @@ export function PayoutsSection() {
       <Dialog open={isEditNetSuiteIdDialogOpen} onOpenChange={setIsEditNetSuiteIdDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Edit NetSuite ID</DialogTitle>
+            <DialogTitle>{selectedPayoutForEdit?.netsuiteDepositNumber ? 'Edit' : 'Add'} NetSuite Deposit ID</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4">
@@ -1901,7 +1910,7 @@ export function PayoutsSection() {
               onClick={saveEditedNetSuiteId}
               disabled={!editingNetSuiteId.trim()}
             >
-              Update NetSuite ID
+              {selectedPayoutForEdit?.netsuiteDepositNumber ? 'Update' : 'Save'} NetSuite ID
             </Button>
           </div>
         </DialogContent>

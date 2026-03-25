@@ -636,3 +636,19 @@ feeItem.netsuiteAmount !== 0 ? (
 **After:** Added `isCustomerRefund()` helper that matches `CUSTRFND*` and `CUSTOMER REFUND`. Customer Refunds are now included in `payment.items` alongside cash sales, refunds, and payments. Also updated `buildDropdownItems()` to skip customer refunds (prevents double-counting).
 
 **Why:** Customer Refunds (e.g., CUSTRFND25 for a $184.99 Visa refund) need to be included in the deposit's Payments tab. Without this, the deposit total would be wrong and the refund would never clear the bank.
+
+---
+
+## 2026-03-25
+
+### 1. Add/Edit NetSuite Deposit ID manually on payouts
+
+**Files:**
+- `src/app/sections/PayoutsSection.tsx` — Added "+" button, dynamic dialog title
+- `src/app/api/payouts/[id]/netsuite/route.ts` — New PUT endpoint
+
+**What:** Added a blue "+" button on payout rows that don't have a NetSuite deposit ID yet. Clicking it opens a dialog to manually enter the NS deposit internal ID. The existing edit dialog (for payouts that already have an ID) was also updated with context-aware title ("Add" vs "Edit") and button label ("Save" vs "Update").
+
+**New API route:** `PUT /api/payouts/[id]/netsuite` — accepts `{ netsuiteDepositNumber: string }` and sets `payout.netsuiteDepositId` in the database.
+
+**Why:** Some deposits already exist in NetSuite but aren't linked in the webapp (created outside the connector or before it was set up). This lets users manually link them without re-pushing.
