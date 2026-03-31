@@ -252,6 +252,35 @@ export function TikTokPayoutsSection() {
     }
   }
 
+  // ─── Clear deposit ─────────────────────────────────────────────────────────
+
+  const [isClearingDeposit, setIsClearingDeposit] = useState(false)
+
+  const handleClearDeposit = async (payoutId: string) => {
+    if (!confirm('Clear the deposit reference? Make sure you already deleted the deposit in NetSuite first.')) return
+
+    setIsClearingDeposit(true)
+    try {
+      const res = await fetch(`/api/tiktok/payouts/${payoutId}/clear-deposit`, { method: 'POST' })
+      const data = await res.json()
+      if (data.success) {
+        setDepositResult(null)
+        setPreviewData(null)
+        loadPayouts()
+        // Reload transactions
+        const txnRes = await fetch(`/api/tiktok/payouts/${payoutId}`)
+        const txnData = await txnRes.json()
+        setTransactions(txnData.payout?.transactions || [])
+      } else {
+        alert(data.error || 'Failed to clear deposit')
+      }
+    } catch (err: any) {
+      alert(err.message)
+    } finally {
+      setIsClearingDeposit(false)
+    }
+  }
+
   // ─── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -478,6 +507,23 @@ export function TikTokPayoutsSection() {
                         Create Deposit
                       </Button>
 
+                      {payout.netsuiteDepositId && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleClearDeposit(payout.id)}
+                          disabled={isClearingDeposit}
+                          className="text-red-600 border-red-200 hover:bg-red-50"
+                        >
+                          {isClearingDeposit ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          ) : (
+                            <XCircle className="h-4 w-4 mr-2" />
+                          )}
+                          Clear Deposit
+                        </Button>
+                      )}
+
                       <div className="ml-auto text-xs text-slate-500">
                         Statement: {payout.id} | Payment: {payout.paymentId || '—'}
                       </div>
@@ -625,8 +671,15 @@ export function TikTokPayoutsSection() {
                                   {fmt(txn.totalSettlementAmount)}
                                 </td>
                                 <td className="py-2 pr-3">
-                                  {txn.shopifyOrderName ? (
-                                    <span className="text-blue-600 font-medium">{txn.shopifyOrderName}</span>
+                                  {txn.shopifyOrderName && txn.shopifyOrderId ? (
+                                    <a
+                                      href={`https://admin.shopify.com/store/pirani-life/orders/${txn.shopifyOrderId}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-blue-600 font-medium hover:underline"
+                                    >
+                                      {txn.shopifyOrderName}
+                                    </a>
                                   ) : (
                                     <span className="text-slate-400">—</span>
                                   )}
