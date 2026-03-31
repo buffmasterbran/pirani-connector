@@ -660,3 +660,81 @@ model CustomerAddress {
   @@index([isSavedAddress])
   @@index([netsuiteAddressId])
 }
+
+// ============================================================
+// TikTok Payout Reconciliation Models
+// ============================================================
+
+model TikTokPayout {
+  id                String    @id // TikTok Statement ID
+  paymentId         String?   // TikTok Payment ID (links to bank transfer)
+  status            String?   // Paid, Pending, etc.
+  currency          String?
+  totalAmount       Float?    // Total settlement amount
+  netSales          Float?
+  shipping          Float?
+  fees              Float?
+  adjustments       Float?
+  reserveAmount     Float?
+  payableAmount     Float?    // Amount actually paid out
+  payoutDate        DateTime?
+  netsuiteDepositId String?
+  pushedToNsBy      String?
+  pushedToNsAt      DateTime?
+  uploadBatchId     String?   // Groups payouts from same file upload
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  transactions TikTokPayoutTransaction[]
+
+  @@index([paymentId])
+  @@index([uploadBatchId])
+}
+
+model TikTokPayoutTransaction {
+  id                      String    @id @default(uuid())
+  tiktokPayoutId          String    // FK → TikTokPayout (Statement ID)
+  tiktokOrderId           String?   // TikTok Order/adjustment ID
+  type                    String?   // "Order", "Refund", "Adjustment"
+  skuId                   String?
+  quantity                Int?
+  productName             String?
+  skuName                 String?
+  totalSettlementAmount   Float?
+  grossSales              Float?
+  grossSalesRefund        Float?
+  sellerDiscount          Float?
+  shippingAmount          Float?
+  fees                    Float?
+  transactionFee          Float?
+  referralFee             Float?
+  affiliateCommission     Float?
+  adjustmentAmount        Float?
+  adjustmentReason        String?
+  customerPayment         Float?
+  customerRefund          Float?
+  orderCreatedDate        DateTime?
+  orderShipmentDate       DateTime?
+  orderDeliveryDate       DateTime?
+
+  // Matching fields — populated during reconciliation
+  shopifyOrderId          String?   // Shopify order ID found via tag search
+  shopifyOrderName        String?   // Shopify order name (e.g., "#12345")
+  netsuiteTransactionId   String?   // NS Cash Sale internal ID
+  netsuiteTransactionName String?   // NS transaction name (e.g., "CS12345")
+  netsuiteTransactionType String?   // CashSale, CashRfnd, etc.
+  netsuiteAmount          Float?
+  matchStatus             String?   // "matched", "unmatched", "skipped", "error"
+  matchError              String?   // Error message if matching failed
+
+  includeInNetSuite       Boolean   @default(true)
+  amountDescription       String?   // GL account mapping for non-payment items
+  createdAt               DateTime  @default(now())
+
+  payout TikTokPayout @relation(fields: [tiktokPayoutId], references: [id], onDelete: Cascade)
+
+  @@index([tiktokPayoutId])
+  @@index([tiktokOrderId])
+  @@index([shopifyOrderId])
+  @@index([matchStatus])
+}

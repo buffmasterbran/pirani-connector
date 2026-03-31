@@ -3,10 +3,10 @@
 import { useState } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { 
-  CreditCard, 
-  Receipt, 
-  Settings, 
+import {
+  CreditCard,
+  Receipt,
+  Settings,
   ChevronRight,
   Home,
   MapPin,
@@ -16,7 +16,8 @@ import {
   Users,
   MapPin as MapPinIcon,
   Package,
-  FlaskConical
+  FlaskConical,
+  Music2
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -63,6 +64,12 @@ export function Sidebar({ activeSection, onSectionChange }: SidebarProps) {
       name: 'Products',
       icon: Package,
       color: 'text-orange-600'
+    },
+    {
+      id: 'tiktok-payouts',
+      name: 'TikTok Payouts',
+      icon: Music2,
+      color: 'text-pink-600'
     },
     {
       id: 'mappings',

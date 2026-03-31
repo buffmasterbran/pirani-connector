@@ -15,6 +15,7 @@ import { OrdersSection } from '@/app/sections/OrdersSection'
 import { PayoutsSection } from '@/app/sections/PayoutsSection'
 import { SettingsSection } from '@/app/sections/SettingsSection'
 import { MappingsSection } from '@/app/sections/MappingsSection'
+import { TikTokPayoutsSection } from '@/app/sections/TikTokPayoutsSection'
 
 export default function Home() {
   const searchParams = useSearchParams()
@@ -58,6 +59,8 @@ export default function Home() {
       case 'products':
       case 'product-sync':
         return <ProductSyncView />
+      case 'tiktok-payouts':
+        return <TikTokPayoutsSection />
       case 'script-testing':
         return <ScriptTestingView />
       case 'settings':

@@ -4,6 +4,90 @@ Changes made outside of the normal dev workflow. Each entry includes the exact b
 
 ---
 
+## 2026-03-30
+
+### TikTok Payout Reconciliation — New Feature (Branch: `feature/tiktok-payouts`)
+
+**Problem:** TikTok pays out in batches (statements) containing multiple orders. These orders flow TikTok → Shopify → NetSuite as Cash Sales, but there's no API to pull payout data from TikTok. Cash Sales sit unreconciled because it's manual and painful to match them.
+
+**Solution:** Upload TikTok's income Excel export, match orders to NetSuite Cash Sales via Shopify tags (`TikTokOrderID:xxx`), then batch-create NetSuite deposits.
+
+**Matching chain:**
+```
+TikTok Order ID (Excel "Order/adjustment ID")
+  → Shopify order search by tag "TikTokOrderID:577311571227283754"
+    → Shopify order name (e.g., "#12345")
+      → SuiteQL query for CashSale with otherrefnum = "#12345"
+        → Group by Statement → Create NetSuite Deposit
+```
+
+#### New files added:
+
+| File | Purpose |
+|------|---------|
+| `prisma/schema.prisma` | Added `TikTokPayout` and `TikTokPayoutTransaction` models |
+| `prisma/tiktok_payout_migration.sql` | SQL migration to create the two tables + indexes |
+| `src/lib/tiktok/parse-excel.ts` | Parses TikTok income Excel (Statements + Order details sheets) |
+| `src/lib/tiktok/match-orders.ts` | Matches TikTok orders → Shopify (tag search) → NetSuite (SuiteQL) |
+| `src/app/api/tiktok/payouts/route.ts` | `GET` — list all TikTok payouts with match stats |
+| `src/app/api/tiktok/payouts/upload/route.ts` | `POST` — upload Excel, parse, store payouts + transactions |
+| `src/app/api/tiktok/payouts/[id]/route.ts` | `GET` — single payout with all transactions |
+| `src/app/api/tiktok/payouts/[id]/match/route.ts` | `POST` — run matching pipeline for a payout |
+| `src/app/api/tiktok/payouts/[id]/preview-deposit/route.ts` | `GET` — preview NS deposit payload |
+| `src/app/api/tiktok/payouts/[id]/create-deposit/route.ts` | `POST` — create NS deposit |
+| `src/app/sections/TikTokPayoutsSection.tsx` | Full UI section with upload, matching, preview, and deposit creation |
+
+#### Modified files:
+
+**`src/components/Sidebar.tsx`** — Added `Music2` icon import and "TikTok Payouts" nav item:
+```tsx
+// Added to sections array:
+{
+  id: 'tiktok-payouts',
+  name: 'TikTok Payouts',
+  icon: Music2,
+  color: 'text-pink-600'
+},
+```
+
+**`src/app/page.tsx`** — Added import and case for TikTok section:
+```tsx
+import { TikTokPayoutsSection } from '@/app/sections/TikTokPayoutsSection'
+// ...
+case 'tiktok-payouts':
+  return <TikTokPayoutsSection />
+```
+
+#### Database changes:
+
+Two new tables. Run `prisma/tiktok_payout_migration.sql` against the production database.
+
+**`TikTokPayout`** — One row per TikTok statement (payout). Key fields: `id` (Statement ID), `paymentId`, `totalAmount`, `fees`, `netsuiteDepositId`.
+
+**`TikTokPayoutTransaction`** — One row per order line item in a statement. Key fields: `tiktokOrderId` (for Shopify tag matching), `shopifyOrderName`, `netsuiteTransactionId`, `matchStatus`.
+
+#### Dependencies:
+
+Added `xlsx` npm package for Excel parsing.
+
+#### Workflow (UI):
+
+1. **Upload** — User drags TikTok income Excel file
+2. **Match** — Click "Match Orders" → searches Shopify by tag, then NetSuite by order name
+3. **Preview** — Click "Preview Deposit" → shows which NS Cash Sales will be deposited, fees, skipped items
+4. **Create** — Click "Create Deposit" → POST to NetSuite, updates payout record
+
+#### Reused existing code:
+
+- `src/lib/deposit-helpers.ts` — `getUndepositedIds()`, `buildOtherItems()`, `DepositItem` type
+- `src/lib/netsuite/transactions.ts` — `fetchNetSuiteTransactions()` for SuiteQL matching
+- `src/lib/shopify/shared.ts` — `shopifyFetch()` for Shopify API calls
+- `src/lib/netsuite/index.ts` — `generateOAuthHeader()`, `buildRecordUrl()` for deposit creation
+- `src/lib/api-helpers.ts` — `handleApiError()`, `toISO()`
+- Same `PayoutMapping` table for fees account configuration
+
+---
+
 ## 2026-03-22
 
 ### 1. Marketplace Sales Order — added `istaxable: false`
