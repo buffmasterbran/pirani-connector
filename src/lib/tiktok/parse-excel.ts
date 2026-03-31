@@ -56,6 +56,27 @@ function parseStr(val: any): string | null {
 }
 
 /**
+ * TikTok's Excel export declares an incorrect sheet range (e.g., A1:EC6)
+ * even though data extends much further. This helper scans all cell keys
+ * to find the true last row and fixes the !ref property.
+ */
+function fixSheetRange(ws: XLSX.WorkSheet): void {
+  let maxRow = 0
+  for (const cell in ws) {
+    if (cell[0] === '!') continue
+    const match = cell.match(/(\d+)$/)
+    if (match) {
+      const row = parseInt(match[1], 10)
+      if (row > maxRow) maxRow = row
+    }
+  }
+  if (maxRow > 0 && ws['!ref']) {
+    const colEnd = ws['!ref'].split(':')[1]?.replace(/\d+/, '') || 'EC'
+    ws['!ref'] = `A1:${colEnd}${maxRow}`
+  }
+}
+
+/**
  * Parse TikTok income Excel file.
  * Returns statements (payout summaries) and order details (line items).
  */
@@ -68,6 +89,7 @@ export function parseTikTokExcel(buffer: Buffer): {
   // --- Parse Statements sheet ---
   const statementsSheet = wb.Sheets['Statements']
   if (!statementsSheet) throw new Error('Missing "Statements" sheet in Excel file')
+  fixSheetRange(statementsSheet)
 
   const statementsRaw = XLSX.utils.sheet_to_json<any[]>(statementsSheet, { header: 1 })
   const statements: TikTokStatement[] = []
@@ -96,6 +118,7 @@ export function parseTikTokExcel(buffer: Buffer): {
   // --- Parse Order details sheet ---
   const orderSheet = wb.Sheets['Order details']
   if (!orderSheet) throw new Error('Missing "Order details" sheet in Excel file')
+  fixSheetRange(orderSheet)
 
   const orderRaw = XLSX.utils.sheet_to_json<any[]>(orderSheet, { header: 1 })
   const orderDetails: TikTokOrderDetail[] = []
