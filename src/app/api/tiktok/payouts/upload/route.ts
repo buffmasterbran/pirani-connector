@@ -34,6 +34,7 @@ export async function POST(request: NextRequest) {
     }
 
     let payoutsCreated = 0
+    let payoutsUpdated = 0
     let payoutsSkipped = 0
     let transactionsCreated = 0
 
@@ -43,17 +44,24 @@ export async function POST(request: NextRequest) {
         ? new Date(stmt.statementDate.replace(/\//g, '-'))
         : null
 
-      // Upsert the payout (skip if already exists with a deposit)
+      // Check if this payout already exists
       const existing = await prisma.tikTokPayout.findUnique({
         where: { id: stmt.statementId },
-        select: { netsuiteDepositId: true },
+        select: {
+          netsuiteDepositId: true,
+          transactions: { where: { matchStatus: 'matched' }, select: { id: true }, take: 1 },
+        },
       })
 
+      // Skip if already deposited
       if (existing?.netsuiteDepositId) {
         payoutsSkipped++
         continue
       }
 
+      const hasMatchedTransactions = existing && existing.transactions.length > 0
+
+      // Upsert the payout summary (always safe — just amounts)
       await prisma.tikTokPayout.upsert({
         where: { id: stmt.statementId },
         create: {
@@ -85,9 +93,16 @@ export async function POST(request: NextRequest) {
           uploadBatchId,
         },
       })
+
+      // If transactions have already been matched, don't wipe them
+      if (hasMatchedTransactions) {
+        payoutsUpdated++
+        continue
+      }
+
       payoutsCreated++
 
-      // Delete old transactions for this statement (re-import)
+      // Delete old unmatched transactions and re-import from file
       await prisma.tikTokPayoutTransaction.deleteMany({
         where: { tiktokPayoutId: stmt.statementId },
       })
@@ -141,6 +156,7 @@ export async function POST(request: NextRequest) {
       success: true,
       uploadBatchId,
       payoutsCreated,
+      payoutsUpdated,
       payoutsSkipped,
       transactionsCreated,
       totalStatements: statements.length,

@@ -307,8 +307,11 @@ export function TikTokPayoutsSection() {
                 <span>
                   Imported {uploadResult.payoutsCreated} payouts and{' '}
                   {uploadResult.transactionsCreated} order lines.
+                  {uploadResult.payoutsUpdated > 0 && (
+                    <> {uploadResult.payoutsUpdated} payouts updated (matched transactions preserved).</>
+                  )}
                   {uploadResult.payoutsSkipped > 0 && (
-                    <> Skipped {uploadResult.payoutsSkipped} already-deposited payouts.</>
+                    <> {uploadResult.payoutsSkipped} already-deposited payouts skipped.</>
                   )}
                 </span>
               </div>
