@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
 
     const uploadBatchId = `tiktok-${Date.now()}`
 
-    // Group order details by statement ID for efficient lookup
+    // Group order details by statement ID
     const ordersByStatement = new Map<string, typeof orderDetails>()
     for (const order of orderDetails) {
       const existing = ordersByStatement.get(order.statementId) || []
@@ -33,96 +33,89 @@ export async function POST(request: NextRequest) {
       ordersByStatement.set(order.statementId, existing)
     }
 
-    let payoutsCreated = 0
-    let payoutsUpdated = 0
-    let payoutsSkipped = 0
-    let transactionsCreated = 0
+    // Pre-fetch all existing payouts in one query
+    const existingPayouts = await prisma.tikTokPayout.findMany({
+      where: { id: { in: statements.map(s => s.statementId) } },
+      select: {
+        id: true,
+        netsuiteDepositId: true,
+        transactions: { where: { matchStatus: 'matched' }, select: { id: true }, take: 1 },
+      },
+    })
+    const existingMap = new Map(existingPayouts.map(p => [p.id, p]))
+
+    // Classify statements
+    const toSkip: string[] = []
+    const toUpdateOnly: string[] = []   // has matched transactions — don't touch order lines
+    const toFullImport: string[] = []   // new or unmatched — import order lines
 
     for (const stmt of statements) {
-      // Parse date: "2026/03/29" → Date
-      const payoutDate = stmt.statementDate
-        ? new Date(stmt.statementDate.replace(/\//g, '-'))
-        : null
+      const ex = existingMap.get(stmt.statementId)
+      if (ex?.netsuiteDepositId) {
+        toSkip.push(stmt.statementId)
+      } else if (ex && ex.transactions.length > 0) {
+        toUpdateOnly.push(stmt.statementId)
+      } else {
+        toFullImport.push(stmt.statementId)
+      }
+    }
 
-      // Check if this payout already exists
-      const existing = await prisma.tikTokPayout.findUnique({
-        where: { id: stmt.statementId },
-        select: {
-          netsuiteDepositId: true,
-          transactions: { where: { matchStatus: 'matched' }, select: { id: true }, take: 1 },
-        },
-      })
+    // Run all DB writes in a single transaction
+    const result = await prisma.$transaction(async (tx) => {
+      // Upsert all non-skipped payouts
+      const upsertIds = [...toUpdateOnly, ...toFullImport]
+      for (const stmt of statements.filter(s => upsertIds.includes(s.statementId))) {
+        const payoutDate = stmt.statementDate
+          ? new Date(stmt.statementDate.replace(/\//g, '-'))
+          : null
 
-      // Skip if already deposited
-      if (existing?.netsuiteDepositId) {
-        payoutsSkipped++
-        continue
+        await tx.tikTokPayout.upsert({
+          where: { id: stmt.statementId },
+          create: {
+            id: stmt.statementId,
+            paymentId: stmt.paymentId,
+            status: stmt.status,
+            currency: 'USD',
+            totalAmount: stmt.totalAmount,
+            netSales: stmt.netSales,
+            shipping: stmt.shipping,
+            fees: stmt.fees,
+            adjustments: stmt.adjustments,
+            reserveAmount: stmt.reserveAmount,
+            payableAmount: stmt.payableAmount,
+            payoutDate,
+            uploadBatchId,
+          },
+          update: {
+            paymentId: stmt.paymentId,
+            status: stmt.status,
+            totalAmount: stmt.totalAmount,
+            netSales: stmt.netSales,
+            shipping: stmt.shipping,
+            fees: stmt.fees,
+            adjustments: stmt.adjustments,
+            reserveAmount: stmt.reserveAmount,
+            payableAmount: stmt.payableAmount,
+            payoutDate,
+            uploadBatchId,
+          },
+        })
       }
 
-      const hasMatchedTransactions = existing && existing.transactions.length > 0
-
-      // Upsert the payout summary (always safe — just amounts)
-      await prisma.tikTokPayout.upsert({
-        where: { id: stmt.statementId },
-        create: {
-          id: stmt.statementId,
-          paymentId: stmt.paymentId,
-          status: stmt.status,
-          currency: 'USD',
-          totalAmount: stmt.totalAmount,
-          netSales: stmt.netSales,
-          shipping: stmt.shipping,
-          fees: stmt.fees,
-          adjustments: stmt.adjustments,
-          reserveAmount: stmt.reserveAmount,
-          payableAmount: stmt.payableAmount,
-          payoutDate,
-          uploadBatchId,
-        },
-        update: {
-          paymentId: stmt.paymentId,
-          status: stmt.status,
-          totalAmount: stmt.totalAmount,
-          netSales: stmt.netSales,
-          shipping: stmt.shipping,
-          fees: stmt.fees,
-          adjustments: stmt.adjustments,
-          reserveAmount: stmt.reserveAmount,
-          payableAmount: stmt.payableAmount,
-          payoutDate,
-          uploadBatchId,
-        },
-      })
-
-      // If transactions have already been matched, don't wipe them
-      if (hasMatchedTransactions) {
-        payoutsUpdated++
-        continue
+      // Delete old transactions for full-import payouts
+      if (toFullImport.length > 0) {
+        await tx.tikTokPayoutTransaction.deleteMany({
+          where: { tiktokPayoutId: { in: toFullImport } },
+        })
       }
 
-      payoutsCreated++
-
-      // Delete old unmatched transactions and re-import from file
-      await prisma.tikTokPayoutTransaction.deleteMany({
-        where: { tiktokPayoutId: stmt.statementId },
-      })
-
-      // Insert order details as transactions
-      const orders = ordersByStatement.get(stmt.statementId) || []
-      for (const order of orders) {
-        const orderCreatedDate = order.orderCreatedDate
-          ? new Date(order.orderCreatedDate.replace(/\//g, '-'))
-          : null
-        const orderShipmentDate = order.orderShipmentDate
-          ? new Date(order.orderShipmentDate.replace(/\//g, '-'))
-          : null
-        const orderDeliveryDate = order.orderDeliveryDate
-          ? new Date(order.orderDeliveryDate.replace(/\//g, '-'))
-          : null
-
-        await prisma.tikTokPayoutTransaction.create({
-          data: {
-            tiktokPayoutId: stmt.statementId,
+      // Bulk-create all transactions for full-import payouts
+      const txnData: any[] = []
+      for (const stmtId of toFullImport) {
+        const orders = ordersByStatement.get(stmtId) || []
+        for (const order of orders) {
+          txnData.push({
+            tiktokPayoutId: stmtId,
             tiktokOrderId: order.tiktokOrderId,
             type: order.type,
             skuId: order.skuId,
@@ -142,23 +135,34 @@ export async function POST(request: NextRequest) {
             adjustmentReason: order.adjustmentReason,
             customerPayment: order.customerPayment,
             customerRefund: order.customerRefund,
-            orderCreatedDate,
-            orderShipmentDate,
-            orderDeliveryDate,
+            orderCreatedDate: order.orderCreatedDate
+              ? new Date(order.orderCreatedDate.replace(/\//g, '-'))
+              : null,
+            orderShipmentDate: order.orderShipmentDate
+              ? new Date(order.orderShipmentDate.replace(/\//g, '-'))
+              : null,
+            orderDeliveryDate: order.orderDeliveryDate
+              ? new Date(order.orderDeliveryDate.replace(/\//g, '-'))
+              : null,
             matchStatus: 'unmatched',
-          },
-        })
-        transactionsCreated++
+          })
+        }
       }
-    }
+
+      if (txnData.length > 0) {
+        await tx.tikTokPayoutTransaction.createMany({ data: txnData })
+      }
+
+      return { transactionsCreated: txnData.length }
+    })
 
     return NextResponse.json({
       success: true,
       uploadBatchId,
-      payoutsCreated,
-      payoutsUpdated,
-      payoutsSkipped,
-      transactionsCreated,
+      payoutsCreated: toFullImport.length,
+      payoutsUpdated: toUpdateOnly.length,
+      payoutsSkipped: toSkip.length,
+      transactionsCreated: result.transactionsCreated,
       totalStatements: statements.length,
       totalOrderDetails: orderDetails.length,
     })
