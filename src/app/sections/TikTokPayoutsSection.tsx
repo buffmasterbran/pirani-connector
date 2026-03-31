@@ -412,9 +412,15 @@ export function TikTokPayoutsSection() {
                   </div>
                   <div className="flex items-center gap-3">
                     {payout.netsuiteDepositId ? (
-                      <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full font-medium">
+                      <a
+                        href={`https://7913744.app.netsuite.com/app/accounting/transactions/deposit.nl?id=${payout.netsuiteDepositId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full font-medium hover:underline"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         Deposited: {payout.netsuiteDepositId}
-                      </span>
+                      </a>
                     ) : (
                       <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded-full">
                         {payout.status}
@@ -500,8 +506,16 @@ export function TikTokPayoutsSection() {
                       }`}>
                         {depositResult.success ? (
                           <>
-                            Deposit created: <strong>{depositResult.depositId}</strong> with{' '}
-                            {depositResult.depositItemCount} items.
+                            Deposit created:{' '}
+                            <a
+                              href={`https://7913744.app.netsuite.com/app/accounting/transactions/deposit.nl?id=${depositResult.depositId}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="font-bold underline"
+                            >
+                              {depositResult.depositId}
+                            </a>{' '}
+                            with {depositResult.depositItemCount} items.
                           </>
                         ) : (
                           <div>
