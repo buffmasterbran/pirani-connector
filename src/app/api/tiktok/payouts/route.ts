@@ -53,6 +53,7 @@ export async function GET() {
       }
     })
 
+    console.log(`[TikTok API] GET /api/tiktok/payouts → ${formatted.length} payouts`)
     return NextResponse.json({ payouts: formatted })
   } catch (error) {
     return handleApiError(error, 'GET /api/tiktok/payouts')

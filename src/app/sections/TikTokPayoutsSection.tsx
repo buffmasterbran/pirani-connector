@@ -115,9 +115,10 @@ export function TikTokPayoutsSection() {
     try {
       const res = await fetch('/api/tiktok/payouts')
       const data = await res.json()
+      console.log('[TikTok UI] Loaded payouts:', data.payouts?.length, data)
       setPayouts(data.payouts || [])
     } catch (err) {
-      console.error('Failed to load TikTok payouts:', err)
+      console.error('[TikTok UI] Failed to load TikTok payouts:', err)
     } finally {
       setIsLoading(false)
     }
