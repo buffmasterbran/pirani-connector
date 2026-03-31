@@ -106,6 +106,12 @@ export async function POST(
     const depositUrl = buildRecordUrl('deposit')
     const authorization = generateOAuthHeader('POST', depositUrl)
 
+    console.log(`[TikTok Deposit] URL: ${depositUrl}`)
+    console.log(`[TikTok Deposit] Payload:`, JSON.stringify(depositBody, null, 2))
+    console.log(`[TikTok Deposit] Payment items: ${validItems.length}`, validItems)
+    console.log(`[TikTok Deposit] Other items: ${otherItems.length}`, otherItems)
+    console.log(`[TikTok Deposit] Skipped items:`, skipped)
+
     const nsResponse = await fetch(depositUrl, {
       method: 'POST',
       headers: {
@@ -116,17 +122,28 @@ export async function POST(
       body: JSON.stringify(depositBody),
     })
 
+    const responseText = await nsResponse.text().catch(() => '')
+    console.log(`[TikTok Deposit] NS Response: ${nsResponse.status}`)
+    console.log(`[TikTok Deposit] NS Headers:`, Object.fromEntries(nsResponse.headers.entries()))
+    console.log(`[TikTok Deposit] NS Body:`, responseText)
+
     if (!nsResponse.ok) {
-      const errText = await nsResponse.text().catch(() => '')
       return NextResponse.json({
         error: `NetSuite deposit creation failed (${nsResponse.status})`,
-        details: errText.slice(0, 500),
+        details: responseText.slice(0, 1000),
       }, { status: 502 })
     }
 
-    // Extract deposit ID from Location header
+    // Extract deposit ID from Location header or response body
     const locationHeader = nsResponse.headers.get('Location') || ''
-    const depositId = locationHeader.split('/').pop() || null
+    let depositId = locationHeader.split('/').pop() || null
+    if (!depositId && responseText) {
+      try {
+        const data = JSON.parse(responseText)
+        if (data?.id) depositId = String(data.id)
+      } catch { /* ignore */ }
+    }
+    console.log(`[TikTok Deposit] Deposit ID: ${depositId}`)
 
     // Update payout record
     await prisma.tikTokPayout.update({

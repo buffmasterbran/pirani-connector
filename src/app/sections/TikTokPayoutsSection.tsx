@@ -504,7 +504,12 @@ export function TikTokPayoutsSection() {
                             {depositResult.depositItemCount} items.
                           </>
                         ) : (
-                          <>Error: {depositResult.error}</>
+                          <div>
+                            <div>Error: {depositResult.error}</div>
+                            {depositResult.details && (
+                              <pre className="mt-1 text-xs whitespace-pre-wrap max-h-40 overflow-auto">{depositResult.details}</pre>
+                            )}
+                          </div>
                         )}
                       </div>
                     )}
@@ -613,10 +618,15 @@ export function TikTokPayoutsSection() {
                                   )}
                                 </td>
                                 <td className="py-2 pr-3">
-                                  {txn.netsuiteTransactionName ? (
-                                    <span className="text-emerald-600 font-medium">
+                                  {txn.netsuiteTransactionName && txn.netsuiteTransactionId ? (
+                                    <a
+                                      href={`https://7913744.app.netsuite.com/app/accounting/transactions/cashsale.nl?id=${txn.netsuiteTransactionId}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-emerald-600 font-medium hover:underline"
+                                    >
                                       {txn.netsuiteTransactionName}
-                                    </span>
+                                    </a>
                                   ) : (
                                     <span className="text-slate-400">—</span>
                                   )}
