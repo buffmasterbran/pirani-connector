@@ -65,20 +65,26 @@ export async function POST(
       }, { status: 400 })
     }
 
-    // Get fees account
-    const feesMapping = await prisma.payoutMapping.findFirst({
-      where: { mappingType: 'fees_account', isDefaultFeesAccount: true, isActive: true },
-    })
-    const feesAccountId = feesMapping?.netsuiteId || '989'
+    // TikTok-specific accounts
+    const TIKTOK_FEES_ACCOUNT = '1223'    // 61090 - TikTok Fees
+    const TIKTOK_RESERVE_ACCOUNT = '1323' // 15030 - TikTok Reserve
 
-    // Build other items (TikTok fees)
+    // Build other items (TikTok fees + reserve)
     const otherItems: Array<{ description: string; amount: number; account: { id: string } }> = []
     const totalFees = payout.fees || 0
+    const reserveAmount = payout.reserveAmount || 0
     if (totalFees !== 0) {
       otherItems.push({
         description: 'TikTok Fees',
         amount: totalFees < 0 ? totalFees : -Math.abs(totalFees),
-        account: { id: feesAccountId },
+        account: { id: TIKTOK_FEES_ACCOUNT },
+      })
+    }
+    if (reserveAmount !== 0) {
+      otherItems.push({
+        description: 'TikTok Reserve',
+        amount: reserveAmount,
+        account: { id: TIKTOK_RESERVE_ACCOUNT },
       })
     }
 

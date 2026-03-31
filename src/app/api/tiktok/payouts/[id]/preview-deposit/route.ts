@@ -2,11 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { handleApiError } from '@/lib/api-helpers'
 import {
-  buildDepositItems,
-  buildOtherItems,
-  buildDepositPayload,
   getUndepositedIds,
   DepositItem,
+  OtherItem,
 } from '@/lib/deposit-helpers'
 
 /**
@@ -62,22 +60,28 @@ export async function GET(
     const { valid, skipped } = await getUndepositedIds(nsIds)
     const validItems = depositItems.filter(d => valid.has(d.id))
 
-    // Get default fees account
-    const feesMapping = await prisma.payoutMapping.findFirst({
-      where: { mappingType: 'fees_account', isDefaultFeesAccount: true, isActive: true },
-    })
-    const feesAccountId = feesMapping?.netsuiteId || '989'
+    // TikTok-specific accounts
+    const TIKTOK_FEES_ACCOUNT = '1223'    // 61090 - TikTok Fees
+    const TIKTOK_RESERVE_ACCOUNT = '1323' // 15030 - TikTok Reserve
 
-    // Build "other" items — TikTok fees
+    // Build "other" items — TikTok fees + reserve
     const totalFees = payout.fees || 0
-    const dropdownItems = new Map<string, { description: string; amount: number }>()
-    const otherItems = buildOtherItems(totalFees, dropdownItems, feesAccountId)
+    const reserveAmount = payout.reserveAmount || 0
+    const otherItems: OtherItem[] = []
 
-    // Replace "Shopify Fees" label with "TikTok Fees"
-    for (const item of otherItems) {
-      if (item.description === 'Shopify Fees') {
-        item.description = 'TikTok Fees'
-      }
+    if (totalFees !== 0) {
+      otherItems.push({
+        description: 'TikTok Fees',
+        amount: totalFees < 0 ? totalFees : -Math.abs(totalFees),
+        account: { id: TIKTOK_FEES_ACCOUNT },
+      })
+    }
+    if (reserveAmount !== 0) {
+      otherItems.push({
+        description: 'TikTok Reserve',
+        amount: reserveAmount,
+        account: { id: TIKTOK_RESERVE_ACCOUNT },
+      })
     }
 
     // Format payout date
